@@ -50,6 +50,58 @@ class Transport:
         )
         return self._parse_envelope(response, req_id)
 
+    async def get_devices(self) -> dict[str, Any]:
+        response = await self._client.get("/api/v1/devices")
+        return self._infra_body(response)
+
+    async def discover(self) -> dict[str, Any]:
+        response = await self._client.post("/api/v1/discover", timeout=self._discover_timeout)
+        if response.status_code == 409:
+            body = self._safe_json(response)
+            if body.get("error") == "job in progress":
+                raise errors.JobInProgressError(
+                    body.get("error", "job in progress"), detail=body.get("detail")
+                )
+            raise errors.DiscoveryInProgressError(body.get("error", "discovery in progress"))
+        if response.status_code >= 500:
+            body = self._safe_json(response)
+            raise errors.DiscoveryFailedError(
+                body.get("detail") or body.get("error", "discovery failed")
+            )
+        return self._infra_body(response)
+
+    async def disconnect(self, port: str | None = None) -> dict[str, Any]:
+        params = {"port": port} if port is not None else None
+        response = await self._client.post("/devices/disconnect", params=params)
+        if response.status_code == 404:
+            body = self._safe_json(response)
+            raise errors.UnknownDeviceError(
+                body.get("error", "no device on that port"),
+                code="unknown_device",
+                details={"port": port},
+            )
+        return self._infra_body(response)
+
+    async def agent_info(self) -> dict[str, Any]:
+        response = await self._client.get("/agent/info")
+        return self._infra_body(response)
+
+    @staticmethod
+    def _safe_json(response: httpx.Response) -> dict[str, Any]:
+        try:
+            body = response.json()
+        except (json.JSONDecodeError, ValueError):
+            return {}
+        return body if isinstance(body, dict) else {}
+
+    def _infra_body(self, response: httpx.Response) -> dict[str, Any]:
+        if response.status_code >= 500:
+            raise errors.LabProtocolError(f"server error HTTP {response.status_code}")
+        body = self._safe_json(response)
+        if not body:
+            raise errors.LabProtocolError(f"malformed infra body (HTTP {response.status_code})")
+        return body
+
     @staticmethod
     def _parse_envelope(response: httpx.Response, req_id: str) -> Any:
         try:
