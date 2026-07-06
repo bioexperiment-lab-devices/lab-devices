@@ -1,7 +1,10 @@
+from dataclasses import dataclass
+
 import httpx
 
 from lab_devices.devices.base import Device
-from lab_devices.models import Identify, PingResult
+from lab_devices.jobs import Job
+from lab_devices.models import Identify, PingResult, RawModel
 from lab_devices.transport import Transport
 from tests.fakelab import FakeLab
 
@@ -54,5 +57,63 @@ async def test_command_escape_hatch():
     try:
         result = await device.command("rotate_raw", {"direction": "forward", "speed_pct": 25})
         assert result["speed_pct"] == 25
+    finally:
+        await client.aclose()
+
+
+async def test_status_raw_when_no_model():
+    fake = FakeLab()
+    fake.add_device("pump_1", "pump", status={"state": "dispensing", "speed_ml_min": 3.0})
+    device, client = _device(fake, "pump_1")
+    try:
+        result = await device.status()
+        assert isinstance(result, dict)
+        assert result["state"] == "dispensing"
+    finally:
+        await client.aclose()
+
+
+async def test_status_parsed_with_model():
+    @dataclass
+    class _Status(RawModel):
+        state: str | None = None
+
+    class _StatusDevice(Device):
+        STATUS_MODEL = _Status
+
+    fake = FakeLab()
+    fake.add_device("pump_1", "pump", status={"state": "dispensing"})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(fake.handler), base_url="http://lab")
+    device = _StatusDevice(Transport(client), "pump_1")
+    try:
+        result = await device.status()
+        assert isinstance(result, _Status)
+        assert result.state == "dispensing"
+    finally:
+        await client.aclose()
+
+
+async def test_stop_returns_result():
+    fake = FakeLab()
+    fake.add_device("pump_1", "pump")
+    device, client = _device(fake, "pump_1")
+    try:
+        result = await device.stop()
+        assert isinstance(result, dict)
+        assert result["state"] == "idle"
+    finally:
+        await client.aclose()
+
+
+async def test_get_job_returns_job():
+    fake = FakeLab()
+    fake.add_device("pump_1", "pump")
+    device, client = _device(fake, "pump_1")
+    try:
+        started = await device.command("dispense", {"volume_ml": 10})
+        job_id = started["job"]["job_id"]
+        job = await device.get_job(job_id)
+        assert isinstance(job, Job)
+        assert job.job_id == job_id
     finally:
         await client.aclose()
