@@ -18,8 +18,10 @@ class _StubDevice:
     def __init__(self, transport: Transport, device_id: str) -> None:
         self._transport = transport
         self.id = device_id
+        self.stop_calls = 0
 
     async def stop(self):
+        self.stop_calls += 1
         return await self._transport.command(self.id, "stop")
 
 
@@ -65,6 +67,7 @@ async def test_timeout_raises_without_cancelling():
         job = Job.from_start_result(device, started)
         with pytest.raises(errors.JobTimeoutError):
             await job.result(poll_interval=0.01, timeout=0.05)
+        assert device.stop_calls == 0
     finally:
         await client.aclose()
 
