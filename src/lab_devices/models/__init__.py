@@ -13,6 +13,12 @@ from lab_devices.models.pump import (
     PumpCapabilities,
     PumpStatus,
 )
+from lab_devices.models.valve import (
+    ValveCapabilities,
+    ValveConfig,
+    ValveMoveResult,
+    ValveStatus,
+)
 
 __all__ = [
     "AgentInfo",
@@ -29,4 +35,11 @@ __all__ += [
     "DispenseResult",
     "PumpCapabilities",
     "PumpStatus",
+]
+
+__all__ += [
+    "ValveCapabilities",
+    "ValveConfig",
+    "ValveMoveResult",
+    "ValveStatus",
 ]
