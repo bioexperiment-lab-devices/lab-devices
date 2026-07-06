@@ -84,6 +84,24 @@ async def test_id_mismatch_raises_protocol_error():
         await client.aclose()
 
 
+async def test_non_dict_error_object_raises_protocol_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json
+
+        env = json.loads(request.read())
+        return httpx.Response(
+            200,
+            json={"id": env["id"], "status": "error", "error": "boom"},
+        )
+
+    transport, client = make_transport(handler)
+    try:
+        with pytest.raises(errors.LabProtocolError):
+            await transport.command("pump_1", "ping")
+    finally:
+        await client.aclose()
+
+
 async def test_oversize_body_rejected_before_send():
     sent = False
 

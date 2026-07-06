@@ -75,8 +75,18 @@ class LabRegistry:
         entry = roster.get(name)
         if entry is None:
             raise errors.UnknownLabClient(name, available=sorted(roster.keys()))
+        if not isinstance(entry, dict):
+            raise errors.ClientLookupEndpointError(
+                f"malformed roster entry for {name!r}: not an object"
+            )
+        try:
+            port = int(entry["port"])
+        except (KeyError, ValueError, TypeError) as exc:
+            raise errors.ClientLookupEndpointError(
+                f"malformed roster entry for {name!r}: invalid or missing port"
+            ) from exc
         host = self._chisel_host or entry.get("host", "chisel")
-        return LabInfo(name=name, host=host, port=int(entry["port"]))
+        return LabInfo(name=name, host=host, port=port)
 
     async def is_online(self, name: str) -> bool:
         info = await self.lookup(name)

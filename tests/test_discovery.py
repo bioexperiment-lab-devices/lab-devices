@@ -78,6 +78,27 @@ async def test_connect_offline_raises(monkeypatch):
             await reg.connect("khamit_desktop")
 
 
+async def test_lookup_missing_port_raises_endpoint_error():
+    roster = {"khamit_desktop": {"host": "chisel"}}
+    async with _registry(roster=roster) as reg:
+        with pytest.raises(errors.ClientLookupEndpointError):
+            await reg.lookup("khamit_desktop")
+
+
+async def test_lookup_non_numeric_port_raises_endpoint_error():
+    roster = {"khamit_desktop": {"host": "chisel", "port": "abc"}}
+    async with _registry(roster=roster) as reg:
+        with pytest.raises(errors.ClientLookupEndpointError):
+            await reg.lookup("khamit_desktop")
+
+
+async def test_connect_missing_port_raises_endpoint_error():
+    roster = {"khamit_desktop": {"host": "chisel"}}
+    async with _registry(roster=roster) as reg:
+        with pytest.raises(errors.ClientLookupEndpointError):
+            await reg.connect("khamit_desktop")
+
+
 async def test_probe_against_real_server():
     async with _registry() as reg:
         server = await asyncio.start_server(lambda r, w: None, "127.0.0.1", 0)

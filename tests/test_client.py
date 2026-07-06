@@ -65,6 +65,23 @@ async def test_drive_pump_end_to_end():
         assert result.dispensed_ml == 10.0
 
 
+async def test_rediscover_returns_device_list():
+    fake = FakeLab()
+    fake.add_device("pump_1", "pump")
+    async with _client(fake) as lab:
+        devices = await lab.rediscover()
+        assert all(isinstance(d, DeviceInfo) for d in devices)
+        assert {d.id for d in devices} == {"pump_1"}
+
+
+async def test_disconnect_with_port_returns_int():
+    fake = FakeLab()
+    fake.add_device("pump_1", "pump")
+    async with _client(fake) as lab:
+        result = await lab.disconnect(port="COM-pump_1")
+        assert isinstance(result, int)
+
+
 async def test_owned_http_closed_on_exit():
     """LabClient with owned http client must close it on context exit."""
     lab = LabClient("chisel", 8089)

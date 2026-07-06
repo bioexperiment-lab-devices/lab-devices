@@ -84,3 +84,27 @@ async def test_disconnect_ok_returns_count():
         assert body["released"] == 3
     finally:
         await client.aclose()
+
+
+async def test_get_devices_403_raises_protocol_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"error": "forbidden"})
+
+    transport, client = make_transport(handler)
+    try:
+        with pytest.raises(errors.LabProtocolError):
+            await transport.get_devices()
+    finally:
+        await client.aclose()
+
+
+async def test_disconnect_400_raises_protocol_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": "bad request"})
+
+    transport, client = make_transport(handler)
+    try:
+        with pytest.raises(errors.LabProtocolError):
+            await transport.disconnect(port="COM9")
+    finally:
+        await client.aclose()

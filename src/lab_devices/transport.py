@@ -95,8 +95,8 @@ class Transport:
         return body if isinstance(body, dict) else {}
 
     def _infra_body(self, response: httpx.Response) -> dict[str, Any]:
-        if response.status_code >= 500:
-            raise errors.LabProtocolError(f"server error HTTP {response.status_code}")
+        if response.status_code >= 400:
+            raise errors.LabProtocolError(f"unexpected HTTP {response.status_code}")
         body = self._safe_json(response)
         if not body:
             raise errors.LabProtocolError(f"malformed infra body (HTTP {response.status_code})")
@@ -122,5 +122,10 @@ class Transport:
         if body["status"] == "ok":
             return body.get("result")
         if body["status"] == "error":
-            raise errors.map_command_error(body.get("error") or {}, request_id=req_id)
+            error_obj = body.get("error") or {}
+            if not isinstance(error_obj, dict):
+                raise errors.LabProtocolError(
+                    "malformed envelope: error is not an object", request_id=req_id
+                )
+            raise errors.map_command_error(error_obj, request_id=req_id)
         raise errors.LabProtocolError(f"unknown status {body['status']!r}", request_id=req_id)
