@@ -29,3 +29,46 @@ async def test_unreachable_device(lab_transport):
 
     with pytest.raises(errors.DeviceUnreachableError):
         await transport.command("pump_1", "status")
+
+
+# ---- Regression tests for Fix 1 & 2 ---- #
+async def test_identify_unknown_device(lab_transport):
+    """Identify on an unknown device (never registered) raises UnknownDeviceError at 404."""
+    import pytest
+    from lab_devices import errors
+
+    fake, transport = lab_transport
+    # Never register this device
+    with pytest.raises(errors.UnknownDeviceError):
+        await transport.command("unknown_pump", "identify")
+
+
+async def test_identify_registered_unreachable_device(lab_transport):
+    """Identify on a registered device with identify block in unreachable still returns 200."""
+    fake, transport = lab_transport
+    # Register with identify block
+    fake.add_device(
+        "pump_1",
+        "pump",
+        identify={"device_type": "pump", "model": "test-model", "serial": "12345"},
+    )
+    # Place in unreachable
+    fake.unreachable.add("pump_1")
+    # Identify should still work (memory-served)
+    result = await transport.command("pump_1", "identify")
+    assert result["serial"] == "12345"
+    assert result["model"] == "test-model"
+
+
+async def test_get_devices_shows_unreachable_as_disconnected(lab_transport):
+    """get_devices() reports connected: false for unreachable devices, true otherwise."""
+    fake, transport = lab_transport
+    fake.add_device("pump_1", "pump")
+    fake.add_device("pump_2", "pump")
+    fake.unreachable.add("pump_2")
+
+    body = await transport.get_devices()
+    devices = {d["id"]: d for d in body["devices"]}
+
+    assert devices["pump_1"]["connected"] is True
+    assert devices["pump_2"]["connected"] is False

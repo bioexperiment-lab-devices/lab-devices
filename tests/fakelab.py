@@ -55,7 +55,6 @@ class FakeLab:
             "id": device_id,
             "type": type_,
             "port": f"COM-{device_id}",
-            "connected": True,
             "identify": identify,
             "_canned": canned,
         }
@@ -78,7 +77,11 @@ class FakeLab:
 
     def _devices_list(self) -> httpx.Response:
         devices = [
-            {k: v for k, v in d.items() if not k.startswith("_")} for d in self.devices.values()
+            {
+                **{k: v for k, v in d.items() if not k.startswith("_")},
+                "connected": d["id"] not in self.unreachable,
+            }
+            for d in self.devices.values()
         ]
         return httpx.Response(
             200, json={"devices": devices, "discovered_at": "2026-07-06T12:00:00Z"}
@@ -98,6 +101,10 @@ class FakeLab:
                 json={"id": req_id, "status": "error", "error": {"code": code, "message": message}},
             )
 
+        # Unknown device must 404 before any memory-served branches.
+        if device_id not in self.devices:
+            return err(404, "unknown_device", f"no device with id {device_id}")
+
         # get_job / identify are memory-served (200 even if unreachable).
         if cmd == "get_job":
             job = self.jobs.get(params.get("job_id", ""))
@@ -106,13 +113,11 @@ class FakeLab:
             self._advance(job)
             return ok(self._job_object(job))
         if cmd == "identify":
-            ident = self.devices.get(device_id, {}).get("identify")
+            ident = self.devices[device_id].get("identify")
             if ident is None:
                 return err(503, "device_unreachable", "never attached")
             return ok(ident)
 
-        if device_id not in self.devices:
-            return err(404, "unknown_device", f"no device with id {device_id}")
         if device_id in self.unreachable:
             return err(503, "device_unreachable", "device is not responding")
 
