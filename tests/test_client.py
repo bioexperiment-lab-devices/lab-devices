@@ -63,3 +63,23 @@ async def test_drive_pump_end_to_end():
         job = await lab.pump(1).dispense(volume_ml=10, speed_ml_min=3.0)
         result = await job.result(poll_interval=0.0)
         assert result.dispensed_ml == 10.0
+
+
+async def test_owned_http_closed_on_exit():
+    """LabClient with owned http client must close it on context exit."""
+    lab = LabClient("chisel", 8089)
+    async with lab as _:
+        assert lab._http.is_closed is False
+    assert lab._http.is_closed is True
+
+
+async def test_injected_http_not_closed_on_exit():
+    """LabClient with injected http client must NOT close it on context exit."""
+    injected = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, json={})),
+        base_url="http://lab"
+    )
+    async with LabClient("chisel", 8089, http=injected) as lab:
+        assert injected.is_closed is False
+    assert injected.is_closed is False
+    await injected.aclose()
