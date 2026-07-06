@@ -753,7 +753,10 @@ class Transport:
         if timeout is not None:
             kwargs["timeout"] = timeout
         response = await self._client.post(
-            f"/api/v1/devices/{device_id}/command", content=payload, **kwargs
+            f"/api/v1/devices/{device_id}/command",
+            content=payload,
+            headers={"Content-Type": "application/json"},
+            **kwargs,
         )
         return self._parse_envelope(response, req_id)
 
@@ -2212,7 +2215,9 @@ class MeasureResult(RawModel):
     temperature_c: float | None = None
     tube_correction: float | None = None
     seq: int | None = None
-    raw: Any = None  # 20-point sweep when include_raw=True (distinct from RawModel.raw)
+    # The optional 20-point sweep (API field "raw", present when include_raw=True) is
+    # reachable via `.raw["raw"]`; it is intentionally not a separate typed field because
+    # `RawModel.raw` already holds the whole payload.
 
 
 @dataclass
@@ -2237,8 +2242,6 @@ class ReadRawResult(RawModel):
     levels: list[int] | None = None
     temperature_c: float | None = None
 ```
-
-Note: `MeasureResult.raw` is a real API field (the optional sweep), so it shadows `RawModel.raw`. That is intentional here — `MeasureResult` keeps only the API's `raw`. If you also need the full payload, read it from `job.raw["result"]`. (This is the one deliberate exception to the `.raw`-holds-everything rule; documented so it is not mistaken for a bug.)
 
 - [ ] **Step 4: Write `src/lab_devices/devices/densitometer.py`**
 
