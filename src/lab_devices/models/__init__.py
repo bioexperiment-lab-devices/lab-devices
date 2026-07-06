@@ -6,6 +6,13 @@ from lab_devices.models.common import (
     Range,
     RawModel,
 )
+from lab_devices.models.pump import (
+    Calibration,
+    CalibrationRunResult,
+    DispenseResult,
+    PumpCapabilities,
+    PumpStatus,
+)
 
 __all__ = [
     "AgentInfo",
@@ -14,4 +21,12 @@ __all__ = [
     "PingResult",
     "Range",
     "RawModel",
+]
+
+__all__ += [
+    "Calibration",
+    "CalibrationRunResult",
+    "DispenseResult",
+    "PumpCapabilities",
+    "PumpStatus",
 ]
