@@ -120,7 +120,10 @@ A handle for a non-existent device raises `UnknownDeviceError` (HTTP 404) on its
   `409 "job in progress"` → `JobInProgressError(detail)`; `500` → `DiscoveryFailedError`.
 - `await lab.disconnect(port: str | None = None) -> int` — POST `/devices/disconnect`; returns the
   `released` count. `?port=` for one device (`404` → `UnknownDeviceError` at the port).
-- `await lab.agent_info() -> AgentInfo` — GET `/agent/info` (best-effort; never fails).
+- `await lab.agent_info() -> AgentInfo` — GET `/agent/info`. The endpoint itself is best-effort
+  and always returns `200` with whatever fields it could gather (missing fields are simply
+  omitted and surface as `None`). The client still surfaces genuine transport/protocol failures
+  (unreachable, `5xx`, malformed body) as exceptions rather than swallowing them.
 
 ### 4.2 `Device` base and typed subclasses
 
