@@ -100,7 +100,9 @@ class Job:
 
 class PumpJob(Job):
     async def pause(self) -> Any:
-        return await self._device.pause()
+        # `_device` is typed as the base `Device`, but a PumpJob is only ever
+        # constructed for a Pump, which does define `pause`/`resume`.
+        return await self._device.pause()  # type: ignore[attr-defined]
 
     async def resume(self) -> Any:
-        return await self._device.resume()
+        return await self._device.resume()  # type: ignore[attr-defined]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from lab_devices.models.common import Range, RawModel
@@ -10,13 +10,13 @@ from lab_devices.models.common import Range, RawModel
 
 @dataclass
 class PumpCapabilities(RawModel):
+    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {"speed_ml_min": (Range, False)}
+
     channels: int | None = None
     speed_ml_min: Range | None = None
     supports_gradient: bool | None = None
     supports_drop_suckback: bool | None = None
     calibration_unverified: bool | None = None
-
-    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {"speed_ml_min": (Range, False)}
 
 
 @dataclass
@@ -27,14 +27,14 @@ class Calibration(RawModel):
 
 @dataclass
 class PumpStatus(RawModel):
+    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {"calibration": (Calibration, False)}
+
     state: str | None = None
     job: dict[str, Any] | None = None
     direction: str | None = None
     speed_ml_min: float | None = None
     dispensed_ml: float | None = None
     calibration: Calibration | None = None
-
-    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {"calibration": (Calibration, False)}
 
 
 @dataclass

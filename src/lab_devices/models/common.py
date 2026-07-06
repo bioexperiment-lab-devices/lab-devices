@@ -55,13 +55,16 @@ class Identify(RawModel):
 
 @dataclass
 class DeviceInfo(RawModel):
+    # `_NESTED` is declared before the `type` field below: the field's own annotation
+    # would otherwise shadow the builtin `type` name for the rest of this class body
+    # (mypy resolves annotations using class-body scope, in source order).
+    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {"identify": (Identify, False)}
+
     id: str | None = None
     type: str | None = None
     port: str | None = None
     connected: bool | None = None
     identify: Identify | None = None
-
-    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {"identify": (Identify, False)}
 
 
 @dataclass

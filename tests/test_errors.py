@@ -1,5 +1,3 @@
-import pytest
-
 from lab_devices import errors
 
 

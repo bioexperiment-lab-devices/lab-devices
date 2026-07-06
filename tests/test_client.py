@@ -79,7 +79,7 @@ async def test_injected_http_not_closed_on_exit():
         transport=httpx.MockTransport(lambda req: httpx.Response(200, json={})),
         base_url="http://lab"
     )
-    async with LabClient("chisel", 8089, http=injected) as lab:
+    async with LabClient("chisel", 8089, http=injected):
         assert injected.is_closed is False
     assert injected.is_closed is False
     await injected.aclose()

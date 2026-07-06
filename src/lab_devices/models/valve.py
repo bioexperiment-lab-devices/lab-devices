@@ -23,14 +23,14 @@ class ValveConfig(RawModel):
 
 @dataclass
 class ValveStatus(RawModel):
+    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {"config": (ValveConfig, False)}
+
     state: str | None = None
     homed: bool | None = None
     position: int | None = None
     target_position: int | None = None
     job: dict[str, Any] | None = None
     config: ValveConfig | None = None
-
-    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {"config": (ValveConfig, False)}
 
 
 @dataclass

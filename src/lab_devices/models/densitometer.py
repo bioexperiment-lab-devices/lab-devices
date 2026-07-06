@@ -16,12 +16,12 @@ class Thermostat(RawModel):
 
 @dataclass
 class DensitometerCapabilities(RawModel):
+    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {"thermostat": (Thermostat, False)}
+
     wavelength_nm: int | None = None
     brightness_levels: int | None = None
     thermostat: Thermostat | None = None
     temperature_sensor: str | None = None
-
-    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {"thermostat": (Thermostat, False)}
 
 
 @dataclass
@@ -34,16 +34,16 @@ class ThermostatState(RawModel):
 
 @dataclass
 class DensitometerStatus(RawModel):
+    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {
+        "thermostat": (ThermostatState, False)
+    }
+
     state: str | None = None
     job: dict[str, Any] | None = None
     temperature_c: float | None = None
     thermostat: ThermostatState | None = None
     calibration: dict[str, Any] | None = None
     last_measurement: dict[str, Any] | None = None
-
-    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {
-        "thermostat": (ThermostatState, False)
-    }
 
 
 @dataclass
@@ -70,10 +70,10 @@ class Reading(RawModel):
 
 @dataclass
 class ReadingsResult(RawModel):
+    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {"readings": (Reading, True)}
+
     readings: list[Reading] | None = None
     dropped: int | None = None
-
-    _NESTED: ClassVar[dict[str, tuple[type[RawModel], bool]]] = {"readings": (Reading, True)}
 
 
 @dataclass
