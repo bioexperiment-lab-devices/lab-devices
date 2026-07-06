@@ -19,6 +19,16 @@ from lab_devices.models.valve import (
     ValveMoveResult,
     ValveStatus,
 )
+from lab_devices.models.densitometer import (
+    DensitometerCapabilities,
+    DensitometerStatus,
+    MeasureResult,
+    ReadRawResult,
+    Reading,
+    ReadingsResult,
+    Thermostat,
+    ThermostatState,
+)
 
 __all__ = [
     "AgentInfo",
@@ -42,4 +52,15 @@ __all__ += [
     "ValveConfig",
     "ValveMoveResult",
     "ValveStatus",
+]
+
+__all__ += [
+    "DensitometerCapabilities",
+    "DensitometerStatus",
+    "MeasureResult",
+    "ReadRawResult",
+    "Reading",
+    "ReadingsResult",
+    "Thermostat",
+    "ThermostatState",
 ]
