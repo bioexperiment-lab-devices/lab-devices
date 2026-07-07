@@ -122,3 +122,59 @@ def block_from_dict(d: Any) -> B.Block:
     if builder is None:
         raise WorkflowLoadError(f"unknown block type {key!r}")
     return builder(d[key], timing)
+
+
+def _dump_body(b: B.Block) -> tuple[str, dict[str, Any]]:
+    if isinstance(b, B.Command):
+        body: dict[str, Any] = {"device": b.device, "verb": b.verb}
+        if b.params:
+            body["params"] = dict(b.params)
+        return "command", body
+    if isinstance(b, B.Measure):
+        body = {"device": b.device, "verb": b.verb, "into": b.into}
+        if b.params:
+            body["params"] = dict(b.params)
+        return "measure", body
+    if isinstance(b, B.OperatorInput):
+        body = {"name": b.name, "type": b.type}
+        for key in ("prompt", "min", "max", "choices"):
+            value = getattr(b, key)
+            if value is not None:
+                body[key] = value
+        return "operator_input", body
+    if isinstance(b, B.Wait):
+        return "wait", {"duration": b.duration}
+    if isinstance(b, B.Serial):
+        return "serial", {"children": [block_to_dict(c) for c in b.children]}
+    if isinstance(b, B.Parallel):
+        return "parallel", {"children": [block_to_dict(c) for c in b.children]}
+    if isinstance(b, B.Loop):
+        body = {"body": [block_to_dict(c) for c in b.body]}
+        if b.count is not None:
+            body["count"] = b.count
+        if b.pace is not None:
+            body["pace"] = b.pace
+        if b.until is not None:
+            body["until"] = b.until
+            body["check"] = b.check
+        return "loop", body
+    if isinstance(b, B.Branch):
+        body = {"if": b.if_, "then": [block_to_dict(c) for c in b.then]}
+        if b.else_ is not None:
+            body["else"] = [block_to_dict(c) for c in b.else_]
+        return "branch", body
+    if isinstance(b, B.GroupRef):
+        return "group_ref", {"name": b.name}
+    raise WorkflowLoadError(f"cannot serialize {type(b).__name__}")
+
+
+def block_to_dict(b: B.Block) -> dict[str, Any]:
+    key, body = _dump_body(b)
+    out: dict[str, Any] = {key: body}
+    if b.label is not None:
+        out["label"] = b.label
+    if b.gap_after is not None:
+        out["gap_after"] = b.gap_after
+    if b.start_offset is not None:
+        out["start_offset"] = b.start_offset
+    return out
