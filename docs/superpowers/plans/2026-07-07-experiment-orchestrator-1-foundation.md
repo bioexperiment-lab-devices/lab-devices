@@ -195,7 +195,6 @@ class Trait:
 _REGISTRY: dict[tuple[str, str], Trait] = {
     # pump
     ("pump", "dispense"): Trait("job", "none"),
-    ("pump", "start_calibration"): Trait("job", "none"),
     ("pump", "rotate"): Trait("immediate", "mode", Teardown("stop")),
     ("pump", "stop"): Trait("immediate", "none"),
     ("pump", "set_calibration"): Trait("immediate", "none"),
