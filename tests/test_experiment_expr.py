@@ -106,6 +106,30 @@ def test_unary_minus():
     assert parse_expression("2 * -3") == BinaryOp("*", Const(2), UnaryOp("-", Const(3)))
 
 
+def test_sane_nesting_depth_still_parses():
+    assert parse_expression("(" * 10 + "1" + ")" * 10) == Const(1)
+
+
+def test_deeply_nested_parens_raise():
+    with pytest.raises(ExpressionError, match="too deeply nested"):
+        parse_expression("(" * 300 + "1" + ")" * 300)
+
+
+def test_long_unary_minus_chain_raises():
+    with pytest.raises(ExpressionError, match="too deeply nested"):
+        parse_expression("-" * 2000 + "1")
+
+
+def test_long_not_chain_raises():
+    with pytest.raises(ExpressionError, match="too deeply nested"):
+        parse_expression("not " * 1500 + "true")
+
+
+def test_non_finite_float_literal_raises():
+    with pytest.raises(ExpressionError, match="not finite"):
+        parse_expression("1" + "0" * 400 + ".0")
+
+
 def test_stat_call_default_window():
     assert parse_expression("count(OD)") == StatCall("count", "OD", AllWindow())
 

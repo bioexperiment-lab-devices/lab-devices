@@ -37,6 +37,40 @@ def test_division_by_zero_raises():
         ev("1 / (2 - 2)")
 
 
+def test_huge_int_arithmetic_raises_overflow():
+    with pytest.raises(EvaluationError, match="overflow"):
+        ev("9" * 400 + " / 3")
+    with pytest.raises(EvaluationError, match="overflow"):
+        ev("9" * 400 + " + 1.5")
+
+
+def test_finite_literals_overflowing_to_inf_raise():
+    # Both literals are finite floats; the product overflows float range.
+    with pytest.raises(EvaluationError, match="overflow"):
+        ev("1" + "0" * 308 + ".0 * 10")
+
+
+def test_non_finite_binding_raises_instead_of_comparing():
+    nan_state = RunState()
+    nan_state.bind("x", float("nan"))
+    with pytest.raises(EvaluationError, match="non-finite"):
+        ev("x < 1", nan_state)
+
+    inf_state = RunState()
+    inf_state.bind("x", float("inf"))
+    with pytest.raises(EvaluationError, match="non-finite"):
+        ev("x < 1", inf_state)
+
+
+def test_stat_over_stream_with_inf_raises():
+    state = RunState()
+    state.record("OD", 0.0, float("inf"))
+    with pytest.raises(EvaluationError, match="non-finite"):
+        ev("mean(OD)", state)
+    with pytest.raises(EvaluationError, match="non-finite"):
+        ev("last(OD)", state)
+
+
 def test_comparisons():
     assert ev("1 < 2") is True
     assert ev("2 <= 2") is True

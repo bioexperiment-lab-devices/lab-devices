@@ -11,6 +11,13 @@ def test_bad_param_expression_fails_at_load():
                                      "params": {"volume_ml": "2.0 * ("}}})
 
 
+def test_deeply_nested_param_expression_fails_at_load():
+    # ExpressionError is a WorkflowLoadError subclass; the load path only promises the base.
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"command": {"device": "pump_1", "verb": "dispense",
+                                     "params": {"v": "(" * 300 + "1" + ")" * 300}}})
+
+
 def test_bad_measure_param_fails_at_load():
     with pytest.raises(ExpressionError):
         block_from_dict({"measure": {"device": "densitometer_1", "verb": "measure",

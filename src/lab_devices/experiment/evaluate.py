@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from bisect import bisect_left
 from collections.abc import Sequence
 
@@ -60,6 +61,8 @@ def _binding(ref: BindingRef, state: RunState) -> Value:
 def _number(value: Value, ctx: str) -> int | float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise EvaluationError(f"{ctx} requires a number, got {value!r}")
+    if isinstance(value, float) and not math.isfinite(value):
+        raise EvaluationError(f"{ctx} got a non-finite number {value!r}")
     return value
 
 
@@ -98,15 +101,22 @@ def _binary(expr: BinaryOp, state: RunState, now: float) -> Value:
 
 
 def _arith(op: str, left: int | float, right: int | float) -> int | float:
-    if op == "+":
-        return left + right
-    if op == "-":
-        return left - right
-    if op == "*":
-        return left * right
-    if right == 0:
-        raise EvaluationError("division by zero")
-    return left / right
+    try:
+        if op == "+":
+            result = left + right
+        elif op == "-":
+            result = left - right
+        elif op == "*":
+            result = left * right
+        else:
+            if right == 0:
+                raise EvaluationError("division by zero")
+            result = left / right
+    except OverflowError as exc:
+        raise EvaluationError(f"operator {op!r}: arithmetic overflow") from exc
+    if isinstance(result, float) and not math.isfinite(result):
+        raise EvaluationError(f"operator {op!r}: arithmetic overflow")
+    return result
 
 
 def _compare(op: str, left: int | float, right: int | float) -> bool:
@@ -126,12 +136,19 @@ def _stat(call: StatCall, state: RunState, now: float) -> Value:
     if not values:
         raise EvaluationError(f"{call.fn}({call.stream}): empty stream window")
     if call.fn == "last":
-        return values[-1]
-    if call.fn == "mean":
-        return sum(values) / len(values)
-    if call.fn == "min":
-        return min(values)
-    return max(values)
+        result = values[-1]
+    elif call.fn == "mean":
+        try:
+            result = sum(values) / len(values)
+        except OverflowError as exc:
+            raise EvaluationError(f"mean({call.stream}): arithmetic overflow") from exc
+    elif call.fn == "min":
+        result = min(values)
+    else:
+        result = max(values)
+    if not math.isfinite(result):
+        raise EvaluationError(f"{call.fn}({call.stream}): non-finite result")
+    return result
 
 
 def _window_values(call: StatCall, state: RunState, now: float) -> list[float]:

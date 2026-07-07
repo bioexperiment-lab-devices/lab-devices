@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 
@@ -9,6 +10,7 @@ from lab_devices.experiment.durations import DURATION_PATTERN, parse_duration
 from lab_devices.experiment.errors import ExpressionError
 
 STAT_FNS = frozenset({"last", "mean", "min", "max", "count"})
+_MAX_NESTING = 64
 
 
 @dataclass(frozen=True)
@@ -101,6 +103,7 @@ class _Parser:
         self._text = text
         self._tokens = tokenize(text)
         self._pos = 0
+        self._depth = 0
 
     def parse(self) -> Expr:
         expr = self._or_expr()
@@ -139,6 +142,14 @@ class _Parser:
             return True
         return False
 
+    def _bump_depth(self, tok: Token) -> None:
+        """Guard the recursive productions (parens, unary '-', 'not') against
+        pathologically nested input; a plain recursion-depth counter is used instead
+        of catching RecursionError, since which frame raises it is unreliable."""
+        self._depth += 1
+        if self._depth > _MAX_NESTING:
+            raise self._fail(tok, f"expression too deeply nested (max {_MAX_NESTING})")
+
     def _or_expr(self) -> Expr:
         expr = self._and_expr()
         while self._match_name("or"):
@@ -152,8 +163,13 @@ class _Parser:
         return expr
 
     def _not_expr(self) -> Expr:
+        tok = self._peek()
         if self._match_name("not"):
-            return UnaryOp("not", self._not_expr())
+            self._bump_depth(tok)
+            try:
+                return UnaryOp("not", self._not_expr())
+            finally:
+                self._depth -= 1
         return self._comparison()
 
     def _comparison(self) -> Expr:
@@ -180,14 +196,24 @@ class _Parser:
         return expr
 
     def _unary(self) -> Expr:
+        tok = self._peek()
         if self._match_op("-") is not None:
-            return UnaryOp("-", self._unary())
+            self._bump_depth(tok)
+            try:
+                return UnaryOp("-", self._unary())
+            finally:
+                self._depth -= 1
         return self._atom()
 
     def _atom(self) -> Expr:
         tok = self._advance()
         if tok.kind == "NUMBER":
-            return Const(float(tok.text) if "." in tok.text else int(tok.text))
+            if "." not in tok.text:
+                return Const(int(tok.text))
+            value = float(tok.text)
+            if not math.isfinite(value):
+                raise self._fail(tok, "numeric literal is not finite")
+            return Const(value)
         if tok.kind == "DURATION":
             raise self._fail(tok, "duration literals are only valid as a stat window")
         if tok.kind == "NAME":
@@ -202,7 +228,11 @@ class _Parser:
                 return self._stat_call(tok)
             return BindingRef(tok.text)
         if tok.kind == "OP" and tok.text == "(":
-            expr = self._or_expr()
+            self._bump_depth(tok)
+            try:
+                expr = self._or_expr()
+            finally:
+                self._depth -= 1
             self._expect_op(")")
             return expr
         raise self._fail(tok, "expected a literal, name, stat call, or '('")
@@ -211,7 +241,7 @@ class _Parser:
         if fn_tok.text not in STAT_FNS:
             raise self._fail(
                 fn_tok,
-                f"unknown function {fn_tok.text!r}; expected one of count, last, max, mean, min",
+                f"unknown function {fn_tok.text!r}; expected one of {', '.join(sorted(STAT_FNS))}",
             )
         self._expect_op("(")
         stream_tok = self._advance()
