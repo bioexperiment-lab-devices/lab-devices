@@ -15,7 +15,7 @@ from lab_devices.experiment.errors import (
     ValidationError,
 )
 from lab_devices.experiment.expr import parse_expression
-from lab_devices.experiment.registry import ParamSpec, lookup
+from lab_devices.experiment.registry import ParamSpec, lookup, mode_action
 from lab_devices.experiment.workflow import Workflow
 
 
@@ -319,14 +319,21 @@ class _PathState:
 
     bindings: set[str] = field(default_factory=set)  # definitely written by operator_input
     streams: set[str] = field(default_factory=set)  # definitely written by a measure
+    modes: dict[tuple[str, str], str] = field(default_factory=dict)
+    # modes: (device_id, mode_verb) -> "open" | "maybe"; absent = closed
 
     def copy(self) -> _PathState:
-        return _PathState(set(self.bindings), set(self.streams))
+        return _PathState(set(self.bindings), set(self.streams), dict(self.modes))
 
 
 def _merge(a: _PathState, b: _PathState) -> _PathState:
-    """Join at a control-flow merge: definitely-written = written on both sides."""
-    return _PathState(a.bindings & b.bindings, a.streams & b.streams)
+    """Join at a control-flow merge: definitely-written = written on both sides;
+    a mode is open only if open on both, else possibly open (may-open tracking)."""
+    modes: dict[tuple[str, str], str] = {}
+    for key in a.modes.keys() | b.modes.keys():
+        sa, sb = a.modes.get(key), b.modes.get(key)
+        modes[key] = "open" if sa == "open" and sb == "open" else "maybe"
+    return _PathState(a.bindings & b.bindings, a.streams & b.streams, modes)
 
 
 @dataclass
@@ -372,6 +379,23 @@ def _visit_action(b: B.Command | B.Measure, path: str, state: _PathState, c: _Ct
         spec = specs.get(name)
         if spec is not None and spec.kind != "string":
             _expr_reads(value, f"{path} param {name!r}", state, c)
+    action = mode_action(b.device, b.verb, b.params)
+    if action is not None and action.kind == "close":
+        # A matching close is always legal: closes if open, no-ops if not (design §12).
+        state.modes.pop((b.device, action.mode_verb), None)
+    else:
+        for (device, mode_verb), status in sorted(state.modes.items()):
+            if device != b.device:
+                continue
+            if lookup(device, mode_verb).channels & trait.channels:
+                word = "open" if status == "open" else "possibly open"
+                c.emit(
+                    "mode", path,
+                    f"{b.verb!r} on {b.device!r} falls inside the {word} interval of "
+                    f"mode {mode_verb!r}",
+                )
+        if action is not None:
+            state.modes[(b.device, action.mode_verb)] = "open"
     if isinstance(b, B.Measure) and isinstance(b.into, str):
         state.streams.add(b.into)
 
@@ -409,7 +433,45 @@ def _visit_loop(b: B.Loop, path: str, state: _PathState, c: _Ctx) -> _PathState:
     return result
 
 
+def _footprint(root: B.Block, w: Workflow) -> set[tuple[str, str]]:
+    """Every (device, channel) a subtree can command on any reachable path (groups
+    inlined; the path phase only runs when the group graph is acyclic)."""
+    found: set[tuple[str, str]] = set()
+    stack: list[B.Block] = [root]
+    while stack:
+        b = stack.pop()
+        if isinstance(b, (B.Command, B.Measure)):
+            try:
+                trait = lookup(b.device, b.verb)
+            except UnknownVerbError:
+                continue
+            found.update((b.device, ch) for ch in trait.channels)
+        elif isinstance(b, (B.Serial, B.Parallel)):
+            stack.extend(b.children)
+        elif isinstance(b, B.Loop):
+            stack.extend(b.body)
+        elif isinstance(b, B.Branch):
+            stack.extend(b.then)
+            if b.else_ is not None:
+                stack.extend(b.else_)
+        elif isinstance(b, B.GroupRef):
+            group = w.groups.get(b.name)
+            if group is not None:
+                stack.extend(group.body)
+    return found
+
+
 def _visit_parallel(b: B.Parallel, path: str, state: _PathState, c: _Ctx) -> _PathState:
+    footprints = [_footprint(child, c.workflow) for child in b.children]
+    for i in range(len(b.children)):
+        for j in range(i + 1, len(b.children)):
+            for device, channel in sorted(footprints[i] & footprints[j]):
+                c.emit(
+                    "affinity", path,
+                    f"parallel children [{i}] and [{j}] both command device {device!r} "
+                    f"channel {channel!r}",
+                )
+    entry_modes = dict(state.modes)
     exits = []
     for i, child in enumerate(b.children):
         # Each concurrent lane sees only the entry state plus its own writes:
@@ -418,6 +480,15 @@ def _visit_parallel(b: B.Parallel, path: str, state: _PathState, c: _Ctx) -> _Pa
     for e in exits:  # the container completes when every lane does: union of writes
         state.bindings |= e.bindings
         state.streams |= e.streams
+        # Footprint disjointness means each lane owns the modes it touches:
+        # apply every lane's delta against the shared entry.
+        for key in e.modes.keys() - entry_modes.keys():
+            state.modes[key] = e.modes[key]
+        for key in entry_modes.keys() - e.modes.keys():
+            state.modes.pop(key, None)
+        for key in entry_modes.keys() & e.modes.keys():
+            if e.modes[key] != entry_modes[key]:
+                state.modes[key] = e.modes[key]
     return state
 
 
