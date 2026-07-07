@@ -24,10 +24,17 @@ def _children(raw: Any, ctx: str) -> list[B.Block]:
     return [block_from_dict(c) for c in raw]
 
 
+def _params(body: Any, ctx: str) -> dict[str, Any]:
+    raw = body.get("params", {})
+    if not isinstance(raw, dict):
+        raise WorkflowLoadError(f"{ctx} params must be an object")
+    return dict(raw)
+
+
 def _command(body: Any, timing: dict[str, Any]) -> B.Block:
     device, verb = _req(body, "device", "command"), _req(body, "verb", "command")
     lookup(device, verb)
-    return B.Command(device=device, verb=verb, params=dict(body.get("params", {})), **timing)
+    return B.Command(device=device, verb=verb, params=_params(body, "command"), **timing)
 
 
 def _measure(body: Any, timing: dict[str, Any]) -> B.Block:
@@ -36,7 +43,7 @@ def _measure(body: Any, timing: dict[str, Any]) -> B.Block:
     lookup(device, verb)
     return B.Measure(
         device=device, verb=verb, into=_req(body, "into", "measure"),
-        params=dict(body.get("params", {})), **timing,
+        params=_params(body, "measure"), **timing,
     )
 
 
@@ -54,7 +61,8 @@ def _wait(body: Any, timing: dict[str, Any]) -> B.Block:
 
 
 def _serial(body: Any, timing: dict[str, Any]) -> B.Block:
-    return B.Serial(children=_children(_req(body, "children", "serial"), "serial.children"), **timing)
+    children = _children(_req(body, "children", "serial"), "serial.children")
+    return B.Serial(children=children, **timing)
 
 
 def _parallel(body: Any, timing: dict[str, Any]) -> B.Block:
@@ -79,12 +87,10 @@ def _loop(body: Any, timing: dict[str, Any]) -> B.Block:
 
 
 def _branch(body: Any, timing: dict[str, Any]) -> B.Block:
-    return B.Branch(
-        if_=_req(body, "if", "branch"),
-        then=_children(_req(body, "then", "branch"), "branch.then"),
-        else_=_children(body["else"], "branch.else") if isinstance(body, dict) and "else" in body else None,
-        **timing,
-    )
+    if_ = _req(body, "if", "branch")
+    then = _children(_req(body, "then", "branch"), "branch.then")
+    else_ = _children(body["else"], "branch.else") if "else" in body else None
+    return B.Branch(if_=if_, then=then, else_=else_, **timing)
 
 
 def _group_ref(body: Any, timing: dict[str, Any]) -> B.Block:

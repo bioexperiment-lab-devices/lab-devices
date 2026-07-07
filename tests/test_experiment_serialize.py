@@ -54,3 +54,29 @@ def test_loop_requires_exactly_one_of_count_or_until():
         block_from_dict({"loop": {"body": []}})
     with pytest.raises(WorkflowLoadError):
         block_from_dict({"loop": {"count": 3, "until": "last(OD) > 1", "body": []}})
+
+
+def test_malformed_params_rejected():
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"command": {"device": "pump_1", "verb": "stop", "params": None}})
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"measure": {"device": "densitometer_1", "verb": "measure",
+                                     "into": "OD", "params": "x"}})
+
+
+def test_missing_required_fields_rejected():
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"command": {"verb": "stop"}})  # missing device
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"measure": {"device": "densitometer_1", "verb": "measure"}})  # missing into
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"wait": {}})  # missing duration
+
+
+def test_non_dict_block_and_bad_children_rejected():
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict("not a dict")
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"serial": {"children": "nope"}})
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"loop": {"until": "last(OD) > 1", "check": "sideways", "body": []}})
