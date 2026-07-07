@@ -130,3 +130,18 @@ def test_stat_over_undeclared_stream_in_condition():
 def test_stat_in_param_over_undeclared_stream():
     d = diags(wf([cmd("pump_1", "dispense", {"volume_ml": "mean(ghost)"})]))
     assert any(x.category == "declaration" and "'ghost'" in x.message for x in d)
+
+
+def test_operator_input_unhashable_type_degrades():
+    d = diags(wf([{"operator_input": {"name": "x", "type": ["float"]}}]))
+    assert any(x.category == "block" and "float, int, enum, bool" in x.message for x in d)
+
+
+def test_enum_choices_non_list_degrades():
+    d = diags(wf([{"operator_input": {"name": "x", "type": "enum", "choices": 5}}]))
+    assert any(x.category == "block" and "choices" in x.message for x in d)
+
+
+def test_enum_choices_string_rejected():
+    d = diags(wf([{"operator_input": {"name": "x", "type": "enum", "choices": "ab"}}]))
+    assert any(x.category == "block" and "choices" in x.message for x in d)

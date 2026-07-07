@@ -46,9 +46,15 @@ def _check_groups(w: Workflow, out: list[Diagnostic]) -> bool:
     """Unknown group refs and self/mutual recursion (design §12); True iff expandable."""
     ok = True
     for path, b in _iter_all_blocks(w):
-        if isinstance(b, B.GroupRef) and b.name not in w.groups:
-            out.append(Diagnostic("group", path, f"unknown group {b.name!r}"))
-            ok = False
+        if isinstance(b, B.GroupRef):
+            if not isinstance(b.name, str):
+                out.append(Diagnostic(
+                    "group", path, f"group_ref name must be a string, got {b.name!r}"
+                ))
+                ok = False
+            elif b.name not in w.groups:
+                out.append(Diagnostic("group", path, f"unknown group {b.name!r}"))
+                ok = False
     colors: dict[str, int] = {}  # 0 = on the current DFS path, 1 = fully explored
 
     def visit(name: str, stack: tuple[str, ...]) -> None:
@@ -86,7 +92,7 @@ def _collect_binding_types(w: Workflow) -> dict[str, BindingType]:
     for _, b in _iter_all_blocks(w):
         if not isinstance(b, B.OperatorInput) or not isinstance(b.name, str):
             continue
-        t = _INPUT_TYPES.get(b.type, "unknown")
+        t = _INPUT_TYPES.get(b.type, "unknown") if isinstance(b.type, str) else "unknown"
         if b.name in types:
             if types[b.name] != t:
                 types[b.name] = "unknown"
@@ -234,7 +240,7 @@ def _check_operator_input(b: B.OperatorInput, path: str, out: list[Diagnostic]) 
         out.append(Diagnostic(
             "block", path, f"operator_input name {b.name!r} is not a usable binding name"
         ))
-    if b.type not in _INPUT_TYPES:
+    if not isinstance(b.type, str) or b.type not in _INPUT_TYPES:
         out.append(Diagnostic(
             "block", path,
             f"operator_input type must be one of float, int, enum, bool; got {b.type!r}",
@@ -242,7 +248,9 @@ def _check_operator_input(b: B.OperatorInput, path: str, out: list[Diagnostic]) 
         return
     numeric = b.type in ("float", "int")
     if b.type == "enum":
-        if not b.choices or not all(isinstance(c, str) for c in b.choices):
+        if not isinstance(b.choices, list) or not b.choices or not all(
+            isinstance(c, str) for c in b.choices
+        ):
             out.append(Diagnostic(
                 "block", path, "enum operator_input requires a non-empty list of string choices"
             ))

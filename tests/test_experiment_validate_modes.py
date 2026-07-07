@@ -163,3 +163,26 @@ def test_close_inside_parallel_child():
 def test_mode_opened_in_child_closed_after_parallel():
     blocks = [{"parallel": {"children": [ROTATE, MEASURE_OD]}}, STOP, DISPENSE]
     assert validate(wf(blocks, streams=["OD"])) is None
+
+
+def test_loop_body_branch_reopen_on_back_edge():
+    # P4: re-open through a nested branch inside a loop body. Iteration 1 leaves
+    # rotate maybe-open; iteration 2's rotate re-opens inside that interval.
+    blocks = [{"loop": {"count": 3, "body": [
+        {"branch": {"if": "1 < 2", "then": [
+            {"serial": {"children": [ROTATE]}},
+        ]}},
+    ]}}]
+    d = diags(wf(blocks))
+    assert any(x.category == "mode" for x in d)
+
+
+def test_group_opening_mode_referenced_twice_serially():
+    # P6: a group opens a mode and never closes it; referencing the group a
+    # second time serially re-opens inside the still-open interval.
+    groups = {"stir": {"body": [ROTATE]}}
+    blocks = [{"group_ref": {"name": "stir"}}, {"group_ref": {"name": "stir"}}]
+    d = diags(wf(blocks, groups=groups))
+    mode_diags = [x for x in d if x.category == "mode"]
+    assert mode_diags
+    assert any("->" in x.path for x in mode_diags)

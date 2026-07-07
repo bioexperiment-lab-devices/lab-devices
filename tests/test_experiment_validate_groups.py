@@ -74,3 +74,8 @@ def test_branch_else_paths():
     }}]
     d = diags(wf(blocks))
     assert any(x.path == "blocks[0].else[0]" for x in d)
+
+
+def test_group_ref_non_string_name_degrades():
+    d = diags(wf([{"group_ref": {"name": ["a"]}}]))
+    assert any(x.category == "group" and "string" in x.message for x in d)

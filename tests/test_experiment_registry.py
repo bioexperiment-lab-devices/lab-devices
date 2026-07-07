@@ -148,3 +148,16 @@ def test_mode_teardown_channel_invariant():
         assert trait.teardown is not None
         teardown_trait = _REGISTRY[(dtype, trait.teardown.verb)]
         assert teardown_trait.channels == trait.channels
+
+
+def test_mode_channels_pairwise_disjoint_per_device_type():
+    """Second half of the close-skips-conflict-scan invariant: no two modes of one
+    device type may share a channel (else a close could hide inside another mode)."""
+    by_type: dict = {}
+    for (dtype, _verb), trait in _REGISTRY.items():
+        if trait.state_effect == "mode":
+            by_type.setdefault(dtype, []).append(trait.channels)
+    for dtype, channel_sets in by_type.items():
+        for i in range(len(channel_sets)):
+            for j in range(i + 1, len(channel_sets)):
+                assert not (channel_sets[i] & channel_sets[j]), dtype
