@@ -1,11 +1,11 @@
-"""Expression sublanguage: typed AST and tokenizer. See design §6 and §15."""
+"""Expression sublanguage: typed AST, tokenizer, parser. See design §6 and §15."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
-from lab_devices.experiment.durations import DURATION_PATTERN
+from lab_devices.experiment.durations import DURATION_PATTERN, parse_duration
 from lab_devices.experiment.errors import ExpressionError
 
 STAT_FNS = frozenset({"last", "mean", "min", "max", "count"})
@@ -90,3 +90,159 @@ def tokenize(text: str) -> list[Token]:
         pos = match.end()
     tokens.append(Token("END", "", len(text)))
     return tokens
+
+
+_KEYWORDS = frozenset({"and", "or", "not", "true", "false"})
+_COMPARE_OPS = frozenset({"<", "<=", ">", ">=", "==", "!="})
+
+
+class _Parser:
+    def __init__(self, text: str) -> None:
+        self._text = text
+        self._tokens = tokenize(text)
+        self._pos = 0
+
+    def parse(self) -> Expr:
+        expr = self._or_expr()
+        tok = self._peek()
+        if tok.kind != "END":
+            raise self._fail(tok, "unexpected trailing input")
+        return expr
+
+    def _peek(self) -> Token:
+        return self._tokens[self._pos]
+
+    def _advance(self) -> Token:
+        tok = self._tokens[self._pos]
+        self._pos += 1
+        return tok
+
+    def _fail(self, tok: Token, msg: str) -> ExpressionError:
+        where = f"at position {tok.pos}" if tok.kind != "END" else "at end of input"
+        shown = f" (got {tok.text!r})" if tok.text else ""
+        return ExpressionError(f"{msg}{shown} {where} in {self._text!r}")
+
+    def _match_op(self, *ops: str) -> Token | None:
+        tok = self._peek()
+        if tok.kind == "OP" and tok.text in ops:
+            return self._advance()
+        return None
+
+    def _expect_op(self, op: str) -> None:
+        if self._match_op(op) is None:
+            raise self._fail(self._peek(), f"expected {op!r}")
+
+    def _match_name(self, name: str) -> bool:
+        tok = self._peek()
+        if tok.kind == "NAME" and tok.text == name:
+            self._advance()
+            return True
+        return False
+
+    def _or_expr(self) -> Expr:
+        expr = self._and_expr()
+        while self._match_name("or"):
+            expr = BinaryOp("or", expr, self._and_expr())
+        return expr
+
+    def _and_expr(self) -> Expr:
+        expr = self._not_expr()
+        while self._match_name("and"):
+            expr = BinaryOp("and", expr, self._not_expr())
+        return expr
+
+    def _not_expr(self) -> Expr:
+        if self._match_name("not"):
+            return UnaryOp("not", self._not_expr())
+        return self._comparison()
+
+    def _comparison(self) -> Expr:
+        expr = self._additive()
+        op_tok = self._match_op(*_COMPARE_OPS)
+        if op_tok is None:
+            return expr
+        right = self._additive()
+        trailing = self._peek()
+        if trailing.kind == "OP" and trailing.text in _COMPARE_OPS:
+            raise self._fail(trailing, "comparisons cannot be chained")
+        return BinaryOp(op_tok.text, expr, right)
+
+    def _additive(self) -> Expr:
+        expr = self._multiplicative()
+        while (tok := self._match_op("+", "-")) is not None:
+            expr = BinaryOp(tok.text, expr, self._multiplicative())
+        return expr
+
+    def _multiplicative(self) -> Expr:
+        expr = self._unary()
+        while (tok := self._match_op("*", "/")) is not None:
+            expr = BinaryOp(tok.text, expr, self._unary())
+        return expr
+
+    def _unary(self) -> Expr:
+        if self._match_op("-") is not None:
+            return UnaryOp("-", self._unary())
+        return self._atom()
+
+    def _atom(self) -> Expr:
+        tok = self._advance()
+        if tok.kind == "NUMBER":
+            return Const(float(tok.text) if "." in tok.text else int(tok.text))
+        if tok.kind == "DURATION":
+            raise self._fail(tok, "duration literals are only valid as a stat window")
+        if tok.kind == "NAME":
+            if tok.text == "true":
+                return Const(True)
+            if tok.text == "false":
+                return Const(False)
+            if tok.text in _KEYWORDS:
+                raise self._fail(tok, f"unexpected keyword {tok.text!r}")
+            nxt = self._peek()
+            if nxt.kind == "OP" and nxt.text == "(":
+                return self._stat_call(tok)
+            return BindingRef(tok.text)
+        if tok.kind == "OP" and tok.text == "(":
+            expr = self._or_expr()
+            self._expect_op(")")
+            return expr
+        raise self._fail(tok, "expected a literal, name, stat call, or '('")
+
+    def _stat_call(self, fn_tok: Token) -> Expr:
+        if fn_tok.text not in STAT_FNS:
+            raise self._fail(
+                fn_tok,
+                f"unknown function {fn_tok.text!r}; expected one of count, last, max, mean, min",
+            )
+        self._expect_op("(")
+        stream_tok = self._advance()
+        if stream_tok.kind != "NAME" or stream_tok.text in _KEYWORDS:
+            raise self._fail(stream_tok, "expected a stream name")
+        window: Window = AllWindow()
+        if self._match_op(",") is not None:
+            window = self._window()
+        self._expect_op(")")
+        return StatCall(fn=fn_tok.text, stream=stream_tok.text, window=window)
+
+    def _window(self) -> Window:
+        key = self._advance()
+        if key.kind != "NAME" or key.text != "last":
+            raise self._fail(key, "window must be last=<N> or last=<duration>")
+        self._expect_op("=")
+        val = self._advance()
+        if val.kind == "NUMBER":
+            if "." in val.text:
+                raise self._fail(val, "window sample count must be an integer")
+            n = int(val.text)
+            if n <= 0:
+                raise self._fail(val, "window sample count must be positive")
+            return SampleWindow(n)
+        if val.kind == "DURATION":
+            return DurationWindow(parse_duration(val.text))
+        raise self._fail(val, "window must be last=<N> or last=<duration>")
+
+
+def parse_expression(text: str) -> Expr:
+    """Parse an infix expression string into a typed AST; raises ExpressionError."""
+    if not text.strip():
+        raise ExpressionError("empty expression")
+    return _Parser(text).parse()
