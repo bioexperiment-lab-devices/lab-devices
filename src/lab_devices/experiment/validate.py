@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from lab_devices.experiment import blocks as B
 from lab_devices.experiment.analyze import BindingType, ExprType, infer_type, references
@@ -16,6 +17,7 @@ from lab_devices.experiment.errors import (
 )
 from lab_devices.experiment.expr import parse_expression
 from lab_devices.experiment.registry import ParamSpec, lookup, mode_action
+from lab_devices.experiment.serialize import load_workflow
 from lab_devices.experiment.workflow import Workflow
 
 
@@ -542,3 +544,10 @@ def validate(workflow: Workflow) -> None:
         _analyze_paths(workflow, out)
     if out:
         raise ValidationError(out)
+
+
+def load_and_validate(path: str | Path) -> Workflow:
+    """Load a workflow document and statically validate it (design §11 phases 1-2)."""
+    workflow = load_workflow(path)
+    validate(workflow)
+    return workflow

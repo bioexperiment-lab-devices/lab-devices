@@ -137,3 +137,14 @@ def test_mode_action_conservative_cases():
     ) == ModeAction("open", "set_thermostat")
     # A stop with unexpected params does not match the bare teardown: not a close.
     assert mode_action("pump_1", "stop", {"force": True}) is None
+
+
+def test_mode_teardown_channel_invariant():
+    """The validator's close-skips-conflict-scan is sound only under this invariant:
+    every mode's teardown verb occupies exactly the mode's own channels."""
+    for (dtype, _verb), trait in _REGISTRY.items():
+        if trait.state_effect != "mode":
+            continue
+        assert trait.teardown is not None
+        teardown_trait = _REGISTRY[(dtype, trait.teardown.verb)]
+        assert teardown_trait.channels == trait.channels
