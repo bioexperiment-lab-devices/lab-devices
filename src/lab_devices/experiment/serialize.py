@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from lab_devices.experiment import blocks as B
-from lab_devices.experiment.errors import WorkflowLoadError
+from lab_devices.experiment.durations import parse_duration
+from lab_devices.experiment.errors import ExpressionError, WorkflowLoadError
+from lab_devices.experiment.expr import parse_expression
 from lab_devices.experiment.registry import lookup
 from lab_devices.experiment.workflow import Group, Metadata, Persistence, StreamDecl, Workflow
 
@@ -46,11 +48,37 @@ def _str(value: Any, ctx: str) -> str:
     return value
 
 
+def _checked_expr(value: Any, ctx: str) -> str:
+    text = _str(value, ctx)
+    try:
+        parse_expression(text)
+    except ExpressionError as exc:
+        raise ExpressionError(f"{ctx}: {exc}") from exc
+    return text
+
+
+def _checked_duration(value: Any, ctx: str) -> str:
+    text = _str(value, ctx)
+    try:
+        parse_duration(text)
+    except ValueError as exc:
+        raise WorkflowLoadError(f"{ctx}: {exc}") from exc
+    return text
+
+
+def _checked_params(body: Any, ctx: str) -> dict[str, Any]:
+    params = _params(body, ctx)
+    for name, value in params.items():
+        if isinstance(value, str):
+            _checked_expr(value, f"{ctx} param {name!r}")
+    return params
+
+
 def _command(body: Any, timing: dict[str, Any]) -> B.Block:
     device = _str(_req(body, "device", "command"), "command device")
     verb = _req(body, "verb", "command")
     lookup(device, verb)
-    return B.Command(device=device, verb=verb, params=_params(body, "command"), **timing)
+    return B.Command(device=device, verb=verb, params=_checked_params(body, "command"), **timing)
 
 
 def _measure(body: Any, timing: dict[str, Any]) -> B.Block:
@@ -59,7 +87,7 @@ def _measure(body: Any, timing: dict[str, Any]) -> B.Block:
     lookup(device, verb)
     return B.Measure(
         device=device, verb=verb, into=_req(body, "into", "measure"),
-        params=_params(body, "measure"), **timing,
+        params=_checked_params(body, "measure"), **timing,
     )
 
 
@@ -73,7 +101,8 @@ def _operator_input(body: Any, timing: dict[str, Any]) -> B.Block:
 
 
 def _wait(body: Any, timing: dict[str, Any]) -> B.Block:
-    return B.Wait(duration=_req(body, "duration", "wait"), **timing)
+    duration = _checked_duration(_req(body, "duration", "wait"), "wait duration")
+    return B.Wait(duration=duration, **timing)
 
 
 def _serial(body: Any, timing: dict[str, Any]) -> B.Block:
@@ -97,15 +126,19 @@ def _loop(body: Any, timing: dict[str, Any]) -> B.Block:
     check = body.get("check", "after")
     if check not in ("before", "after"):
         raise WorkflowLoadError(f"loop check must be 'before' or 'after', got {check!r}")
+    until = _checked_expr(body["until"], "loop until") if has_until else None
+    pace = body.get("pace")
+    if pace is not None:
+        pace = _checked_duration(pace, "loop pace")
     return B.Loop(
         body=_children(_req(body, "body", "loop"), "loop.body"),
-        count=body.get("count"), pace=body.get("pace"),
-        until=body.get("until"), check=check, **timing,
+        count=body.get("count"), pace=pace,
+        until=until, check=check, **timing,
     )
 
 
 def _branch(body: Any, timing: dict[str, Any]) -> B.Block:
-    if_ = _req(body, "if", "branch")
+    if_ = _checked_expr(_req(body, "if", "branch"), "branch if")
     then = _children(_req(body, "then", "branch"), "branch.then")
     else_ = _children(body["else"], "branch.else") if "else" in body else None
     return B.Branch(if_=if_, then=then, else_=else_, **timing)
@@ -132,6 +165,10 @@ def block_from_dict(d: Any) -> B.Block:
     if not isinstance(d, dict):
         raise WorkflowLoadError(f"block must be an object, got {type(d).__name__}")
     timing = {k: d[k] for k in _TIMING_KEYS if k in d}
+    if "gap_after" in timing:
+        timing["gap_after"] = _checked_duration(timing["gap_after"], "gap_after")
+    if "start_offset" in timing:
+        timing["start_offset"] = _checked_duration(timing["start_offset"], "start_offset")
     type_keys = [k for k in d if k not in _TIMING_KEYS]
     if len(type_keys) != 1:
         raise WorkflowLoadError(f"block must have exactly one type key, got {type_keys}")
