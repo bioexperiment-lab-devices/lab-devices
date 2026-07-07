@@ -205,3 +205,15 @@ def test_resolve_parses_and_evaluates_strings():
     volume = resolve("2.0 * (target_OD - mean(OD, last=100))", state, now=30.0)
     assert volume == pytest.approx(2.0 * (0.8 - 0.55))
     assert resolve("mean(OD, last=5min) >= target_OD", state, now=30.0) is False
+
+
+def test_non_finite_binding_rejected():
+    state = RunState()
+    state.bind("x", float("nan"))
+    with pytest.raises(EvaluationError, match="non-finite"):
+        ev("x == 1", state)
+    state.bind("y", float("inf"))
+    with pytest.raises(EvaluationError, match="non-finite"):
+        ev("y", state)
+    with pytest.raises(EvaluationError, match="non-finite"):
+        resolve("y", state, now=0.0)

@@ -55,6 +55,8 @@ def _binding(ref: BindingRef, state: RunState) -> Value:
         raise EvaluationError(
             f"binding {ref.name!r} holds a string; expressions evaluate numbers and booleans"
         )
+    if isinstance(bound, float) and not math.isfinite(bound):
+        raise EvaluationError(f"binding {ref.name!r} holds a non-finite value")
     return bound
 
 
