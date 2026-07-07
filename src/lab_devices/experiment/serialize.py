@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any, Callable
 
 from lab_devices.experiment import blocks as B
 from lab_devices.experiment.errors import WorkflowLoadError
 from lab_devices.experiment.registry import lookup
+from lab_devices.experiment.workflow import Group, Metadata, Persistence, StreamDecl, Workflow
 
 SCHEMA_VERSION = 1
 _TIMING_KEYS = ("label", "gap_after", "start_offset")
@@ -178,3 +181,67 @@ def block_to_dict(b: B.Block) -> dict[str, Any]:
     if b.start_offset is not None:
         out["start_offset"] = b.start_offset
     return out
+
+
+def workflow_from_dict(d: Any) -> Workflow:
+    if not isinstance(d, dict):
+        raise WorkflowLoadError("workflow must be an object")
+    version = d.get("schema_version")
+    if version != SCHEMA_VERSION:
+        raise WorkflowLoadError(
+            f"unsupported schema_version {version!r}; expected {SCHEMA_VERSION}"
+        )
+    md = d.get("metadata", {})
+    metadata = Metadata(name=md.get("name"), author=md.get("author"),
+                        description=md.get("description"))
+    pd = d.get("persistence", {})
+    persistence = Persistence(default=pd.get("default", "in_memory"),
+                              format=pd.get("format", "jsonl"))
+    streams = {
+        name: StreamDecl(units=s.get("units"), persistence=s.get("persistence"))
+        for name, s in d.get("streams", {}).items()
+    }
+    groups = {
+        name: Group(name=name, body=_children(g.get("body", []), f"groups.{name}.body"))
+        for name, g in d.get("groups", {}).items()
+    }
+    return Workflow(
+        schema_version=version,
+        blocks=_children(d.get("blocks", []), "blocks"),
+        metadata=metadata, persistence=persistence, streams=streams, groups=groups,
+    )
+
+
+def workflow_to_dict(w: Workflow) -> dict[str, Any]:
+    out: dict[str, Any] = {"schema_version": w.schema_version}
+    md = {
+        k: v for k, v in (("name", w.metadata.name), ("author", w.metadata.author),
+                          ("description", w.metadata.description)) if v is not None
+    }
+    if md:
+        out["metadata"] = md
+    out["persistence"] = {"default": w.persistence.default, "format": w.persistence.format}
+    if w.streams:
+        out["streams"] = {
+            name: {k: v for k, v in (("units", s.units), ("persistence", s.persistence))
+                   if v is not None}
+            for name, s in w.streams.items()
+        }
+    if w.groups:
+        out["groups"] = {
+            name: {"body": [block_to_dict(c) for c in g.body]} for name, g in w.groups.items()
+        }
+    out["blocks"] = [block_to_dict(c) for c in w.blocks]
+    return out
+
+
+def load_workflow(path: str | Path) -> Workflow:
+    try:
+        data = json.loads(Path(path).read_text())
+    except json.JSONDecodeError as exc:
+        raise WorkflowLoadError(f"invalid JSON: {exc}") from exc
+    return workflow_from_dict(data)
+
+
+def save_workflow(w: Workflow, path: str | Path) -> None:
+    Path(path).write_text(json.dumps(workflow_to_dict(w), indent=2) + "\n")
