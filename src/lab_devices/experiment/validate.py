@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Mapping
 
 from lab_devices.experiment import blocks as B
-from lab_devices.experiment.analyze import BindingType, ExprType, infer_type
+from lab_devices.experiment.analyze import BindingType, ExprType, infer_type, references
 from lab_devices.experiment.errors import (
     Diagnostic,
     ExpressionError,
@@ -120,8 +121,8 @@ def _check_param_value(
     binding_types: Mapping[str, BindingType],
     out: list[Diagnostic],
 ) -> None:
-    """Check one param value against its spec. The w parameter feeds the Task 6
-    stream-declaration check; it is deliberately unused until then."""
+    """Check one param value against its spec, including stream declarations
+    referenced by stat calls in expression values."""
     if spec.kind == "string":
         if not isinstance(value, str):
             out.append(Diagnostic("params", ctx, f"expected a string literal, got {value!r}"))
@@ -129,6 +130,7 @@ def _check_param_value(
     if isinstance(value, str):
         expected: ExprType = "boolean" if spec.kind == "bool" else "number"
         _check_expr_type(value, expected, ctx, binding_types, out)
+        _check_streams_declared(value, ctx, w, out)
         return
     if spec.kind == "bool":
         if not isinstance(value, bool):
@@ -167,6 +169,130 @@ def _check_action(
             ))
 
 
+_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+_RESERVED_NAMES = frozenset({"and", "or", "not", "true", "false"})
+
+
+def _check_streams_declared(text: str, ctx: str, w: Workflow, out: list[Diagnostic]) -> None:
+    try:
+        expr = parse_expression(text)
+    except ExpressionError:
+        return  # unparseable strings are already diagnosed by the type check
+    refs = references(expr)
+    for stream in sorted(refs.streams_windowed | refs.streams_counted):
+        if stream not in w.streams:
+            out.append(Diagnostic(
+                "declaration", ctx, f"stat references undeclared stream {stream!r}"
+            ))
+
+
+def _check_condition(
+    text: object,
+    ctx: str,
+    w: Workflow,
+    binding_types: Mapping[str, BindingType],
+    out: list[Diagnostic],
+) -> None:
+    if not isinstance(text, str):
+        out.append(Diagnostic(
+            "type", ctx, f"condition must be an expression string, got {text!r}"
+        ))
+        return
+    _check_expr_type(text, "boolean", ctx, binding_types, out)
+    _check_streams_declared(text, ctx, w, out)
+
+
+def _check_measure(b: B.Measure, path: str, w: Workflow, out: list[Diagnostic]) -> None:
+    try:
+        trait = lookup(b.device, b.verb)
+    except UnknownVerbError:
+        return  # already diagnosed by _check_action
+    if not trait.measurement:
+        out.append(Diagnostic(
+            "block", path, f"measure requires a measurement verb, got {b.verb!r}"
+        ))
+    if not isinstance(b.into, str):
+        out.append(Diagnostic(
+            "block", path, f"measure into must be a stream name, got {b.into!r}"
+        ))
+    elif b.into not in w.streams:
+        out.append(Diagnostic(
+            "declaration", path, f"measure writes undeclared stream {b.into!r}"
+        ))
+
+
+def _check_operator_input(b: B.OperatorInput, path: str, out: list[Diagnostic]) -> None:
+    usable = (
+        isinstance(b.name, str)
+        and _IDENT_RE.fullmatch(b.name) is not None
+        and b.name not in _RESERVED_NAMES
+    )
+    if not usable:
+        out.append(Diagnostic(
+            "block", path, f"operator_input name {b.name!r} is not a usable binding name"
+        ))
+    if b.type not in _INPUT_TYPES:
+        out.append(Diagnostic(
+            "block", path,
+            f"operator_input type must be one of float, int, enum, bool; got {b.type!r}",
+        ))
+        return
+    numeric = b.type in ("float", "int")
+    if b.type == "enum":
+        if not b.choices or not all(isinstance(c, str) for c in b.choices):
+            out.append(Diagnostic(
+                "block", path, "enum operator_input requires a non-empty list of string choices"
+            ))
+    elif b.choices is not None:
+        out.append(Diagnostic(
+            "block", path, f"choices are only valid for enum operator_input, not {b.type!r}"
+        ))
+    for attr in ("min", "max"):
+        value = getattr(b, attr)
+        if value is None:
+            continue
+        if not numeric:
+            out.append(Diagnostic(
+                "block", path, f"{attr} is only valid for float/int operator_input"
+            ))
+        elif isinstance(value, bool) or not isinstance(value, (int, float)):
+            out.append(Diagnostic("block", path, f"{attr} must be a number, got {value!r}"))
+    if (
+        isinstance(b.min, (int, float)) and not isinstance(b.min, bool)
+        and isinstance(b.max, (int, float)) and not isinstance(b.max, bool)
+        and b.min > b.max
+    ):
+        out.append(Diagnostic("block", path, f"min {b.min} exceeds max {b.max}"))
+
+
+def _check_loop(
+    b: B.Loop,
+    path: str,
+    w: Workflow,
+    binding_types: Mapping[str, BindingType],
+    out: list[Diagnostic],
+) -> None:
+    has_count = b.count is not None
+    has_until = b.until is not None
+    if has_count == has_until:
+        out.append(Diagnostic("block", path, "loop requires exactly one of count or until"))
+    if has_count:
+        if isinstance(b.count, bool) or not isinstance(b.count, int):
+            out.append(Diagnostic(
+                "block", path, f"loop count must be an integer, got {b.count!r}"
+            ))
+        elif b.count < 1:
+            out.append(Diagnostic("block", path, f"loop count must be >= 1, got {b.count}"))
+    if b.check not in ("before", "after"):
+        out.append(Diagnostic(
+            "block", path, f"loop check must be 'before' or 'after', got {b.check!r}"
+        ))
+    if has_until:
+        if b.pace is not None:
+            out.append(Diagnostic("block", path, "loop pace is only valid with count mode"))
+        _check_condition(b.until, f"{path} loop until", w, binding_types, out)
+
+
 def _check_block(
     block: B.Block,
     path: str,
@@ -176,6 +302,14 @@ def _check_block(
 ) -> None:
     if isinstance(block, (B.Command, B.Measure)):
         _check_action(block, path, w, binding_types, out)
+    if isinstance(block, B.Measure):
+        _check_measure(block, path, w, out)
+    elif isinstance(block, B.OperatorInput):
+        _check_operator_input(block, path, out)
+    elif isinstance(block, B.Loop):
+        _check_loop(block, path, w, binding_types, out)
+    elif isinstance(block, B.Branch):
+        _check_condition(block.if_, f"{path} branch if", w, binding_types, out)
 
 
 def validate(workflow: Workflow) -> None:
