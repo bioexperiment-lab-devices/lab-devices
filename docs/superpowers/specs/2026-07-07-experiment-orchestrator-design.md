@@ -95,7 +95,9 @@ class.
 ## 5. Block taxonomy (the AST)
 
 One uniform `Block` node: `id`, optional `label`, type-specific fields, and
-`children` where the type has them. Three families.
+`children` where the type has them. Three families. (The `id` is engine-assigned
+at load for runtime tracking — the authored JSON carries none, per §15.2 — so it
+arrives with the executor in Increment 4, not in the serialized AST.)
 
 ### 5.1 Action blocks (leaves)
 
