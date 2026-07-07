@@ -116,3 +116,18 @@ def test_block_round_trip(payload):
     ast = block_from_dict(payload)
     assert block_to_dict(ast) == payload
     assert block_from_dict(block_to_dict(ast)) == ast
+
+
+def test_non_string_device_rejected():
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"command": {"device": 5, "verb": "stop"}})
+
+
+def test_null_count_loop_rejected():
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"loop": {"count": None, "body": []}})
+
+
+def test_unknown_block_type_rejected():
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"typo_key": {}})

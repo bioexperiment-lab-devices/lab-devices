@@ -59,3 +59,25 @@ def test_invalid_json_rejected(tmp_path):
     path.write_text("{not json")
     with pytest.raises(WorkflowLoadError):
         load_workflow(path)
+
+
+@pytest.mark.parametrize("doc", [
+    {"schema_version": 1, "metadata": None, "blocks": []},
+    {"schema_version": 1, "persistence": "disk", "blocks": []},
+    {"schema_version": 1, "streams": ["OD"], "blocks": []},
+    {"schema_version": 1, "streams": {"OD": "AU"}, "blocks": []},
+    {"schema_version": 1, "groups": None, "blocks": []},
+    {"schema_version": True, "blocks": []},
+])
+def test_malformed_workflow_sections_rejected(doc, tmp_path):
+    path = tmp_path / "wf.json"
+    path.write_text(json.dumps(doc))
+    with pytest.raises(WorkflowLoadError):
+        load_workflow(path)
+
+
+def test_non_dict_top_level_rejected(tmp_path):
+    path = tmp_path / "wf.json"
+    path.write_text(json.dumps("not a workflow"))
+    with pytest.raises(WorkflowLoadError):
+        load_workflow(path)

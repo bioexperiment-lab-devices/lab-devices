@@ -34,14 +34,27 @@ def _params(body: Any, ctx: str) -> dict[str, Any]:
     return dict(raw)
 
 
+def _obj(value: Any, ctx: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise WorkflowLoadError(f"{ctx} must be an object")
+    return value
+
+
+def _str(value: Any, ctx: str) -> str:
+    if not isinstance(value, str):
+        raise WorkflowLoadError(f"{ctx} must be a string")
+    return value
+
+
 def _command(body: Any, timing: dict[str, Any]) -> B.Block:
-    device, verb = _req(body, "device", "command"), _req(body, "verb", "command")
+    device = _str(_req(body, "device", "command"), "command device")
+    verb = _req(body, "verb", "command")
     lookup(device, verb)
     return B.Command(device=device, verb=verb, params=_params(body, "command"), **timing)
 
 
 def _measure(body: Any, timing: dict[str, Any]) -> B.Block:
-    device = _req(body, "device", "measure")
+    device = _str(_req(body, "device", "measure"), "measure device")
     verb = body.get("verb", "measure")
     lookup(device, verb)
     return B.Measure(
@@ -77,7 +90,9 @@ def _parallel(body: Any, timing: dict[str, Any]) -> B.Block:
 def _loop(body: Any, timing: dict[str, Any]) -> B.Block:
     if not isinstance(body, dict):
         raise WorkflowLoadError("loop requires an object body")
-    if ("count" in body) == ("until" in body):
+    has_count = body.get("count") is not None
+    has_until = body.get("until") is not None
+    if has_count == has_until:
         raise WorkflowLoadError("loop requires exactly one of 'count' or 'until'")
     check = body.get("check", "after")
     if check not in ("before", "after"):
@@ -172,6 +187,7 @@ def _dump_body(b: B.Block) -> tuple[str, dict[str, Any]]:
 
 
 def block_to_dict(b: B.Block) -> dict[str, Any]:
+    """Serialize a block to its canonical JSON form."""
     key, body = _dump_body(b)
     out: dict[str, Any] = {key: body}
     if b.label is not None:
@@ -187,24 +203,26 @@ def workflow_from_dict(d: Any) -> Workflow:
     if not isinstance(d, dict):
         raise WorkflowLoadError("workflow must be an object")
     version = d.get("schema_version")
-    if version != SCHEMA_VERSION:
+    if not isinstance(version, int) or isinstance(version, bool) or version != SCHEMA_VERSION:
         raise WorkflowLoadError(
             f"unsupported schema_version {version!r}; expected {SCHEMA_VERSION}"
         )
-    md = d.get("metadata", {})
-    metadata = Metadata(name=md.get("name"), author=md.get("author"),
-                        description=md.get("description"))
-    pd = d.get("persistence", {})
-    persistence = Persistence(default=pd.get("default", "in_memory"),
-                              format=pd.get("format", "jsonl"))
-    streams = {
-        name: StreamDecl(units=s.get("units"), persistence=s.get("persistence"))
-        for name, s in d.get("streams", {}).items()
-    }
-    groups = {
-        name: Group(name=name, body=_children(g.get("body", []), f"groups.{name}.body"))
-        for name, g in d.get("groups", {}).items()
-    }
+    md = _obj(d.get("metadata", {}), "metadata")
+    metadata = Metadata(
+        name=md.get("name"), author=md.get("author"), description=md.get("description")
+    )
+    pd = _obj(d.get("persistence", {}), "persistence")
+    persistence = Persistence(
+        default=pd.get("default", "in_memory"), format=pd.get("format", "jsonl")
+    )
+    streams: dict[str, StreamDecl] = {}
+    for name, sv in _obj(d.get("streams", {}), "streams").items():
+        s = _obj(sv, f"stream {name!r}")
+        streams[name] = StreamDecl(units=s.get("units"), persistence=s.get("persistence"))
+    groups: dict[str, Group] = {}
+    for name, gv in _obj(d.get("groups", {}), "groups").items():
+        g = _obj(gv, f"group {name!r}")
+        groups[name] = Group(name=name, body=_children(g.get("body", []), f"groups.{name}.body"))
     return Workflow(
         schema_version=version,
         blocks=_children(d.get("blocks", []), "blocks"),
@@ -213,6 +231,8 @@ def workflow_from_dict(d: Any) -> Workflow:
 
 
 def workflow_to_dict(w: Workflow) -> dict[str, Any]:
+    """Serialize to the canonical JSON form (optional sections omitted when empty;
+    defaults normalized)."""
     out: dict[str, Any] = {"schema_version": w.schema_version}
     md = {
         k: v for k, v in (("name", w.metadata.name), ("author", w.metadata.author),
