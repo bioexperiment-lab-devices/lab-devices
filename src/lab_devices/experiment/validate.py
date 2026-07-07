@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Mapping
+from dataclasses import dataclass, field
 
 from lab_devices.experiment import blocks as B
 from lab_devices.experiment.analyze import BindingType, ExprType, infer_type, references
@@ -312,15 +313,161 @@ def _check_block(
         _check_condition(block.if_, f"{path} branch if", w, binding_types, out)
 
 
+@dataclass
+class _PathState:
+    """Abstract state along one control-flow path (design §12)."""
+
+    bindings: set[str] = field(default_factory=set)  # definitely written by operator_input
+    streams: set[str] = field(default_factory=set)  # definitely written by a measure
+
+    def copy(self) -> _PathState:
+        return _PathState(set(self.bindings), set(self.streams))
+
+
+def _merge(a: _PathState, b: _PathState) -> _PathState:
+    """Join at a control-flow merge: definitely-written = written on both sides."""
+    return _PathState(a.bindings & b.bindings, a.streams & b.streams)
+
+
+@dataclass
+class _Ctx:
+    workflow: Workflow
+    out: list[Diagnostic]
+    seen: set[tuple[str, str, str]] = field(default_factory=set)
+
+    def emit(self, category: str, path: str, message: str) -> None:
+        """Append a diagnostic once; loop re-analysis legitimately revisits blocks."""
+        key = (category, path, message)
+        if key not in self.seen:
+            self.seen.add(key)
+            self.out.append(Diagnostic(category, path, message))
+
+
+def _expr_reads(text: object, ctx: str, state: _PathState, c: _Ctx) -> None:
+    """Check one expression slot's reads against the current path state."""
+    if not isinstance(text, str):
+        return  # literals read nothing; non-string garbage is diagnosed globally
+    try:
+        expr = parse_expression(text)
+    except ExpressionError:
+        return  # already diagnosed globally
+    refs = references(expr)
+    for name in sorted(refs.bindings - state.bindings):
+        c.emit("data-flow", ctx, f"binding {name!r} may be read before it is written")
+    for stream in sorted(refs.streams_windowed - state.streams):
+        if stream in c.workflow.streams:  # undeclared streams already got a diagnostic
+            c.emit(
+                "data-flow", ctx,
+                f"stat over stream {stream!r} has no preceding measure on some path",
+            )
+
+
+def _visit_action(b: B.Command | B.Measure, path: str, state: _PathState, c: _Ctx) -> None:
+    try:
+        trait = lookup(b.device, b.verb)
+    except UnknownVerbError:
+        return  # already diagnosed globally; nothing to analyze against
+    specs = {s.name: s for s in trait.params}
+    for name, value in b.params.items():
+        spec = specs.get(name)
+        if spec is not None and spec.kind != "string":
+            _expr_reads(value, f"{path} param {name!r}", state, c)
+    if isinstance(b, B.Measure) and isinstance(b.into, str):
+        state.streams.add(b.into)
+
+
+def _visit_loop(b: B.Loop, path: str, state: _PathState, c: _Ctx) -> _PathState:
+    body_path = f"{path}.body"
+    until_ctx = f"{path} loop until"
+    count = b.count if isinstance(b.count, int) and not isinstance(b.count, bool) else None
+    if b.until is not None:
+        repeats, guaranteed = True, b.check != "before"
+    elif count is not None and count >= 1:
+        repeats, guaranteed = count > 1, True
+    else:  # invalid loop fields (diagnosed globally): assume the worst on both axes
+        repeats, guaranteed = True, False
+    if b.until is not None and b.check == "before":
+        _expr_reads(b.until, until_ctx, state, c)  # pre-test: first check sees entry only
+    exit_state = _visit_blocks(b.body, body_path, state.copy(), c)
+    if b.until is not None and b.check != "before":
+        _expr_reads(b.until, until_ctx, exit_state, c)  # post-test: check sees body writes
+    result = exit_state
+    if repeats:
+        # Back edge: iteration k+1 starts from iteration k's exit. Re-analyze to a
+        # fixpoint (the abstract state space is tiny); _Ctx.emit dedupes repeats.
+        prev = exit_state
+        for _ in range(3):
+            nxt = _visit_blocks(b.body, body_path, prev.copy(), c)
+            if b.until is not None and b.check != "before":
+                _expr_reads(b.until, until_ctx, nxt, c)
+            result = _merge(result, nxt)
+            if nxt == prev:
+                break
+            prev = nxt
+    if not guaranteed:
+        result = _merge(state, result)  # zero iterations possible: entry state survives
+    return result
+
+
+def _visit_parallel(b: B.Parallel, path: str, state: _PathState, c: _Ctx) -> _PathState:
+    exits = []
+    for i, child in enumerate(b.children):
+        # Each concurrent lane sees only the entry state plus its own writes:
+        # sibling writes are unordered relative to this lane (design §12).
+        exits.append(_visit(child, f"{path}.children[{i}]", state.copy(), c))
+    for e in exits:  # the container completes when every lane does: union of writes
+        state.bindings |= e.bindings
+        state.streams |= e.streams
+    return state
+
+
+def _visit(b: B.Block, path: str, state: _PathState, c: _Ctx) -> _PathState:
+    if isinstance(b, (B.Command, B.Measure)):
+        _visit_action(b, path, state, c)
+    elif isinstance(b, B.OperatorInput):
+        if isinstance(b.name, str):
+            state.bindings.add(b.name)
+    elif isinstance(b, B.Serial):
+        state = _visit_blocks(b.children, f"{path}.children", state, c)
+    elif isinstance(b, B.Parallel):
+        state = _visit_parallel(b, path, state, c)
+    elif isinstance(b, B.Loop):
+        state = _visit_loop(b, path, state, c)
+    elif isinstance(b, B.Branch):
+        _expr_reads(b.if_, f"{path} branch if", state, c)
+        then_state = _visit_blocks(b.then, f"{path}.then", state.copy(), c)
+        else_state = _visit_blocks(b.else_ or [], f"{path}.else", state.copy(), c)
+        state = _merge(then_state, else_state)
+    elif isinstance(b, B.GroupRef):
+        group = c.workflow.groups.get(b.name)
+        if group is not None:  # unknown refs are diagnosed globally; phase is gated anyway
+            state = _visit_blocks(group.body, f"{path}->{b.name}.body", state, c)
+    return state  # Wait blocks fall through unchanged
+
+
+def _visit_blocks(blocks: list[B.Block], prefix: str, state: _PathState, c: _Ctx) -> _PathState:
+    for i, b in enumerate(blocks):
+        state = _visit(b, f"{prefix}[{i}]", state, c)
+    return state
+
+
+def _analyze_paths(w: Workflow, out: list[Diagnostic]) -> None:
+    _visit_blocks(w.blocks, "blocks", _PathState(), _Ctx(w, out))
+
+
 def validate(workflow: Workflow) -> None:
     """Statically validate a loaded workflow (design §11 phase 2, rules §12).
 
     Collects every violation and raises one ValidationError; returns None when clean.
+    The path-sensitive phase is skipped when group references cannot be resolved
+    (unknown or recursive groups) — the tree cannot be soundly expanded.
     """
     out: list[Diagnostic] = []
-    _check_groups(workflow, out)
+    expandable = _check_groups(workflow, out)
     binding_types = _collect_binding_types(workflow)
     for path, block in _iter_all_blocks(workflow):
         _check_block(block, path, workflow, binding_types, out)
+    if expandable:
+        _analyze_paths(workflow, out)
     if out:
         raise ValidationError(out)
