@@ -68,7 +68,9 @@ def test_missing_required_fields_rejected():
     with pytest.raises(WorkflowLoadError):
         block_from_dict({"command": {"verb": "stop"}})  # missing device
     with pytest.raises(WorkflowLoadError):
-        block_from_dict({"measure": {"device": "densitometer_1", "verb": "measure"}})  # missing into
+        block_from_dict(  # missing into
+            {"measure": {"device": "densitometer_1", "verb": "measure"}}
+        )
     with pytest.raises(WorkflowLoadError):
         block_from_dict({"wait": {}})  # missing duration
 
@@ -86,7 +88,8 @@ def test_non_dict_block_and_bad_children_rejected():
     {"command": {"device": "pump_1", "verb": "dispense", "params": {"volume_ml": 10}},
      "gap_after": "30s"},
     {"measure": {"device": "densitometer_1", "verb": "measure", "into": "OD"}},
-    {"operator_input": {"name": "target", "type": "float", "prompt": "OD?", "min": 0.0, "max": 2.0}},
+    {"operator_input": {"name": "target", "type": "float", "prompt": "OD?",
+                        "min": 0.0, "max": 2.0}},
     {"wait": {"duration": "5s"}},
     {"parallel": {"children": [
         {"command": {"device": "pump_1", "verb": "rotate",
@@ -96,11 +99,18 @@ def test_non_dict_block_and_bad_children_rejected():
     {"loop": {"until": "last(OD) >= 1.0", "check": "before",
               "body": [{"command": {"device": "pump_1", "verb": "stop"}}]}},
     {"loop": {"count": 3, "pace": "60s",
-              "body": [{"measure": {"device": "densitometer_1", "verb": "measure", "into": "OD"}}]}},
+              "body": [{"measure": {"device": "densitometer_1", "verb": "measure",
+                                    "into": "OD"}}]}},
     {"branch": {"if": "last(OD) > 1.0",
                 "then": [{"command": {"device": "pump_2", "verb": "stop"}}],
                 "else": [{"command": {"device": "pump_1", "verb": "stop"}}]}},
     {"group_ref": {"name": "prime_line"}, "label": "prime"},
+    {"serial": {"children": [
+        {"command": {"device": "valve_1", "verb": "home", "params": {"position": 0}}},
+        {"wait": {"duration": "2s"}}]}, "label": "seq"},
+    {"branch": {"if": "last(OD) > 1.0",
+                "then": [{"command": {"device": "pump_1", "verb": "stop"}}]}},
+    {"operator_input": {"name": "mode", "type": "enum", "choices": ["a", "b"]}},
 ])
 def test_block_round_trip(payload):
     ast = block_from_dict(payload)
