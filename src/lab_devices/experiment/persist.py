@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import re
 from pathlib import Path
@@ -85,3 +86,56 @@ class JsonlStreamSink(_JsonlWriter):
 
     def write(self, sample: Sample) -> None:
         self._write_obj({"timestamp": sample.timestamp, "value": sample.value})
+
+
+class _CsvWriter:
+    """Shared buffered csv append writer with a fixed header; best-effort."""
+
+    def __init__(self, path: Path, header: list[str]) -> None:
+        self.errors: list[BaseException] = []
+        self._file = open(path, "w", encoding="utf-8", newline="")  # noqa: SIM115 - run lifetime
+        self._writer = csv.writer(self._file)
+        self._write_row(header)
+
+    def _write_row(self, row: list[str]) -> None:
+        try:
+            self._writer.writerow(row)
+        except BaseException as exc:  # noqa: BLE001 - durability is best-effort (design 5 §8)
+            self.errors.append(exc)
+
+    def flush(self) -> None:
+        try:
+            self._file.flush()
+        except BaseException as exc:  # noqa: BLE001
+            self.errors.append(exc)
+
+    def close(self) -> None:
+        try:
+            self._file.close()
+        except BaseException as exc:  # noqa: BLE001
+            self.errors.append(exc)
+
+
+class CsvRunLogSink(_CsvWriter):
+    """Run log as csv; the event data dict is JSON-encoded into one column (design 5 §7)."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(path, ["timestamp", "kind", "block_id", "data"])
+
+    def emit(self, event: RunEvent) -> None:
+        self._write_row([
+            repr(event.timestamp),
+            event.kind,
+            event.block_id or "",
+            json.dumps(event.data),
+        ])
+
+
+class CsvStreamSink(_CsvWriter):
+    """One measurement stream as timestamp,value rows (design 5 §7)."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(path, ["timestamp", "value"])
+
+    def write(self, sample: Sample) -> None:
+        self._write_row([repr(sample.timestamp), repr(sample.value)])

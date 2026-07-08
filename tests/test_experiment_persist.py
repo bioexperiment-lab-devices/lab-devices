@@ -1,3 +1,4 @@
+import csv
 import json
 from pathlib import Path
 
@@ -5,6 +6,8 @@ import pytest
 
 from lab_devices.experiment import PersistenceError
 from lab_devices.experiment.persist import (
+    CsvRunLogSink,
+    CsvStreamSink,
     JsonlRunLogSink,
     JsonlStreamSink,
     run_event_to_dict,
@@ -78,3 +81,28 @@ def test_jsonl_sink_remembers_write_error_never_raises(tmp_path: Path):
     sink.close()  # force subsequent writes onto a closed file
     sink.write(Sample(1.0, 0.5))  # must NOT raise
     assert sink.errors  # remembered instead
+
+
+def test_csv_stream_sink_header_and_rows(tmp_path: Path):
+    sink = CsvStreamSink(tmp_path / "OD.csv")
+    sink.write(Sample(1.0, 0.5))
+    sink.write(Sample(2.0, 0.6))
+    sink.flush()
+    sink.close()
+    rows = list(csv.reader((tmp_path / "OD.csv").read_text().splitlines()))
+    assert rows[0] == ["timestamp", "value"]
+    assert rows[1] == ["1.0", "0.5"]
+    assert rows[2] == ["2.0", "0.6"]
+
+
+def test_csv_runlog_sink_json_data_column(tmp_path: Path):
+    sink = CsvRunLogSink(tmp_path / "run_log.csv")
+    sink.emit(RunEvent(1.0, "measure_recorded", "blocks[0]", {"stream": "OD", "value": 0.5}))
+    sink.emit(RunEvent(0.0, "run_started"))
+    sink.flush()
+    sink.close()
+    rows = list(csv.reader((tmp_path / "run_log.csv").read_text().splitlines()))
+    assert rows[0] == ["timestamp", "kind", "block_id", "data"]
+    assert rows[1][0:3] == ["1.0", "measure_recorded", "blocks[0]"]
+    assert json.loads(rows[1][3]) == {"stream": "OD", "value": 0.5}
+    assert rows[2] == ["0.0", "run_started", "", "{}"]  # None block_id -> empty column
