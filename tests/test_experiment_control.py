@@ -1,6 +1,8 @@
 import asyncio
 
-from lab_devices.experiment import Console, ExperimentRun, RunOptions
+import pytest
+
+from lab_devices.experiment import Console, DeviceBusyError, ExperimentRun, RunOptions
 from tests.experiment_run_helpers import add_standard_devices, make_workflow
 from tests.fakeclock import FakeClock, drive
 
@@ -35,3 +37,34 @@ async def test_introspection_during_live_run_routes_through_wire_lock(fake_clien
     assert ping.uptime_ms == 8123456
     fake.held_jobs.discard("dispense")
     await drive(clock, task)
+
+
+async def test_rediscover_without_run_allowed(fake_client):
+    fake, client = fake_client
+    add_standard_devices(fake)
+    console = Console(client)
+    devices = await console.rediscover()
+    assert len(devices) == 4
+
+
+async def test_disconnect_refuses_busy_then_succeeds(fake_client):
+    fake, client = fake_client
+    add_standard_devices(fake)
+    fake.hold_job("dispense")
+    wf = make_workflow(_DISPENSE)
+    clock = FakeClock()
+    run = ExperimentRun(client, wf, RunOptions(clock=clock))
+    console = Console(client, run)
+    task = asyncio.ensure_future(run.execute())
+    await clock.settle()  # dispense in flight -> pump_1 busy
+    assert run.is_device_busy("pump_1")
+    with pytest.raises(DeviceBusyError, match="pump_1"):
+        await console.disconnect("pump_1")
+    with pytest.raises(DeviceBusyError):
+        await console.rediscover()  # any busy device blocks a bus rescan
+    # after the run finishes, pump_1 is idle -> recovery allowed
+    fake.held_jobs.discard("dispense")
+    await drive(clock, task)
+    assert not run.is_device_busy("pump_1")
+    released = await console.disconnect("pump_1")
+    assert released >= 0
