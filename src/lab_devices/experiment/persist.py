@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Any, Protocol
 
 from lab_devices.experiment.errors import PersistenceError
@@ -43,3 +45,43 @@ def safe_stream_filename(name: str) -> str:
     if safe in {".", ".."}:
         raise PersistenceError(f"stream name {name!r} is not a safe path component")
     return safe
+
+
+class _JsonlWriter:
+    """Shared buffered jsonl append writer; best-effort, remembers its own errors."""
+
+    def __init__(self, path: Path) -> None:
+        self.errors: list[BaseException] = []
+        self._file = open(path, "w", encoding="utf-8")  # noqa: SIM115 - lifetime is the run
+
+    def _write_obj(self, obj: dict[str, Any]) -> None:
+        try:
+            self._file.write(json.dumps(obj) + "\n")
+        except BaseException as exc:  # noqa: BLE001 - durability is best-effort (design 5 §8)
+            self.errors.append(exc)
+
+    def flush(self) -> None:
+        try:
+            self._file.flush()
+        except BaseException as exc:  # noqa: BLE001
+            self.errors.append(exc)
+
+    def close(self) -> None:
+        try:
+            self._file.close()
+        except BaseException as exc:  # noqa: BLE001
+            self.errors.append(exc)
+
+
+class JsonlRunLogSink(_JsonlWriter):
+    """Run log as one JSON object per line (design 5 §7). Conforms to RunLogSink."""
+
+    def emit(self, event: RunEvent) -> None:
+        self._write_obj(run_event_to_dict(event))
+
+
+class JsonlStreamSink(_JsonlWriter):
+    """One measurement stream as {"timestamp","value"} per line (design 5 §7)."""
+
+    def write(self, sample: Sample) -> None:
+        self._write_obj({"timestamp": sample.timestamp, "value": sample.value})
