@@ -1,7 +1,7 @@
 # Experiment Orchestrator — Increment 4: Async Executor Design
 
 - **Date:** 2026-07-08
-- **Status:** Approved (brainstorm 2026-07-08)
+- **Status:** Approved; implemented (plans 4a/4b, Increment 4)
 - **Parent spec:** `2026-07-07-experiment-orchestrator-design.md` (as amended) — this doc
   elaborates §4, §6–9, §11–14 into a concrete runtime design. Where the parent spec speaks,
   it wins; this doc adds executor-level decisions the parent leaves open.
