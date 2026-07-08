@@ -1,0 +1,141 @@
+"""Recursive async executor: trait-driven dispatch over the block tree.
+See design 4-exec §7-9."""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from typing import Any
+
+from lab_devices import errors as core_errors
+from lab_devices.experiment import blocks as B
+from lab_devices.experiment.context import RunContext
+from lab_devices.experiment.errors import EvaluationError, InvariantViolationError
+from lab_devices.experiment.evaluate import Value, evaluate, resolve
+from lab_devices.experiment.expr import parse_expression
+from lab_devices.experiment.occupancy import OpenMode
+from lab_devices.experiment.registry import ParamSpec, Trait, lookup, mode_action
+from lab_devices.jobs import Job
+
+_TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
+
+
+def _condition(text: str, ctx: RunContext) -> bool:
+    """Evaluate a boolean condition at this instant (fail-safe, design §6)."""
+    value = evaluate(parse_expression(text), ctx.state, ctx.clock.now())
+    if not isinstance(value, bool):
+        raise EvaluationError(f"condition {text!r} evaluated to non-boolean {value!r}")
+    return value
+
+
+def _resolve_params(
+    block: B.Command | B.Measure, trait: Trait, ctx: RunContext
+) -> dict[str, Any]:
+    """Resolve expression slots at dispatch time; string-kind slots stay opaque
+    (Increment-3 carry-forward)."""
+    specs = {spec.name: spec for spec in trait.params}
+    now = ctx.clock.now()
+    resolved: dict[str, Any] = {}
+    for name, value in block.params.items():
+        spec = specs[name]  # unknown params cannot survive validation (D6)
+        if spec.kind == "string":
+            resolved[name] = value
+        else:
+            resolved[name] = _check_kind(resolve(value, ctx.state, now), spec)
+    return resolved
+
+
+def _check_kind(value: Value, spec: ParamSpec) -> Value:
+    """Runtime kind check: bool never numeric; int slots coerce integral floats."""
+    if spec.kind == "bool":
+        if not isinstance(value, bool):
+            raise EvaluationError(f"param {spec.name!r} requires a bool, got {value!r}")
+        return value
+    if isinstance(value, bool):
+        raise EvaluationError(f"param {spec.name!r} requires a {spec.kind}, got a boolean")
+    if spec.kind == "int":
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        raise EvaluationError(f"param {spec.name!r} requires an integer, got {value!r}")
+    return value  # kind "number": int | float
+
+
+async def _call_verb(device: Any, verb: str, params: dict[str, Any]) -> Any:
+    method: Callable[..., Awaitable[Any]] = getattr(device, verb)
+    return await method(**params)
+
+
+async def _await_job(job: Job, device_id: str, ctx: RunContext) -> Any:
+    """Clock-driven poll to terminal, then delegate interpretation to job.result()
+    (terminal-state result() neither polls nor sleeps). Design 4-exec §6."""
+    opts = ctx.options
+    deadline = None if opts.job_timeout is None else ctx.clock.now() + opts.job_timeout
+    interval = opts.job_poll_interval
+    while job.state not in _TERMINAL:
+        async with ctx.lock(device_id):
+            await job.refresh()
+        if job.state in _TERMINAL:
+            break
+        if deadline is not None and ctx.clock.now() >= deadline:
+            # NOT untracked: the finalizer must stop this device (design §7 step 6).
+            raise core_errors.JobTimeoutError(
+                f"job {job.job_id} did not finish within {opts.job_timeout}s"
+            )
+        await ctx.clock.sleep(interval)
+        interval = min(interval * 2, opts.job_poll_max)
+    ctx.in_flight.pop(job.job_id, None)  # terminal: hardware is done with it
+    return await job.result()
+
+
+async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
+    """The dispatch pipeline (design 4-exec §7): resolve -> classify -> occupy ->
+    invoke -> complete. The occupancy check-and-mark is synchronous (no interleave
+    window); the wire lock spans exactly one HTTP call (D2)."""
+    trait = lookup(block.device, block.verb)
+    params = _resolve_params(block, trait, ctx)
+    action = mode_action(block.device, block.verb, params)  # on RESOLVED values (D7)
+    closes = action.mode_verb if action is not None and action.kind == "close" else None
+    block_id = str(block.id)
+    ctx.touched.setdefault(block.device)
+    try:
+        ctx.occupancy.acquire(block.device, trait.channels, block_id, closes=closes)
+    except InvariantViolationError as exc:
+        ctx.emit("invariant_violation", block.id, error=str(exc))
+        raise
+    holding = True
+    try:
+        device = ctx.device(block.device)
+        try:
+            async with ctx.lock(block.device):
+                result = await _call_verb(device, block.verb, params)
+        except core_errors.BusyError as exc:
+            ctx.emit("invariant_violation", block.id, error=str(exc))
+            raise InvariantViolationError(
+                f"hardware reported busy for a statically-proven-free dispatch: {exc}"
+            ) from exc
+        if trait.completion == "job":
+            job: Job = result
+            ctx.in_flight[job.job_id] = (block.device, job)
+            result = await _await_job(job, block.device, ctx)
+        if action is not None and action.kind == "open":
+            assert trait.teardown is not None  # every mode entry declares its teardown
+            ctx.occupancy.register_open(
+                OpenMode(
+                    device=block.device,
+                    mode_verb=action.mode_verb,
+                    teardown_verb=trait.teardown.verb,
+                    teardown_params=dict(trait.teardown.params),
+                    channels=trait.channels,
+                    block_id=block_id,
+                )
+            )
+            holding = False  # slots now belong to the mode, not this block
+            ctx.emit("mode_opened", block.id, device=block.device, verb=action.mode_verb)
+        elif action is not None and action.kind == "close":
+            if ctx.occupancy.register_close(block.device, action.mode_verb) is not None:
+                ctx.emit("mode_closed", block.id, device=block.device, verb=action.mode_verb)
+        return result
+    finally:
+        if holding:
+            ctx.occupancy.release(block.device, trait.channels, block_id)
