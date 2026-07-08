@@ -37,7 +37,6 @@ from lab_devices.experiment.errors import (
     PersistenceError,
     RunAbortedError,
     UnknownVerbError,
-    UnsupportedPersistenceError,
     ValidationError,
     WorkflowLoadError,
 )
@@ -59,6 +58,14 @@ from lab_devices.experiment.inputs import (
     InputRequest,
     OperatorInputProvider,
     UnattendedInputProvider,
+)
+from lab_devices.experiment.persist import (
+    CsvRunLogSink,
+    CsvStreamSink,
+    JsonlRunLogSink,
+    JsonlStreamSink,
+    SinkSet,
+    StreamSink,
 )
 from lab_devices.experiment.run import ExperimentRun, RunReport, assign_block_ids
 from lab_devices.experiment.runlog import InMemoryRunLog, RunEvent, RunLogSink
@@ -100,6 +107,7 @@ __all__ = [
     "OperatorInputProvider", "InputRequest", "UnattendedInputProvider",
     "RunEvent", "RunLogSink", "InMemoryRunLog",
     "ExperimentRunError", "BlockFailedError", "InvariantViolationError",
-    "RunAbortedError", "FinalizeError", "UnsupportedPersistenceError",
-    "PersistenceError",
+    "RunAbortedError", "FinalizeError", "PersistenceError",
+    "CsvRunLogSink", "CsvStreamSink", "JsonlRunLogSink", "JsonlStreamSink",
+    "SinkSet", "StreamSink",
 ]

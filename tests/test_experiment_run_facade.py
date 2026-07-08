@@ -7,8 +7,8 @@ from lab_devices.experiment import (
     ExperimentRun,
     FinalizeError,
     InMemoryRunLog,  # noqa: F401  # imported to prove it's exported (test_public_exports)
+    PersistenceError,
     RunOptions,
-    UnsupportedPersistenceError,
     ValidationError,
 )
 from lab_devices.experiment.errors import ExperimentRunError
@@ -61,7 +61,7 @@ async def test_declared_streams_pre_created(fake_client):
     assert verbs(fake)[0] == ("pump_1", "stop")  # count()==0 on a never-written stream
 
 
-async def test_disk_persistence_rejected_before_hardware(fake_client):
+async def test_disk_default_without_output_dir_fails_before_hardware(fake_client):
     fake, client = fake_client
     add_standard_devices(fake)
     wf = make_workflow(
@@ -69,13 +69,13 @@ async def test_disk_persistence_rejected_before_hardware(fake_client):
         persistence={"default": "disk", "format": "jsonl"},
     )
     run = make_run(client, wf)
-    with pytest.raises(UnsupportedPersistenceError, match="Increment 5"):
+    with pytest.raises(PersistenceError, match="output_dir"):
         await run.execute()
     assert fake.calls == []  # nothing touched the wire
     assert run.report is not None and run.report.status == "failed"
 
 
-async def test_per_stream_disk_override_rejected(fake_client):
+async def test_per_stream_disk_override_without_output_dir_fails(fake_client):
     fake, client = fake_client
     add_standard_devices(fake)
     wf = make_workflow(
@@ -83,8 +83,9 @@ async def test_per_stream_disk_override_rejected(fake_client):
         streams={"OD": {"persistence": "disk"}},
     )
     run = make_run(client, wf)
-    with pytest.raises(UnsupportedPersistenceError):
+    with pytest.raises(PersistenceError, match="output_dir"):
         await run.execute()
+    assert fake.calls == []  # failed at sink-build, before hardware
 
 
 async def test_block_failure_finalizes_and_reraises_with_notes(fake_client):
@@ -145,7 +146,7 @@ async def test_external_cancellation_finalizes_and_reraises(fake_client):
     task.cancel()  # external cancel, NOT operator abort
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert run.report.status == "aborted"
+    assert run.report.status == "cancelled"  # external cancel, not operator abort (5a)
     seq = verbs(fake)
     assert ("pump_1", "stop") in seq  # in-flight job device stopped (step 1)
     assert seq.count(("pump_2", "stop")) >= 1  # rotate torn down
@@ -211,6 +212,8 @@ def test_public_exports():
         "Clock", "MonotonicClock", "OperatorInputProvider", "InputRequest",
         "UnattendedInputProvider", "RunEvent", "RunLogSink", "InMemoryRunLog",
         "ExperimentRunError", "BlockFailedError", "InvariantViolationError",
-        "RunAbortedError", "FinalizeError", "UnsupportedPersistenceError",
+        "RunAbortedError", "FinalizeError", "PersistenceError",
+        "CsvRunLogSink", "CsvStreamSink", "JsonlRunLogSink", "JsonlStreamSink",
+        "SinkSet", "StreamSink",
     ):
         assert hasattr(exp, name) and name in exp.__all__, name

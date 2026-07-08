@@ -12,12 +12,13 @@ from lab_devices.experiment.context import RunContext, RunOptions
 from lab_devices.experiment.errors import (
     ExperimentRunError,
     FinalizeError,
+    PersistenceError,
     RunAbortedError,
-    UnsupportedPersistenceError,
 )
 from lab_devices.experiment.execute import execute_blocks
 from lab_devices.experiment.finalize import run_finalizer
-from lab_devices.experiment.runlog import RunLogSink
+from lab_devices.experiment.persist import SinkSet
+from lab_devices.experiment.runlog import InMemoryRunLog, RunLogSink
 from lab_devices.experiment.state import RunState, Stream
 from lab_devices.experiment.validate import validate
 from lab_devices.experiment.workflow import Workflow
@@ -48,11 +49,12 @@ def assign_block_ids(workflow: Workflow) -> None:
 class RunReport:
     """Outcome of one execution (design 4-exec §12); set before execute() raises."""
 
-    status: str  # "completed" | "failed" | "aborted"
+    status: str  # "completed" | "failed" | "aborted" | "cancelled"
     error: BaseException | None
     finalize_errors: tuple[BaseException, ...]
     state: RunState
     log: RunLogSink
+    persistence_errors: tuple[BaseException, ...] = ()
 
 
 class ExperimentRun:
@@ -75,6 +77,9 @@ class ExperimentRun:
         self._started = False
         self._finalizing = False
         self.report: RunReport | None = None
+        self._sinks: SinkSet | None = None
+        self._flush_task: asyncio.Task[None] | None = None
+        self._sinks_closed = False
 
     # ---- control plane (design §10; behavioral tests in plan 4b) ----
     def pause(self) -> None:
@@ -109,12 +114,22 @@ class ExperimentRun:
         self._started = True
         ctx = self._ctx
         try:
-            self._reject_unsupported_persistence()
-        except UnsupportedPersistenceError as exc:
-            self.report = RunReport("failed", exc, (), ctx.state, ctx.log_sink)
+            sinks = SinkSet.build(
+                self._workflow, self._options.output_dir, self._options.log_sink
+            )
+        except PersistenceError as exc:
+            self.report = RunReport("failed", exc, (), ctx.state, InMemoryRunLog())
             raise
+        self._sinks = sinks
+        ctx.log_sink = sinks.log_sink
+        ctx.stream_sinks = sinks.stream_sinks
         self._task = asyncio.current_task()
-        ctx.emit("run_started")
+        try:
+            ctx.emit("run_started")
+        except BaseException:  # a raising custom sink must not skip finalize (design 5 §8)
+            pass
+        if sinks.has_disk:
+            self._flush_task = asyncio.ensure_future(self._flush_loop())
         error: BaseException | None = None
         try:
             if ctx.abort_requested:
@@ -122,6 +137,7 @@ class ExperimentRun:
             await execute_blocks(self._workflow.blocks, ctx)
         except BaseException as exc:
             error = exc
+        await self._stop_flush_task()
         self._finalizing = True
         try:
             finalize_errors = tuple(await run_finalizer(ctx))
@@ -131,18 +147,26 @@ class ExperimentRun:
             for fin_err in finalize_errors:
                 error.add_note(f"finalizer: {fin_err!r}")
         cancelled = isinstance(error, asyncio.CancelledError)
-        status = "aborted" if cancelled else ("failed" if error is not None else "completed")
+        aborted = cancelled and ctx.abort_requested
+        status = (
+            "aborted" if aborted
+            else "cancelled" if cancelled
+            else "failed" if error is not None
+            else "completed"
+        )
         self.report = RunReport(
             status=status, error=error, finalize_errors=finalize_errors,
-            state=ctx.state, log=ctx.log_sink,
+            state=ctx.state, log=sinks.log_sink,
+            persistence_errors=sinks.persistence_errors(),
         )
         try:
             ctx.emit("run_finished", status=status)
         except BaseException:  # a raising log sink must not abort reporting (§11)
             pass
+        self._flush_and_close_sinks()  # capture run_finished + any post-finalize event
         if cancelled:
             assert error is not None  # isinstance check above guarantees this (mypy narrowing)
-            if ctx.abort_requested:  # operator abort (wired in plan 4b Task 3)
+            if aborted:  # operator abort (wired in plan 4b Task 3)
                 if self._task is not None:
                     self._task.uncancel()
                 raise RunAbortedError("run aborted by operator") from error
@@ -153,17 +177,27 @@ class ExperimentRun:
             raise FinalizeError(finalize_errors)  # D8
         return self.report
 
-    def _reject_unsupported_persistence(self) -> None:
-        """D4: only in_memory runs this increment; disk sinks land in Increment 5."""
-        targets = [("workflow default", self._workflow.persistence.default)]
-        targets += [
-            (f"stream {name!r}", decl.persistence)
-            for name, decl in self._workflow.streams.items()
-            if decl.persistence is not None
-        ]
-        for what, value in targets:
-            if value != "in_memory":
-                raise UnsupportedPersistenceError(
-                    f"{what} requests {value!r} persistence; disk sinks arrive in "
-                    "Increment 5 — set 'in_memory' to run this workflow today"
-                )
+    async def _flush_loop(self) -> None:
+        """Periodic durability flush; bounds on-disk staleness (design 5 §4, I2)."""
+        interval = self._options.flush_interval
+        while True:
+            await self._ctx.clock.sleep(interval)
+            if self._sinks is not None:
+                self._sinks.flush_all()
+
+    async def _stop_flush_task(self) -> None:
+        task = self._flush_task
+        if task is None:
+            return
+        self._flush_task = None
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    def _flush_and_close_sinks(self) -> None:
+        if self._sinks is not None and not self._sinks_closed:
+            self._sinks.flush_all()
+            self._sinks.close_all()
+            self._sinks_closed = True
