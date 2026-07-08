@@ -24,6 +24,7 @@ from lab_devices.experiment.blocks import (
 )
 from lab_devices.experiment.clock import Clock, MonotonicClock
 from lab_devices.experiment.context import RunOptions
+from lab_devices.experiment.control import Console
 from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import (
     BlockFailedError,
@@ -103,7 +104,7 @@ __all__ = [
     "SampleWindow", "StatCall", "UnaryOp", "Window", "parse_expression", "parse_duration",
     "BindingValue", "RunState", "Sample", "Stream",
     "Value", "evaluate", "resolve",
-    "ExperimentRun", "RunOptions", "RunReport", "assign_block_ids",
+    "ExperimentRun", "RunOptions", "RunReport", "assign_block_ids", "Console",
     "Clock", "MonotonicClock",
     "OperatorInputProvider", "InputRequest", "UnattendedInputProvider",
     "RunEvent", "RunLogSink", "InMemoryRunLog",
