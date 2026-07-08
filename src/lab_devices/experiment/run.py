@@ -92,6 +92,16 @@ class ExperimentRun:
         if self._started:
             self._ctx.emit("resumed")
 
+    def abort(self) -> None:
+        """Operator abort: cancel dispatch; the finalizer still reaches safe state (§10)."""
+        ctx = self._ctx
+        first = not ctx.abort_requested
+        ctx.abort_requested = True
+        if self._started and first and self.report is None:
+            ctx.emit("abort_requested")
+        if self._task is not None and not self._finalizing:
+            self._task.cancel()
+
     # ---- lifecycle (design §3, §11-12) ----
     async def execute(self) -> RunReport:
         if self._started:
