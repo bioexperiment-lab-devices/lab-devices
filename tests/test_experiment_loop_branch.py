@@ -3,6 +3,7 @@ import pytest
 from lab_devices.experiment.context import RunContext, RunOptions
 from lab_devices.experiment.errors import BlockFailedError
 from lab_devices.experiment.execute import execute_blocks
+from lab_devices.experiment.run import ExperimentRun
 from lab_devices.experiment.state import RunState, Stream
 from tests.experiment_run_helpers import add_standard_devices, make_workflow, verbs
 from tests.fakeclock import FakeClock, drive
@@ -67,6 +68,54 @@ async def test_post_test_until_runs_body_then_checks(fake_client):
     ctx = make_ctx(client, wf)
     await run_blocks(ctx)
     assert len(ctx.state.streams["OD"]) == 2  # >=1 iteration guaranteed; exits at 2
+
+
+async def test_post_test_until_pace_is_floor_no_trailing(fake_client):
+    fake, client = fake_client
+    add_standard_devices(fake)
+    wf = make_workflow(
+        [{"loop": {"check": "after", "until": "count(OD) >= 2", "pace": "60s",
+                   "body": [{"measure": {"device": "densitometer_1", "verb": "measure",
+                                         "into": "OD"}}]}}],
+        streams={"OD": {}},
+    )
+    ctx = make_ctx(client, wf)
+    await run_blocks(ctx)
+    assert len(ctx.state.streams["OD"]) == 2
+    # iter1 t=0 (until false -> pace to 60); iter2 t=60 (until true -> break, NO trailing pace)
+    assert ctx.clock.now() == pytest.approx(60.0)
+
+
+async def test_pre_test_until_pace_polls_between_checks(fake_client):
+    fake, client = fake_client
+    add_standard_devices(fake)
+    wf = make_workflow(
+        [{"loop": {"check": "before", "until": "count(OD) >= 2", "pace": "30s",
+                   "body": [{"measure": {"device": "densitometer_1", "verb": "measure",
+                                         "into": "OD"}}]}}],
+        streams={"OD": {}},
+    )
+    ctx = make_ctx(client, wf)
+    await run_blocks(ctx)
+    assert len(ctx.state.streams["OD"]) == 2
+    # t=0 check(0>=2 F)+body->pace 30; t=30 check(1>=2 F)+body->pace 30; t=60 check(2>=2 T)->exit
+    assert ctx.clock.now() == pytest.approx(60.0)
+
+
+async def test_post_test_until_pace_runs_end_to_end_via_facade(fake_client):
+    """Pins that the validator relaxation actually unlocked the until+pace path."""
+    fake, client = fake_client
+    add_standard_devices(fake)
+    wf = make_workflow(
+        [{"loop": {"check": "after", "until": "count(OD) >= 2", "pace": "60s",
+                   "body": [{"measure": {"device": "densitometer_1", "verb": "measure",
+                                         "into": "OD"}}]}}],
+        streams={"OD": {}},
+    )
+    run = ExperimentRun(client, wf, options=RunOptions(clock=FakeClock()))
+    report = await drive(run._options.clock, run.execute())
+    assert report.status == "completed"
+    assert len(report.state.streams["OD"]) == 2
 
 
 async def test_pre_test_until_can_run_zero_iterations(fake_client):

@@ -26,12 +26,16 @@ def test_loop_neither_count_nor_until():
     assert any("exactly one" in x.message for x in diags(w))
 
 
-def test_pace_only_with_count():
-    d = diags(wf(
-        [{"loop": {"until": "count(OD) > 3", "pace": "30s", "body": [MEASURE_OD]}}],
+def test_loop_pace_with_until_is_valid():
+    w = wf(
+        [
+            {"loop": {"until": "count(OD) > 3", "check": "after", "pace": "30s",
+                      "body": [MEASURE_OD]}},
+            cmd("pump_1", "dispense", {"volume_ml": "last(OD)"}),
+        ],
         streams=["OD"],
-    ))
-    assert any("pace" in x.message for x in d)
+    )
+    assert validate(w) is None
 
 
 def test_pace_with_count_ok():
