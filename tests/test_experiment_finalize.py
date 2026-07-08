@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from lab_devices.experiment.context import RunContext, RunOptions
@@ -119,3 +121,26 @@ async def test_finalizer_after_real_failed_run(fake_client):
         ("pump_2", "stop"),  # sweep pump_2 (touched first)
         ("pump_1", "stop"),  # sweep pump_1; densitometer never touched -> not swept
     ]
+
+
+async def test_cancelled_error_mid_sweep_never_skips(fake_client):
+    """Abort arriving mid-finalize must not stop the sweep (design 4-exec §11)."""
+    fake, client = fake_client
+    add_standard_devices(fake)
+    ctx = make_ctx(client)
+    ctx.touched.setdefault("densitometer_1")
+    device = ctx.device("densitometer_1")
+
+    async def cancelled_stop() -> None:
+        raise asyncio.CancelledError
+
+    device.stop = cancelled_stop  # type: ignore[method-assign]  # first sweep verb cancelled
+    errors = await run_finalizer(ctx)
+    assert len(errors) == 1 and isinstance(errors[0], asyncio.CancelledError)
+    assert verbs(fake) == [  # remaining sweep verbs still issued after the cancellation
+        ("densitometer_1", "stop_monitoring"),
+        ("densitometer_1", "set_led"),
+        ("densitometer_1", "set_thermostat"),
+    ]
+    failed = [e for e in ctx.options.log_sink.events if e.kind == "finalize_step_failed"]
+    assert len(failed) == 1 and failed[0].data["verb"] == "stop"
