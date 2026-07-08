@@ -1,0 +1,75 @@
+"""Run-scoped context threaded through the executor. See design 4-exec §5."""
+
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass, field
+from typing import Any
+
+from lab_devices.client import LabClient
+from lab_devices.devices.base import Device
+from lab_devices.experiment.clock import Clock, MonotonicClock
+from lab_devices.experiment.inputs import OperatorInputProvider, UnattendedInputProvider
+from lab_devices.experiment.occupancy import Occupancy
+from lab_devices.experiment.runlog import InMemoryRunLog, RunEvent, RunLogSink
+from lab_devices.experiment.state import RunState
+from lab_devices.experiment.workflow import Workflow
+from lab_devices.jobs import Job
+
+
+@dataclass
+class RunOptions:
+    """User-tunable executor knobs (design 4-exec §3)."""
+
+    clock: Clock = field(default_factory=MonotonicClock)
+    input_provider: OperatorInputProvider = field(default_factory=UnattendedInputProvider)
+    log_sink: RunLogSink = field(default_factory=InMemoryRunLog)
+    job_poll_interval: float = 0.25
+    job_poll_max: float = 2.0
+    job_timeout: float | None = None
+
+
+def _running_gate() -> asyncio.Event:
+    gate = asyncio.Event()
+    gate.set()
+    return gate
+
+
+@dataclass
+class RunContext:
+    """Everything one run threads through the recursive walk (design 4-exec §5)."""
+
+    client: LabClient
+    workflow: Workflow
+    state: RunState
+    options: RunOptions
+    occupancy: Occupancy = field(default_factory=Occupancy)
+    devices: dict[str, Device] = field(default_factory=dict)
+    locks: dict[str, asyncio.Lock] = field(default_factory=dict)
+    touched: dict[str, None] = field(default_factory=dict)
+    in_flight: dict[str, tuple[str, Job]] = field(default_factory=dict)
+    gate: asyncio.Event = field(default_factory=_running_gate)
+    abort_requested: bool = False
+
+    @property
+    def clock(self) -> Clock:
+        return self.options.clock
+
+    @property
+    def inputs(self) -> OperatorInputProvider:
+        return self.options.input_provider
+
+    def device(self, device_id: str) -> Device:
+        if device_id not in self.devices:
+            self.devices[device_id] = self.client.device(device_id)
+        return self.devices[device_id]
+
+    def lock(self, device_id: str) -> asyncio.Lock:
+        """Wire-serialization lock (D2): held only across one HTTP call, never across
+        a job wait or a mode scope."""
+        if device_id not in self.locks:
+            self.locks[device_id] = asyncio.Lock()
+        return self.locks[device_id]
+
+    def emit(self, kind: str, block_id: str | None = None, **data: Any) -> None:
+        self.options.log_sink.emit(RunEvent(self.clock.now(), kind, block_id, dict(data)))
