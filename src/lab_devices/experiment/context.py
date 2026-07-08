@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from lab_devices.client import LabClient
@@ -11,6 +12,7 @@ from lab_devices.devices.base import Device
 from lab_devices.experiment.clock import Clock, MonotonicClock
 from lab_devices.experiment.inputs import OperatorInputProvider, UnattendedInputProvider
 from lab_devices.experiment.occupancy import Occupancy
+from lab_devices.experiment.persist import StreamSink
 from lab_devices.experiment.runlog import InMemoryRunLog, RunEvent, RunLogSink
 from lab_devices.experiment.state import RunState
 from lab_devices.experiment.workflow import Workflow
@@ -19,11 +21,13 @@ from lab_devices.jobs import Job
 
 @dataclass
 class RunOptions:
-    """User-tunable executor knobs (design 4-exec §3)."""
+    """User-tunable executor knobs (design 4-exec §3; disk persistence design 5 §5)."""
 
     clock: Clock = field(default_factory=MonotonicClock)
     input_provider: OperatorInputProvider = field(default_factory=UnattendedInputProvider)
-    log_sink: RunLogSink = field(default_factory=InMemoryRunLog)
+    log_sink: RunLogSink | None = None  # None -> resolved from persistence config at run start
+    output_dir: Path | None = None
+    flush_interval: float = 30.0
     job_poll_interval: float = 0.25
     job_poll_max: float = 2.0
     job_timeout: float | None = None
@@ -50,6 +54,12 @@ class RunContext:
     in_flight: dict[str, tuple[str, Job]] = field(default_factory=dict)
     gate: asyncio.Event = field(default_factory=_running_gate)
     abort_requested: bool = False
+    log_sink: RunLogSink = field(default_factory=InMemoryRunLog)
+    stream_sinks: dict[str, StreamSink | None] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.options.log_sink is not None:
+            self.log_sink = self.options.log_sink
 
     @property
     def clock(self) -> Clock:
@@ -72,4 +82,4 @@ class RunContext:
         return self.locks[device_id]
 
     def emit(self, kind: str, block_id: str | None = None, **data: Any) -> None:
-        self.options.log_sink.emit(RunEvent(self.clock.now(), kind, block_id, dict(data)))
+        self.log_sink.emit(RunEvent(self.clock.now(), kind, block_id, dict(data)))

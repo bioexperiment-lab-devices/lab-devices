@@ -29,7 +29,7 @@ async def run_blocks(ctx):
 
 
 def kinds(ctx):
-    return [(e.kind, e.block_id) for e in ctx.options.log_sink.events]
+    return [(e.kind, e.block_id) for e in ctx.log_sink.events]
 
 
 async def test_serial_order_and_gap_after(fake_client):
@@ -91,7 +91,7 @@ async def test_failure_wrapped_once_with_origin_id(fake_client):
     with pytest.raises(BlockFailedError) as info:
         await run_blocks(ctx)
     assert info.value.block_id == "blocks[0].children[0]"
-    failed = [e for e in ctx.options.log_sink.events if e.kind == "block_failed"]
+    failed = [e for e in ctx.log_sink.events if e.kind == "block_failed"]
     assert len(failed) == 1 and failed[0].block_id == "blocks[0].children[0]"
     assert fake.calls == []  # fail-safe: nothing hit the wire
 
@@ -124,7 +124,7 @@ async def test_measure_stamps_stream_with_clock_time(fake_client):
     assert len(samples) == 1
     assert samples[0].value == pytest.approx(0.523)  # FakeLab canned absorbance
     assert samples[0].timestamp == pytest.approx(10.0)
-    recorded = [e for e in ctx.options.log_sink.events if e.kind == "measure_recorded"]
+    recorded = [e for e in ctx.log_sink.events if e.kind == "measure_recorded"]
     assert recorded[0].data["stream"] == "OD"
 
 
@@ -151,7 +151,7 @@ async def test_operator_input_binds_scripted_value(fake_client):
     await run_blocks(ctx)
     assert ctx.state.bindings == {"target": 1.5}
     assert provider.requests[0].block_id == "blocks[0]"
-    assert [e.kind for e in ctx.options.log_sink.events if "input" in e.kind] == [
+    assert [e.kind for e in ctx.log_sink.events if "input" in e.kind] == [
         "input_requested", "input_bound",
     ]
 
@@ -192,7 +192,7 @@ async def test_measure_scalar_extraction_failure_after_dispatch(fake_client, mon
         await run_blocks(ctx)
     assert info.value.block_id == "blocks[0]"  # failure carries the measure block's id
     assert ("densitometer_1", "measure_blank") in verbs(fake)  # dispatched before extraction
-    failed = [e for e in ctx.options.log_sink.events if e.kind == "block_failed"]
+    failed = [e for e in ctx.log_sink.events if e.kind == "block_failed"]
     assert len(failed) == 1
     ctx.occupancy.acquire("densitometer_1", frozenset({"optics"}), "probe")  # slot re-acquirable
 
@@ -211,5 +211,5 @@ async def test_group_ref_body_child_failure_carries_own_id(fake_client):
     with pytest.raises(BlockFailedError) as info:
         await run_blocks(ctx)
     assert info.value.block_id == "groups['g'].body[0]"  # body child's own structural id
-    failed = [e for e in ctx.options.log_sink.events if e.kind == "block_failed"]
+    failed = [e for e in ctx.log_sink.events if e.kind == "block_failed"]
     assert len(failed) == 1 and failed[0].block_id == "groups['g'].body[0]"

@@ -95,7 +95,7 @@ async def test_exception_group_not_flattened_by_ancestors(fake_client):
     ctx = make_ctx(client, wf)
     with pytest.raises(BaseExceptionGroup):  # NOT BlockFailedError: ancestors must not wrap
         await drive(ctx.clock, execute_blocks(wf.blocks, ctx))
-    failed_events = [e for e in ctx.options.log_sink.events if e.kind == "block_failed"]
+    failed_events = [e for e in ctx.log_sink.events if e.kind == "block_failed"]
     assert len(failed_events) == 1  # origin leaf only
 
 
@@ -118,7 +118,7 @@ async def test_runtime_occupancy_net_under_real_concurrency(fake_client):
     dispenses = [v for v in verbs(fake) if v[1] == "dispense"]
     assert len(dispenses) == 1  # second dispatch never reached the wire
     assert len(ctx.in_flight) == 1  # cancelled wait leaves the job tracked (§7 step 6)
-    events = [e.kind for e in ctx.options.log_sink.events]
+    events = [e.kind for e in ctx.log_sink.events]
     assert "invariant_violation" in events
 
 

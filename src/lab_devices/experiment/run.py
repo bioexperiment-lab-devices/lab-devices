@@ -111,7 +111,7 @@ class ExperimentRun:
         try:
             self._reject_unsupported_persistence()
         except UnsupportedPersistenceError as exc:
-            self.report = RunReport("failed", exc, (), ctx.state, self._options.log_sink)
+            self.report = RunReport("failed", exc, (), ctx.state, ctx.log_sink)
             raise
         self._task = asyncio.current_task()
         ctx.emit("run_started")
@@ -134,7 +134,7 @@ class ExperimentRun:
         status = "aborted" if cancelled else ("failed" if error is not None else "completed")
         self.report = RunReport(
             status=status, error=error, finalize_errors=finalize_errors,
-            state=ctx.state, log=self._options.log_sink,
+            state=ctx.state, log=ctx.log_sink,
         )
         try:
             ctx.emit("run_finished", status=status)
