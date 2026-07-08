@@ -107,6 +107,17 @@ class ExperimentRun:
         if self._task is not None and not self._finalizing:
             self._task.cancel()
 
+    # ---- control-plane seams for Console (design 5 §9) ----
+    def is_device_busy(self, device_id: str) -> bool:
+        return self._ctx.occupancy.is_busy(device_id)
+
+    def busy_devices(self) -> set[str]:
+        return self._ctx.occupancy.busy_devices()
+
+    def wire_lock(self, device_id: str) -> asyncio.Lock:
+        """The per-device wire lock (D2); introspection serializes on it during a live run."""
+        return self._ctx.lock(device_id)
+
     # ---- lifecycle (design §3, §11-12) ----
     async def execute(self) -> RunReport:
         if self._started:

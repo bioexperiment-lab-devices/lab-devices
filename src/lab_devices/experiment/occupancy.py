@@ -88,3 +88,12 @@ class Occupancy:
     def open_modes(self) -> tuple[OpenMode, ...]:
         """Snapshot of live modes in open order (the finalizer tears down reversed)."""
         return tuple(self._modes)
+
+    def is_busy(self, device: str) -> bool:
+        """True if any (device, channel) slot is held — an in-flight command or open mode
+        (design 5 §9 idle oracle)."""
+        return any(dev == device for dev, _channel in self._slots)
+
+    def busy_devices(self) -> set[str]:
+        """Every device with at least one held slot."""
+        return {dev for dev, _channel in self._slots}
