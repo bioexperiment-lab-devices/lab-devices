@@ -18,7 +18,7 @@ from lab_devices.experiment.errors import (
 from lab_devices.experiment.execute import execute_blocks
 from lab_devices.experiment.finalize import run_finalizer
 from lab_devices.experiment.persist import SinkSet
-from lab_devices.experiment.runlog import InMemoryRunLog, RunLogSink
+from lab_devices.experiment.runlog import RunLogSink
 from lab_devices.experiment.state import RunState, Stream
 from lab_devices.experiment.validate import validate
 from lab_devices.experiment.workflow import Workflow
@@ -102,10 +102,13 @@ class ExperimentRun:
         ctx = self._ctx
         first = not ctx.abort_requested
         ctx.abort_requested = True
-        if self._started and first and self.report is None:
-            ctx.emit("abort_requested")
         if first and self._task is not None and not self._finalizing:
             self._task.cancel()
+        if self._started and first and self.report is None:
+            try:
+                ctx.emit("abort_requested")
+            except BaseException:  # a raising sink must never block the abort path (§8)
+                pass
 
     # ---- control-plane seams for Console (design 5 §9) ----
     def is_device_busy(self, device_id: str) -> bool:
@@ -129,7 +132,9 @@ class ExperimentRun:
                 self._workflow, self._options.output_dir, self._options.log_sink
             )
         except PersistenceError as exc:
-            self.report = RunReport("failed", exc, (), ctx.state, InMemoryRunLog())
+            # RunReport.log is the resolved sink (§5): ctx.log_sink already holds the
+            # injected/default sink from RunContext.__post_init__ (NEW-3).
+            self.report = RunReport("failed", exc, (), ctx.state, ctx.log_sink)
             raise
         self._sinks = sinks
         ctx.log_sink = sinks.log_sink
@@ -148,7 +153,11 @@ class ExperimentRun:
             await execute_blocks(self._workflow.blocks, ctx)
         except BaseException as exc:
             error = exc
-        await self._stop_flush_task()
+        try:
+            await self._stop_flush_task()
+        except asyncio.CancelledError as exc:
+            if error is None:
+                error = exc
         self._finalizing = True
         try:
             finalize_errors = tuple(await run_finalizer(ctx))
@@ -165,16 +174,17 @@ class ExperimentRun:
             else "failed" if error is not None
             else "completed"
         )
-        self.report = RunReport(
-            status=status, error=error, finalize_errors=finalize_errors,
-            state=ctx.state, log=sinks.log_sink,
-            persistence_errors=sinks.persistence_errors(),
-        )
         try:
             ctx.emit("run_finished", status=status)
         except BaseException:  # a raising log sink must not abort reporting (§11)
             pass
         self._flush_and_close_sinks()  # capture run_finished + any post-finalize event
+        # Built AFTER close so persistence_errors() captures any flush/close failure (F2).
+        self.report = RunReport(
+            status=status, error=error, finalize_errors=finalize_errors,
+            state=ctx.state, log=sinks.log_sink,
+            persistence_errors=sinks.persistence_errors(),
+        )
         if cancelled:
             assert error is not None  # isinstance check above guarantees this (mypy narrowing)
             if aborted:  # operator abort (wired in plan 4b Task 3)
@@ -202,10 +212,13 @@ class ExperimentRun:
             return
         self._flush_task = None
         task.cancel()
+        current = asyncio.current_task()
+        before = current.cancelling() if current is not None else 0
         try:
             await task
         except asyncio.CancelledError:
-            pass
+            if current is not None and current.cancelling() > before:
+                raise  # the RUN task itself was cancelled during the await, not the flush task
 
     def _flush_and_close_sinks(self) -> None:
         if self._sinks is not None and not self._sinks_closed:

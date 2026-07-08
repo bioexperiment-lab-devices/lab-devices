@@ -170,13 +170,22 @@ class SinkSet:
     def build(
         cls,
         workflow: Workflow,
-        output_dir: Path | None,
+        output_dir: Path | str | None,
         log_sink_override: RunLogSink | None,
     ) -> SinkSet:
+        if output_dir is not None:
+            output_dir = Path(output_dir)  # accept a plain str (spec §5: Path | str | None)
         fmt = workflow.persistence.format
         if fmt not in _RUNLOG_SINKS:
             raise PersistenceError(f"unknown persistence format {fmt!r}")
         default = workflow.persistence.default
+        if default not in {"in_memory", "disk"}:
+            raise PersistenceError(f"unknown persistence default {default!r}")
+        for name, decl in workflow.streams.items():
+            if decl.persistence is not None and decl.persistence not in {"in_memory", "disk"}:
+                raise PersistenceError(
+                    f"unknown persistence {decl.persistence!r} for stream {name!r}"
+                )
 
         # 1. Decide what disk files are needed, without opening anything yet.
         log_on_disk = log_sink_override is None and default == "disk"

@@ -26,7 +26,7 @@ class RunOptions:
     clock: Clock = field(default_factory=MonotonicClock)
     input_provider: OperatorInputProvider = field(default_factory=UnattendedInputProvider)
     log_sink: RunLogSink | None = None  # None -> resolved from persistence config at run start
-    output_dir: Path | None = None
+    output_dir: Path | str | None = None  # spec §5: coerced to Path in SinkSet.build
     flush_interval: float = 30.0
     job_poll_interval: float = 0.25
     job_poll_max: float = 2.0

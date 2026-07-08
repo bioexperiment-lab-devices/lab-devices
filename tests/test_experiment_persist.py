@@ -172,6 +172,20 @@ def test_sinkset_bad_format_raises(tmp_path: Path):
         SinkSet.build(wf, output_dir=tmp_path, log_sink_override=None)
 
 
+def test_sinkset_bad_default_persistence_raises(tmp_path: Path):
+    # NEW-1: an unknown persistence default must raise, never silently degrade to in-memory.
+    wf = _wf(Persistence(default="dsik"), {})
+    with pytest.raises(PersistenceError):
+        SinkSet.build(wf, output_dir=tmp_path, log_sink_override=None)
+
+
+def test_sinkset_bad_stream_persistence_raises(tmp_path: Path):
+    # NEW-1: an unknown per-stream override must raise (case-sensitive: "Disk" != "disk").
+    wf = _wf(Persistence(default="in_memory"), {"OD": StreamDecl(persistence="Disk")})
+    with pytest.raises(PersistenceError):
+        SinkSet.build(wf, output_dir=tmp_path, log_sink_override=None)
+
+
 def test_sinkset_csv_format(tmp_path: Path):
     wf = _wf(Persistence(default="disk", format="csv"), {"OD": StreamDecl()})
     ss = SinkSet.build(wf, output_dir=tmp_path, log_sink_override=None)

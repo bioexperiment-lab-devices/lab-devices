@@ -17,6 +17,8 @@ class RunEvent:
 
 
 class RunLogSink(Protocol):
+    # Sinks MUST NOT hash or dedupe RunEvents: RunEvent is frozen but carries a mutable
+    # dict `data`, so it is unhashable by design (§8 documented-constraint ticket).
     def emit(self, event: RunEvent) -> None: ...
 
 

@@ -45,6 +45,20 @@ async def test_disk_run_writes_runlog_and_stream(fake_client, tmp_path: Path):
     assert run.report.persistence_errors == ()
 
 
+async def test_disk_run_with_str_output_dir(fake_client, tmp_path: Path):
+    # NEW-4: output_dir as a plain str (spec §5 allows Path | str | None) must be coerced,
+    # not hit an uncaught TypeError that leaves the report unset.
+    fake, client = fake_client
+    add_standard_devices(fake)
+    wf = make_workflow(_MEASURE, streams=_STREAMS, persistence=_DISK_JSONL)
+    clock = FakeClock()
+    run = ExperimentRun(client, wf, RunOptions(clock=clock, output_dir=str(tmp_path)))
+    await drive(clock, run.execute())
+    assert run.report is not None and run.report.status == "completed"
+    assert (tmp_path / "run_log.jsonl").exists()
+    assert (tmp_path / "OD.jsonl").exists()
+
+
 async def test_missing_output_dir_fails_before_hardware(fake_client):
     fake, client = fake_client
     add_standard_devices(fake)

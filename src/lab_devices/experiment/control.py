@@ -54,6 +54,9 @@ class Console:
         return await self._client.disconnect(await self._port_of(device_id))
 
     def _refuse_if_any_busy(self) -> None:
+        # The idle guard is a non-blocking SNAPSHOT (TOCTOU): a device may become busy
+        # between this check and the wire call. Recovery never endangers hardware — the
+        # run's next dispatch finalizes cleanly regardless (design 5 §9).
         if self._run is None:
             return
         busy = self._run.busy_devices()
