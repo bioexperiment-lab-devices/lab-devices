@@ -88,9 +88,25 @@ does the device's affinity-lock release?); the **finalizer** reads `state_effect
 (what must I actively stop?).
 
 Traits are looked up from a **`(device-type, verb) → {completion, state_effect,
-teardown}` registry** — the single source of truth for which verbs exist and how
-they behave. A `CommandBlock` is one block type; it does not encode traits in its
-class.
+teardown, channel, params}` registry** — the single source of truth for which
+verbs exist and how they behave. Beyond the original trait pair:
+
+- **`channel`** — the independent hardware subsystem the verb occupies (pump and
+  valve verbs: `motor`; densitometer `measure`/`measure_blank`/`set_led`/
+  `set_tube_correction`/`calibrate_tube`: `optics`; `set_thermostat`: `thermal`;
+  `stop` touches **all** of its device's channels — it is the blunt safe-state
+  primitive). Affinity (§12–13) is per `(device, channel)`, so an open thermostat
+  mode does not lock the densitometer's optics.
+- **`params`** — per-verb parameter specs (required/optional; kind `number | int |
+  bool | string`). Numeric-kind params accept expressions (§6); string-kind params
+  are opaque literals, never evaluated (the core leaves e.g. `direction` values
+  device-defined, so the registry does not invent enums). Dict-valued driver
+  params (`speed_profile`, `job_id`) are not expressible in the AST and are
+  rejected.
+- **`measurement`** — flags verbs whose job result yields a scalar a `Measure`
+  block may capture (`measure`, `measure_blank`).
+
+A `CommandBlock` is one block type; it does not encode traits in its class.
 
 ## 5. Block taxonomy (the AST)
 
@@ -112,7 +128,7 @@ arrives with the executor in Increment 4, not in the serialized AST.)
 | Block | Fields |
 |---|---|
 | `Serial` | ordered `children`, per-child `gap_after` (§9) |
-| `Parallel` | concurrent `children` (must be device-distinct), per-child `start_offset` (§9) |
+| `Parallel` | concurrent `children` (must be affinity-distinct: no shared `(device, channel)`), per-child `start_offset` (§9) |
 | `Loop` | `mode` (§8), `body` |
 | `Branch` | `if: <condition>`, `then`, optional `else` |
 | `Group` | `name`, `body` — reusable; invoked by `GroupRef` |
@@ -154,7 +170,9 @@ Stat vocabulary is kept small: `last, mean, min, max, count` over windows
 **Missing-data rule (fail-safe everywhere).** Any expression that cannot produce a
 value at runtime — empty/insufficient stream window, unbound binding,
 divide-by-zero — **fails its block and triggers the finalizer**. One uniform rule,
-no silent fallbacks, no context-specific behavior. Consequence: a conditional
+no silent fallbacks, no context-specific behavior. (Sole exception: `count`, which
+is 0 over an empty window and a never-written stream — every declared stream is
+pre-created at run start.) Consequence: a conditional
 loop that reads a stream must have data before its first check — which the
 post-test loop (§8) provides for free, and the pre-test loop requires the author
 to pre-seed.
@@ -226,20 +244,40 @@ Optional sugar: a `Wait(duration)` leaf inside serial flow that compiles to a
 Proven at load, before any hardware is touched:
 
 - **Registry** — every `(device-type, verb)` is known; params type-check against
-  the verb.
-- **Device-affinity** — no two commands target the same device concurrently on any
-  reachable path or under any `parallel` interleaving. A `parallel` with two
-  device-overlapping branches is a static error.
-- **Mode lifetime** — every mode-open (`state_effect: mode`) reaches a matching
-  mode-close on **every** path (both branch arms, loop back-edges); no same-device
-  command falls inside a mode's open interval.
-- **Data-flow** — every binding is written before read on all paths; every
-  referenced stream has a prior writer on the path.
+  the verb's param specs (unknown or missing-required params, kind mismatches, and
+  expression type errors — a numeric slot fed a boolean expression, a condition
+  that is not boolean — are static errors).
+- **Affinity** — no two commands occupy the same `(device, channel)` concurrently
+  on any reachable path or under any `parallel` interleaving. A `parallel` whose
+  branches' `(device, channel)` footprints overlap is a static error; the same
+  device on disjoint channels is legal.
+- **Mode lifetime** — a command instance is classified *open* / *close* / *neither*
+  by comparison against the registry teardown: a `state_effect: mode` verb whose
+  params literally equal its teardown's params is a close; anything else
+  (including any expression-valued param, conservatively) is an open; a
+  `state_effect: none` verb that is some mode's teardown verb (pump `stop`) closes
+  that mode. **Closes are optional** — a mode left open at any point (a branch
+  arm, a loop exit, the end of the workflow) is legal, because the finalizer
+  (§13.2) is the universal close; and a close with no open mode is a legal no-op
+  (§15.2's example relies on this). The one hard rule: **no same-`(device,
+  channel)` command may execute while a mode is possibly open on any path to it —
+  except that mode's matching close** (which closes if open, no-ops if not). This
+  holds through branch merges (may-open tracking) and loop back-edges (a body that
+  opens without closing re-executes its open inside the still-open interval — an
+  error on iteration two).
+- **Data-flow** — every binding is written (`operator_input`) before read on all
+  paths; every stat-referenced stream and every `Measure.into` target is declared
+  in `workflow.streams`; every stat except `count` has a definite prior writer on
+  every path to it (a post-test loop body counts for its own `until` check).
+  `count` needs only the declaration — it evaluates to 0 on a never-written
+  stream, which requires the executor to pre-create every declared stream at run
+  start.
 
-The mode-lifetime and device-affinity checks are a control-flow lifetime analysis
-(balanced open/close over the CFG). This is the price of the **free start/stop**
-mode model (a mode is opened by one block and closed by a later block, so it can
-span arbitrary structure) — accepted in exchange for that flexibility.
+The mode-lifetime and affinity checks are a control-flow lifetime analysis
+(may-open mode intervals over the CFG). This is the price of the **free
+start/stop** mode model (a mode is opened by one block and closed by a later
+block or by the finalizer, so it can span arbitrary structure) — accepted in
+exchange for that flexibility.
 
 ## 13. Scheduler, concurrency, finalizer
 
@@ -247,16 +285,21 @@ span arbitrary structure) — accepted in exchange for that flexibility.
 
 - **Substrate**: structured concurrency — an `asyncio.TaskGroup` per `Parallel`
   block, giving clean nested cancellation.
-- **Device-affinity mutual exclusion is enforced by the static proof (§12), not by
-  runtime locks.** A continuous mode holds its device's affinity conceptually for
-  its whole *scope* (open→close), spanning the blocks in between; a blocking
-  `asyncio.Lock` held across that gap would *deadlock* against the very same-device
-  op the validator already forbids. So locks buy nothing and add a failure mode.
-- **Runtime safety net**: a live `device → {occupant, teardown}` registry plus a
-  **non-blocking busy-tracker**. Each dispatch checks "is this device occupied by
-  someone other than me?" A hardware `BusyError` is a proven-impossible state, so
-  it is treated as a scheduler-invariant violation → finalize, never a silent
-  retry.
+- **Affinity mutual exclusion is enforced by the static proof (§12), not by
+  runtime locks.** A continuous mode holds its `(device, channel)` affinity
+  conceptually for its whole *scope* (open→close, or open→finalizer), spanning the
+  blocks in between; a blocking `asyncio.Lock` held across that gap would
+  *deadlock* against the very same-channel op the validator already forbids. So
+  locks buy nothing and add a failure mode.
+- **Runtime safety net**: a live `(device, channel) → {occupant, teardown}`
+  registry plus a **non-blocking busy-tracker**. Each dispatch checks "is this
+  slot occupied by someone other than me?" A hardware `BusyError` is a
+  proven-impossible state, so it is treated as a scheduler-invariant violation →
+  finalize, never a silent retry.
+- **Channel-level affinity admits concurrent same-device commands on distinct
+  channels** (thermostat + measure on one densitometer). The executor must either
+  rely on the transport tolerating this, or serialize same-device dispatches
+  transparently — without holding any lock across a mode's open scope.
 
 ### 13.2 Finalizer
 
@@ -267,6 +310,9 @@ Runs on **normal end, any block error, or operator abort**, in fixed order:
 3. Unconditional, idempotent **safe-state sweep** over every device the run ever
    touched: `stop`, `stop_monitoring`, `set_led(0)`, thermostat off — including
    modes this run never started.
+
+The finalizer is the *universal close*: §12 makes explicit mode-closes optional,
+so any mode still open at run end — normal or aborted — is torn down here.
 
 ## 14. Pause / resume, and the control plane
 

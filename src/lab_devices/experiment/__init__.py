@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+from lab_devices.experiment.analyze import (
+    BindingType,
+    ExprRefs,
+    ExprType,
+    TypeReport,
+    infer_type,
+    references,
+)
 from lab_devices.experiment.blocks import (
     Block,
     Branch,
@@ -16,10 +24,12 @@ from lab_devices.experiment.blocks import (
 )
 from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import (
+    Diagnostic,
     EvaluationError,
     ExperimentError,
     ExpressionError,
     UnknownVerbError,
+    ValidationError,
     WorkflowLoadError,
 )
 from lab_devices.experiment.evaluate import Value, evaluate, resolve
@@ -46,6 +56,7 @@ from lab_devices.experiment.serialize import (
     workflow_to_dict,
 )
 from lab_devices.experiment.state import BindingValue, RunState, Sample, Stream
+from lab_devices.experiment.validate import load_and_validate, validate
 from lab_devices.experiment.workflow import (
     Group,
     Metadata,
@@ -55,6 +66,8 @@ from lab_devices.experiment.workflow import (
 )
 
 __all__ = [
+    "BindingType", "Diagnostic", "ExprRefs", "ExprType", "TypeReport",
+    "ValidationError", "infer_type", "load_and_validate", "references", "validate",
     "Block", "Branch", "Command", "GroupRef", "Loop", "Measure", "OperatorInput",
     "Parallel", "Serial", "Wait",
     "EvaluationError", "ExperimentError", "ExpressionError", "UnknownVerbError",
