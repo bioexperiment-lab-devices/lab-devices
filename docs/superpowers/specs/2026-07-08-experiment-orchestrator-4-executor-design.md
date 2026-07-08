@@ -41,8 +41,12 @@ intervening await (§7); in-flight jobs stay tracked across cancelled waits (§7
 input validated by the executor, fail-safe on violation, providers own re-prompting (§8);
 `gap_after` honored unconditionally while a trailing loop `pace` is skipped — gap is
 end→next-start (defined transitively, e.g. the next loop iteration), pace is a floor
-between iteration starts (§9); `pace` honored in both loop
-modes (§9); pause gates block dispatch only — job polls, offsets/gaps in progress, and the
+between iteration starts (§9); `pace` honored in both `count` and conditional loop modes
+(§9) — each turn paced to at least D; in a pre-test loop the next `until` check runs
+after the pace elapses, while a post-test loop checks `until` before the pace so exit
+skips the trailing sleep; validator amended accordingly (Increment-3 "pace only with
+count" superseded by user decision 2026-07-08); pause gates block dispatch only — job
+polls, offsets/gaps in progress, and the
 finalizer ignore the gate (§10); LIFO teardown order (§11); registry gains `result_field`
 (§14); `job_timeout` default `None` (§3).
 
@@ -225,7 +229,10 @@ class OperatorInputProvider(Protocol):
   evaluation errors fail the loop block (fail-safe; pre-test cold-start is the documented
   authoring risk). `count` mode: N iterations. **[settled]** `pace` is a floor measured by
   the clock from iteration start, honored in *both* count and until modes, never cancels
-  an overrunning body, and there is no trailing pace-sleep after the final iteration. The
+  an overrunning body, and there is no trailing pace-sleep after the final iteration. In a
+  pre-test loop the next `until` check runs after the pace elapses; a post-test loop checks
+  `until` before the pace, so exit skips the trailing sleep. Validator amended accordingly
+  (Increment-3 "pace only with count" superseded by user decision 2026-07-08). The
   pause gate is re-checked at each iteration top.
 - **Branch** — evaluate `if_` (boolean, fail-safe); run `then` or `else_` serially; no
   else → skip.
@@ -272,7 +279,10 @@ skips the remaining steps or the sweep**. Collected errors land in
 `report.finalize_errors` and as `add_note` annotations on the primary error. If the run
 otherwise succeeded but the finalizer collected errors, `execute()` raises
 `FinalizeError` (D8); the report keeps `status="completed"` with `finalize_errors`
-populated.
+populated. External cancellation arriving after finalization has begun is absorbed by
+the best-effort discipline (collected as a finalize error; the run reports through the
+normal outcome matrix) — the never-skip sweep guarantee deliberately outranks
+cancellation propagation once finalize starts.
 
 ## 12. Run log, report, persistence
 

@@ -202,6 +202,11 @@ resolves to no-data never fires a garbage value; it fails the block and finalize
   - **`check: after`** (post-test / "act then check") — run body once, then test;
     repeat. Always ≥1 iteration; no cold-start problem. The safe default.
 
+  Conditional loops accept the same optional `pace` (amendment 2026-07-08): each
+  turn is paced to at least D — a polling floor. In a pre-test loop the next
+  `until` check runs after the pace elapses; a post-test loop checks `until`
+  before the pace, so exit skips the trailing sleep.
+
 There is **no polarity inversion** between the two timings — the operator writes
 one condition and picks *when* it's checked. Genuine zero-iteration "skip if
 already satisfied" semantics without the cold-start risk are expressed by wrapping
