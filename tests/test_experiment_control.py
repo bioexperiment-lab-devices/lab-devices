@@ -86,3 +86,31 @@ async def test_disconnect_unknown_device_raises(fake_client):
     console = Console(client)
     with pytest.raises(ValueError):
         await console.disconnect("pump_99")
+
+
+async def test_introspection_during_paused_run(fake_client):
+    # Pause quiesces dispatch; introspection stays available and safe (parent §14).
+    fake, client = fake_client
+    add_standard_devices(fake)
+    fake.hold_job("dispense")
+    wf = make_workflow(_DISPENSE)
+    clock = FakeClock()
+    run = ExperimentRun(client, wf, RunOptions(clock=clock))
+    console = Console(client, run)
+    task = asyncio.ensure_future(run.execute())
+    await clock.settle()
+    run.pause()
+    await clock.settle()
+    # while paused: introspection works, list_devices reflects the bus
+    devices = await console.list_devices()
+    assert any(d.id == "densitometer_1" for d in devices)
+    status = await console.device_status("densitometer_1")
+    assert status.state == "idle"
+    # a busy device still refuses disconnect even while paused
+    with pytest.raises(DeviceBusyError):
+        await console.disconnect("pump_1")
+    # resume + finish
+    run.resume()
+    fake.held_jobs.discard("dispense")
+    report = await drive(clock, task)
+    assert report.status == "completed"
