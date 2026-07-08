@@ -161,3 +161,18 @@ def test_mode_channels_pairwise_disjoint_per_device_type():
         for i in range(len(channel_sets)):
             for j in range(i + 1, len(channel_sets)):
                 assert not (channel_sets[i] & channel_sets[j]), dtype
+
+
+def test_measurement_verbs_declare_result_field():
+    assert lookup("densitometer_1", "measure").result_field == "absorbance"
+    assert lookup("densitometer_1", "measure_blank").result_field == "slope"
+
+
+def test_result_field_only_on_measurement_verbs():
+    from lab_devices.experiment.registry import _REGISTRY
+
+    for (dtype, verb), trait in _REGISTRY.items():
+        if trait.measurement:
+            assert trait.result_field is not None, (dtype, verb)
+        else:
+            assert trait.result_field is None, (dtype, verb)
