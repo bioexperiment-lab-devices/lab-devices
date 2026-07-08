@@ -1,8 +1,25 @@
-"""Public run facade for the executor. See design 4-exec §3, §13."""
+"""Public run facade: validation gate, lifecycle, outcome reporting.
+See design 4-exec §3, §10-12."""
 
 from __future__ import annotations
 
+import asyncio
+from dataclasses import dataclass
+
+from lab_devices.client import LabClient
 from lab_devices.experiment import blocks as B
+from lab_devices.experiment.context import RunContext, RunOptions
+from lab_devices.experiment.errors import (
+    ExperimentRunError,
+    FinalizeError,
+    RunAbortedError,
+    UnsupportedPersistenceError,
+)
+from lab_devices.experiment.execute import execute_blocks
+from lab_devices.experiment.finalize import run_finalizer
+from lab_devices.experiment.runlog import RunLogSink
+from lab_devices.experiment.state import RunState, Stream
+from lab_devices.experiment.validate import validate
 from lab_devices.experiment.workflow import Workflow
 
 
@@ -25,3 +42,112 @@ def assign_block_ids(workflow: Workflow) -> None:
     walk(workflow.blocks, "blocks")
     for name, group in workflow.groups.items():
         walk(group.body, f"groups[{name!r}].body")
+
+
+@dataclass
+class RunReport:
+    """Outcome of one execution (design 4-exec §12); set before execute() raises."""
+
+    status: str  # "completed" | "failed" | "aborted"
+    error: BaseException | None
+    finalize_errors: tuple[BaseException, ...]
+    state: RunState
+    log: RunLogSink
+
+
+class ExperimentRun:
+    """One workflow execution: validates at construction (D6), single-shot execute()."""
+
+    def __init__(
+        self, client: LabClient, workflow: Workflow, options: RunOptions | None = None
+    ) -> None:
+        validate(workflow)  # the runtime's safety model IS the static proof (D6)
+        assign_block_ids(workflow)
+        self._workflow = workflow
+        self._options = options or RunOptions()
+        state = RunState()
+        for stream_name in workflow.streams:
+            state.streams[stream_name] = Stream()  # pre-created: count()==0 (§3)
+        self._ctx = RunContext(
+            client=client, workflow=workflow, state=state, options=self._options
+        )
+        self._task: asyncio.Task[object] | None = None
+        self._started = False
+        self._finalizing = False
+        self.report: RunReport | None = None
+
+    # ---- control plane (design §10; behavioral tests in plan 4b) ----
+    def pause(self) -> None:
+        """Quiesce dispatch: in-flight jobs finish, open modes keep running."""
+        if not self._ctx.gate.is_set():
+            return
+        self._ctx.gate.clear()
+        if self._started:
+            self._ctx.emit("paused")
+
+    def resume(self) -> None:
+        if self._ctx.gate.is_set():
+            return
+        self._ctx.gate.set()
+        if self._started:
+            self._ctx.emit("resumed")
+
+    # ---- lifecycle (design §3, §11-12) ----
+    async def execute(self) -> RunReport:
+        if self._started:
+            raise ExperimentRunError("execute() may only be called once per ExperimentRun")
+        self._started = True
+        ctx = self._ctx
+        try:
+            self._reject_unsupported_persistence()
+        except UnsupportedPersistenceError as exc:
+            self.report = RunReport("failed", exc, (), ctx.state, self._options.log_sink)
+            raise
+        self._task = asyncio.current_task()
+        ctx.emit("run_started")
+        error: BaseException | None = None
+        try:
+            if ctx.abort_requested:
+                raise asyncio.CancelledError
+            await execute_blocks(self._workflow.blocks, ctx)
+        except BaseException as exc:
+            error = exc
+        self._finalizing = True
+        finalize_errors = tuple(await run_finalizer(ctx))
+        if error is not None:
+            for fin_err in finalize_errors:
+                error.add_note(f"finalizer: {fin_err!r}")
+        cancelled = isinstance(error, asyncio.CancelledError)
+        status = "aborted" if cancelled else ("failed" if error is not None else "completed")
+        self.report = RunReport(
+            status=status, error=error, finalize_errors=finalize_errors,
+            state=ctx.state, log=self._options.log_sink,
+        )
+        ctx.emit("run_finished", status=status)
+        if cancelled:
+            assert error is not None  # isinstance check above guarantees this (mypy narrowing)
+            if ctx.abort_requested:  # operator abort (wired in plan 4b Task 3)
+                if self._task is not None:
+                    self._task.uncancel()
+                raise RunAbortedError("run aborted by operator") from error
+            raise error  # external cancellation must propagate (asyncio correctness)
+        if error is not None:
+            raise error
+        if finalize_errors:
+            raise FinalizeError(finalize_errors)  # D8
+        return self.report
+
+    def _reject_unsupported_persistence(self) -> None:
+        """D4: only in_memory runs this increment; disk sinks land in Increment 5."""
+        targets = [("workflow default", self._workflow.persistence.default)]
+        targets += [
+            (f"stream {name!r}", decl.persistence)
+            for name, decl in self._workflow.streams.items()
+            if decl.persistence is not None
+        ]
+        for what, value in targets:
+            if value != "in_memory":
+                raise UnsupportedPersistenceError(
+                    f"{what} requests {value!r} persistence; disk sinks arrive in "
+                    "Increment 5 — set 'in_memory' to run this workflow today"
+                )
