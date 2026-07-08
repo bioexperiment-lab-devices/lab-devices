@@ -81,3 +81,8 @@ class FinalizeError(ExperimentRunError):
 
 class UnsupportedPersistenceError(ExperimentRunError):
     """The workflow requests persistence that arrives in Increment 5 (design 4-exec D4)."""
+
+
+class PersistenceError(ExperimentRunError):
+    """A persistence sink could not be built: bad/missing config, missing output_dir,
+    a target file already exists, a stream-name collision, or a bad format (design 5 §10)."""

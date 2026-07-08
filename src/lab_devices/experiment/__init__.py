@@ -34,6 +34,7 @@ from lab_devices.experiment.errors import (
     ExpressionError,
     FinalizeError,
     InvariantViolationError,
+    PersistenceError,
     RunAbortedError,
     UnknownVerbError,
     UnsupportedPersistenceError,
@@ -100,4 +101,5 @@ __all__ = [
     "RunEvent", "RunLogSink", "InMemoryRunLog",
     "ExperimentRunError", "BlockFailedError", "InvariantViolationError",
     "RunAbortedError", "FinalizeError", "UnsupportedPersistenceError",
+    "PersistenceError",
 ]
