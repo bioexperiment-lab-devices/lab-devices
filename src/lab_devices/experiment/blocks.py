@@ -10,6 +10,7 @@ ValueExpr = str | int | float | bool
 
 @dataclass(kw_only=True)
 class BlockBase:
+    id: str | None = None  # engine-assigned at load; never serialized (design §5, 4-exec §13)
     label: str | None = None
     gap_after: str | None = None  # serial: end-of-this -> start-of-next
     start_offset: str | None = None  # parallel: container-start -> this-start

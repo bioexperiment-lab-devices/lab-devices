@@ -46,6 +46,13 @@ class FakeLab:
         self.polls_to_complete = 1
         self.fail_job = False
         self._job_counter = 0
+        # ---- Increment-4 executor test surface (default-inert) ----
+        self.calls: list[tuple[str, str, dict[str, Any]]] = []
+        self.record_polls = False
+        self.fail_jobs: set[str] = set()
+        self.held_jobs: set[str] = set()
+        self.polls_to_complete_by_cmd: dict[str, int] = {}
+        self._injected: dict[tuple[str, str], list[tuple[str, str]]] = {}
 
     # ---- setup helpers ----
     def add_device(
@@ -58,6 +65,24 @@ class FakeLab:
             "identify": identify,
             "_canned": canned,
         }
+
+    def inject_error(
+        self, device_id: str, cmd: str, code: str, message: str, *, times: int = 1
+    ) -> None:
+        """Queue an envelope error for the next `times` matching commands."""
+        self._injected.setdefault((device_id, cmd), []).extend([(code, message)] * times)
+
+    def hold_job(self, cmd: str) -> None:
+        """Jobs of this command never advance by polling; use complete_job()."""
+        self.held_jobs.add(cmd)
+
+    def complete_job(self, job_id: str, *, error: dict[str, Any] | None = None) -> None:
+        """Manually finish a (typically held) job."""
+        job = self.jobs[job_id]
+        if error is not None:
+            job.state, job.error = "failed", error
+        else:
+            job.state, job.result = "succeeded", JOB_RESULTS.get(job.cmd, {})
 
     # ---- request routing ----
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -105,6 +130,13 @@ class FakeLab:
         if device_id not in self.devices:
             return err(404, "unknown_device", f"no device with id {device_id}")
 
+        if cmd != "get_job" or self.record_polls:
+            self.calls.append((device_id, cmd or "", dict(params)))
+        queue = self._injected.get((device_id, cmd or ""))
+        if queue:
+            code, message = queue.pop(0)
+            return err(409 if code == "busy" else 500, code, message)
+
         # get_job / identify are memory-served (200 even if unreachable).
         if cmd == "get_job":
             job = self.jobs.get(params.get("job_id", ""))
@@ -140,11 +172,12 @@ class FakeLab:
         return {"job_id": job.job_id, "state": "running", "estimated_duration_s": 1.0}
 
     def _advance(self, job: FakeJob) -> None:
-        if job.state != "running":
+        if job.state != "running" or job.cmd in self.held_jobs:
             return
         job.polls += 1
-        if job.polls >= self.polls_to_complete:
-            if self.fail_job:
+        threshold = self.polls_to_complete_by_cmd.get(job.cmd, self.polls_to_complete)
+        if job.polls >= threshold:
+            if self.fail_job or job.cmd in self.fail_jobs:
                 job.state = "failed"
                 job.error = {"code": "hardware_error", "message": "device became unreachable"}
             else:

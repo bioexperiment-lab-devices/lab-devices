@@ -22,13 +22,21 @@ from lab_devices.experiment.blocks import (
     Serial,
     Wait,
 )
+from lab_devices.experiment.clock import Clock, MonotonicClock
+from lab_devices.experiment.context import RunOptions
 from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import (
+    BlockFailedError,
     Diagnostic,
     EvaluationError,
     ExperimentError,
+    ExperimentRunError,
     ExpressionError,
+    FinalizeError,
+    InvariantViolationError,
+    RunAbortedError,
     UnknownVerbError,
+    UnsupportedPersistenceError,
     ValidationError,
     WorkflowLoadError,
 )
@@ -46,6 +54,13 @@ from lab_devices.experiment.expr import (
     Window,
     parse_expression,
 )
+from lab_devices.experiment.inputs import (
+    InputRequest,
+    OperatorInputProvider,
+    UnattendedInputProvider,
+)
+from lab_devices.experiment.run import ExperimentRun, RunReport, assign_block_ids
+from lab_devices.experiment.runlog import InMemoryRunLog, RunEvent, RunLogSink
 from lab_devices.experiment.serialize import (
     SCHEMA_VERSION,
     block_from_dict,
@@ -79,4 +94,10 @@ __all__ = [
     "SampleWindow", "StatCall", "UnaryOp", "Window", "parse_expression", "parse_duration",
     "BindingValue", "RunState", "Sample", "Stream",
     "Value", "evaluate", "resolve",
+    "ExperimentRun", "RunOptions", "RunReport", "assign_block_ids",
+    "Clock", "MonotonicClock",
+    "OperatorInputProvider", "InputRequest", "UnattendedInputProvider",
+    "RunEvent", "RunLogSink", "InMemoryRunLog",
+    "ExperimentRunError", "BlockFailedError", "InvariantViolationError",
+    "RunAbortedError", "FinalizeError", "UnsupportedPersistenceError",
 ]

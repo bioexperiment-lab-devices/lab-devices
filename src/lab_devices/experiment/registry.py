@@ -37,6 +37,7 @@ class Trait:
     teardown: Teardown | None = None
     channels: frozenset[str] = field(kw_only=True)
     measurement: bool = field(default=False, kw_only=True)
+    result_field: str | None = field(default=None, kw_only=True)
     params: tuple[ParamSpec, ...] = field(default=(), kw_only=True)
 
 
@@ -109,10 +110,11 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
         "none",
         channels=_OPTICS,
         measurement=True,
+        result_field="absorbance",
         params=(ParamSpec("include_raw", "bool"),),
     ),
     ("densitometer", "measure_blank"): Trait(
-        "job", "none", channels=_OPTICS, measurement=True
+        "job", "none", channels=_OPTICS, measurement=True, result_field="slope"
     ),
     ("densitometer", "set_led"): Trait(
         "immediate",

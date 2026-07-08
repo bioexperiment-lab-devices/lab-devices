@@ -299,8 +299,6 @@ def _check_loop(
             "block", path, f"loop check must be 'before' or 'after', got {b.check!r}"
         ))
     if has_until:
-        if b.pace is not None:
-            out.append(Diagnostic("block", path, "loop pace is only valid with count mode"))
         _check_condition(b.until, f"{path} loop until", w, binding_types, out)
 
 
