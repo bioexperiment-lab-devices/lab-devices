@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import json
 from pathlib import Path
@@ -6,7 +7,7 @@ import httpx
 import pytest
 
 from lab_devices.client import LabClient
-from lab_devices.experiment import ExperimentRun, PersistenceError, RunOptions
+from lab_devices.experiment import ExperimentRun, PersistenceError, RunAbortedError, RunOptions
 from lab_devices.experiment.persist import run_event_to_dict
 from tests.experiment_run_helpers import add_standard_devices, make_workflow
 from tests.fakeclock import FakeClock, drive
@@ -127,3 +128,74 @@ async def test_disk_csv_stream_mirrors_runstate(fake_client, tmp_path: Path):
     assert rows[0] == ["timestamp", "value"]
     state = run.report.state.streams["OD"].samples
     assert [[repr(s.timestamp), repr(s.value)] for s in state] == rows[1:]
+
+
+class _RaisingLogSink:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def emit(self, event) -> None:
+        self.calls += 1
+        raise RuntimeError("sink boom")
+
+
+async def test_disk_files_complete_and_parseable_after_abort(fake_client, tmp_path: Path):
+    # Held measure job; abort mid-run; the finalizer's final flush must leave whole files.
+    fake, client = fake_client
+    add_standard_devices(fake)
+    fake.hold_job("measure")
+    wf = make_workflow(_FEEDBACK, streams=_STREAMS, persistence=_DISK_JSONL)
+    clock = FakeClock()
+    run = ExperimentRun(client, wf, RunOptions(clock=clock, output_dir=tmp_path))
+    task = asyncio.ensure_future(run.execute())
+    await clock.settle()  # dispatch reaches the held measure job (mirrors the abort test)
+    run.abort()
+    with pytest.raises(RunAbortedError):
+        await task  # finalizer runs with no clock advance (only HTTP hops)
+    assert run.report is not None and run.report.status == "aborted"
+    # Every line parses (no torn final line); the log ends at run_finished(aborted).
+    parsed = [json.loads(x) for x in (tmp_path / "run_log.jsonl").read_text().splitlines()]
+    assert parsed[-1]["kind"] == "run_finished"
+    assert parsed[-1]["data"]["status"] == "aborted"
+    # Stream file parses; its samples match RunState up to the abort (empty: measure held).
+    od = [json.loads(x) for x in (tmp_path / "OD.jsonl").read_text().splitlines()]
+    assert od == [
+        {"timestamp": s.timestamp, "value": s.value}
+        for s in run.report.state.streams["OD"].samples
+    ]
+
+
+async def test_bounded_staleness_periodic_flush(fake_client, tmp_path: Path):
+    # With a held job (no finalize yet), advancing past flush_interval flushes buffered lines.
+    fake, client = fake_client
+    add_standard_devices(fake)
+    fake.hold_job("measure")
+    wf = make_workflow(_FEEDBACK, streams=_STREAMS, persistence=_DISK_JSONL)
+    clock = FakeClock()
+    run = ExperimentRun(
+        client, wf, RunOptions(clock=clock, output_dir=tmp_path, flush_interval=10.0)
+    )
+    task = asyncio.ensure_future(run.execute())
+    await clock.settle()  # events buffered in userspace, not yet flushed to disk
+    assert "run_started" not in (tmp_path / "run_log.jsonl").read_text()
+    await clock.advance(10.0)  # fire the periodic flush sleeper (advance() is a coroutine)
+    assert "run_started" in (tmp_path / "run_log.jsonl").read_text()  # staleness bounded
+    # Clean up: stop holding measures and let the run finish.
+    fake.held_jobs.discard("measure")
+    report = await drive(clock, task)
+    assert report.status == "completed"
+
+
+async def test_raising_log_sink_still_finalizes_and_sets_report(fake_client):
+    # Closes the Increment-4 latent ticket: a custom sink raising on emit must not leave the
+    # report unset or skip the finalizer (design 5 §8). The run still fails, but safely.
+    fake, client = fake_client
+    add_standard_devices(fake)
+    wf = make_workflow([{"command": {"device": "pump_1", "verb": "stop"}}])
+    sink = _RaisingLogSink()
+    run = ExperimentRun(client, wf, RunOptions(clock=FakeClock(), log_sink=sink))
+    clock = run._options.clock
+    with pytest.raises(RuntimeError):
+        await drive(clock, run.execute())
+    assert run.report is not None  # finalizer ran and set the report despite the raising sink
+    assert sink.calls > 0
