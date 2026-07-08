@@ -5,12 +5,14 @@ from __future__ import annotations
 import csv
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
 from lab_devices.experiment.errors import PersistenceError
-from lab_devices.experiment.runlog import RunEvent
+from lab_devices.experiment.runlog import InMemoryRunLog, RunEvent, RunLogSink
 from lab_devices.experiment.state import Sample
+from lab_devices.experiment.workflow import Workflow
 
 
 class StreamSink(Protocol):
@@ -139,3 +141,128 @@ class CsvStreamSink(_CsvWriter):
 
     def write(self, sample: Sample) -> None:
         self._write_row([repr(sample.timestamp), repr(sample.value)])
+
+
+_RUNLOG_SINKS: dict[str, Callable[[Path], RunLogSink]] = {
+    "jsonl": JsonlRunLogSink,
+    "csv": CsvRunLogSink,
+}
+_STREAM_SINKS: dict[str, Callable[[Path], StreamSink]] = {
+    "jsonl": JsonlStreamSink,
+    "csv": CsvStreamSink,
+}
+
+
+class SinkSet:
+    """Resolved persistence for one run: log sink + per-stream sinks (design 5 §4.2, §5)."""
+
+    def __init__(
+        self,
+        log_sink: RunLogSink,
+        stream_sinks: dict[str, StreamSink | None],
+        has_disk: bool,
+    ) -> None:
+        self.log_sink = log_sink
+        self.stream_sinks = stream_sinks
+        self.has_disk = has_disk
+
+    @classmethod
+    def build(
+        cls,
+        workflow: Workflow,
+        output_dir: Path | None,
+        log_sink_override: RunLogSink | None,
+    ) -> SinkSet:
+        fmt = workflow.persistence.format
+        if fmt not in _RUNLOG_SINKS:
+            raise PersistenceError(f"unknown persistence format {fmt!r}")
+        default = workflow.persistence.default
+
+        # 1. Decide what disk files are needed, without opening anything yet.
+        log_on_disk = log_sink_override is None and default == "disk"
+        stream_on_disk: dict[str, str] = {}  # stream name -> safe base filename
+        used: dict[str, str] = {}  # safe base -> originating stream name (collision guard)
+        for name, decl in workflow.streams.items():
+            effective = decl.persistence if decl.persistence is not None else default
+            if effective == "disk":
+                base = safe_stream_filename(name)
+                if base in used:
+                    raise PersistenceError(
+                        f"stream name collision: {name!r} and {used[base]!r} both map to "
+                        f"{base!r}.{fmt}"
+                    )
+                used[base] = name
+                stream_on_disk[name] = base
+
+        any_disk = log_on_disk or bool(stream_on_disk)
+        if any_disk and output_dir is None:
+            raise PersistenceError("disk persistence requested but output_dir is None")
+
+        # 2. Refuse to clobber: check every target before opening any file.
+        targets: list[Path] = []
+        if any_disk:
+            assert output_dir is not None
+            if log_on_disk:
+                targets.append(output_dir / f"run_log.{fmt}")
+            targets += [output_dir / f"{base}.{fmt}" for base in stream_on_disk.values()]
+            for path in targets:
+                if path.exists():
+                    raise PersistenceError(f"persistence target already exists: {path}")
+            try:
+                output_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                raise PersistenceError(f"cannot create output_dir {output_dir}: {exc}") from exc
+
+        # 3. Open sinks (all guards passed). Disk-opening errors must not leak handles.
+        opened: list[Any] = []
+        try:
+            if log_sink_override is not None:
+                log_sink: RunLogSink = log_sink_override
+            elif log_on_disk:
+                assert output_dir is not None
+                log_sink = _RUNLOG_SINKS[fmt](output_dir / f"run_log.{fmt}")
+                opened.append(log_sink)
+            else:
+                log_sink = InMemoryRunLog()
+
+            stream_sinks: dict[str, StreamSink | None] = {}
+            for name in workflow.streams:
+                disk_base = stream_on_disk.get(name)
+                if disk_base is None:
+                    stream_sinks[name] = None
+                else:
+                    assert output_dir is not None
+                    sink = _STREAM_SINKS[fmt](output_dir / f"{disk_base}.{fmt}")
+                    stream_sinks[name] = sink
+                    opened.append(sink)
+        except OSError as exc:
+            for sink in opened:
+                try:
+                    sink.close()
+                except BaseException:  # noqa: BLE001 - best-effort cleanup on failure path
+                    pass
+            raise PersistenceError(f"cannot open persistence file: {exc}") from exc
+
+        return cls(log_sink, stream_sinks, has_disk=bool(stream_on_disk) or log_on_disk)
+
+    def _disk_sinks(self) -> list[Any]:
+        sinks: list[Any] = [s for s in self.stream_sinks.values() if s is not None]
+        if hasattr(self.log_sink, "flush") or hasattr(self.log_sink, "errors"):
+            sinks.append(self.log_sink)
+        return sinks
+
+    def flush_all(self) -> None:
+        for sink in self._disk_sinks():
+            if hasattr(sink, "flush"):
+                sink.flush()
+
+    def close_all(self) -> None:
+        for sink in self._disk_sinks():
+            if hasattr(sink, "close"):
+                sink.close()
+
+    def persistence_errors(self) -> tuple[BaseException, ...]:
+        errors: list[BaseException] = []
+        for sink in self._disk_sinks():
+            errors.extend(getattr(sink, "errors", ()))
+        return tuple(errors)

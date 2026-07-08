@@ -10,11 +10,13 @@ from lab_devices.experiment.persist import (
     CsvStreamSink,
     JsonlRunLogSink,
     JsonlStreamSink,
+    SinkSet,
     run_event_to_dict,
     safe_stream_filename,
 )
-from lab_devices.experiment.runlog import RunEvent
+from lab_devices.experiment.runlog import InMemoryRunLog, RunEvent
 from lab_devices.experiment.state import Sample
+from lab_devices.experiment.workflow import Persistence, StreamDecl, Workflow
 
 
 def test_run_event_to_dict_shape():
@@ -106,3 +108,81 @@ def test_csv_runlog_sink_json_data_column(tmp_path: Path):
     assert rows[1][0:3] == ["1.0", "measure_recorded", "blocks[0]"]
     assert json.loads(rows[1][3]) == {"stream": "OD", "value": 0.5}
     assert rows[2] == ["0.0", "run_started", "", "{}"]  # None block_id -> empty column
+
+
+def _wf(persistence: Persistence, streams: dict[str, StreamDecl]) -> Workflow:
+    return Workflow(schema_version=1, streams=streams, persistence=persistence)
+
+
+def test_sinkset_all_in_memory_no_files(tmp_path: Path):
+    wf = _wf(Persistence(default="in_memory"), {"OD": StreamDecl()})
+    ss = SinkSet.build(wf, output_dir=None, log_sink_override=None)
+    assert isinstance(ss.log_sink, InMemoryRunLog)
+    assert ss.stream_sinks == {"OD": None}
+    assert ss.has_disk is False
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_sinkset_disk_default_builds_all(tmp_path: Path):
+    wf = _wf(Persistence(default="disk", format="jsonl"),
+             {"OD": StreamDecl(), "temp": StreamDecl(persistence="in_memory")})
+    ss = SinkSet.build(wf, output_dir=tmp_path, log_sink_override=None)
+    assert isinstance(ss.log_sink, JsonlRunLogSink)
+    assert isinstance(ss.stream_sinks["OD"], JsonlStreamSink)
+    assert ss.stream_sinks["temp"] is None  # per-stream override wins
+    assert ss.has_disk is True
+    assert (tmp_path / "run_log.jsonl").exists()
+    assert (tmp_path / "OD.jsonl").exists()
+    assert not (tmp_path / "temp.jsonl").exists()
+    ss.close_all()
+
+
+def test_sinkset_injected_log_sink_overrides_config(tmp_path: Path):
+    wf = _wf(Persistence(default="disk", format="jsonl"), {})
+    inj = InMemoryRunLog()
+    ss = SinkSet.build(wf, output_dir=tmp_path, log_sink_override=inj)
+    assert ss.log_sink is inj
+    assert not (tmp_path / "run_log.jsonl").exists()
+    ss.close_all()
+
+
+def test_sinkset_disk_without_output_dir_raises(tmp_path: Path):
+    wf = _wf(Persistence(default="disk"), {"OD": StreamDecl()})
+    with pytest.raises(PersistenceError, match="output_dir"):
+        SinkSet.build(wf, output_dir=None, log_sink_override=None)
+
+
+def test_sinkset_refuses_to_clobber(tmp_path: Path):
+    (tmp_path / "run_log.jsonl").write_text("stale\n")
+    wf = _wf(Persistence(default="disk"), {})
+    with pytest.raises(PersistenceError, match="exists"):
+        SinkSet.build(wf, output_dir=tmp_path, log_sink_override=None)
+    assert (tmp_path / "run_log.jsonl").read_text() == "stale\n"  # untouched
+
+
+def test_sinkset_name_collision_raises(tmp_path: Path):
+    wf = _wf(Persistence(default="disk"), {"O D": StreamDecl(), "O/D": StreamDecl()})
+    with pytest.raises(PersistenceError, match="collision"):
+        SinkSet.build(wf, output_dir=tmp_path, log_sink_override=None)
+
+
+def test_sinkset_bad_format_raises(tmp_path: Path):
+    wf = _wf(Persistence(default="disk", format="xml"), {})
+    with pytest.raises(PersistenceError, match="format"):
+        SinkSet.build(wf, output_dir=tmp_path, log_sink_override=None)
+
+
+def test_sinkset_csv_format(tmp_path: Path):
+    wf = _wf(Persistence(default="disk", format="csv"), {"OD": StreamDecl()})
+    ss = SinkSet.build(wf, output_dir=tmp_path, log_sink_override=None)
+    assert isinstance(ss.log_sink, CsvRunLogSink)
+    assert isinstance(ss.stream_sinks["OD"], CsvStreamSink)
+    ss.close_all()
+
+
+def test_sinkset_open_failure_raises_persistence_error(tmp_path: Path):
+    f = tmp_path / "afile"
+    f.write_text("x")
+    wf = _wf(Persistence(default="disk"), {"OD": StreamDecl()})
+    with pytest.raises(PersistenceError):
+        SinkSet.build(wf, output_dir=f, log_sink_override=None)
