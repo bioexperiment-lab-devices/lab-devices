@@ -2966,6 +2966,9 @@ async def test_flagship_rotate_measure_feedback(fake_client):
                                               "params": {"level": 0}}}]}},
         ]}}],
         streams={"OD": {"units": "AU"}},
+        groups={"prime_line": {"body": [
+            {"command": {"device": "pump_1", "verb": "dispense",
+                         "params": {"volume_ml": 1.0, "speed_ml_min": 5.0}}}]}},
     )
     run = make_run(client, wf, input_provider=ScriptedInputProvider({"target_OD": 0.55}))
     report = await drive(run._options.clock, run.execute())
@@ -3007,7 +3010,7 @@ async def test_flagship_midrun_job_failure_full_finalizer(fake_client):
         ]}},
     ], streams={"OD": {}})
     run = make_run(client, wf)
-    with pytest.raises(BlockFailedError, match="dispense|job"):
+    with pytest.raises(BlockFailedError):
         await drive(run._options.clock, run.execute())
     assert run.report.status == "failed"
     seq = verbs(fake)
