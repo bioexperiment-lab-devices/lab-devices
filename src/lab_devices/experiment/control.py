@@ -62,8 +62,10 @@ class Console:
                 f"cannot recover while devices are busy: {sorted(busy)}; abort the run first"
             )
 
-    async def _port_of(self, device_id: str) -> str | None:
+    async def _port_of(self, device_id: str) -> str:
         for info in await self._client.list_devices():
             if info.id == device_id:
+                if info.port is None:
+                    raise ValueError(f"device {device_id!r} has no resolvable port")
                 return info.port
         raise ValueError(f"unknown device id: {device_id!r}")

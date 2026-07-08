@@ -68,3 +68,21 @@ async def test_disconnect_refuses_busy_then_succeeds(fake_client):
     assert not run.is_device_busy("pump_1")
     released = await console.disconnect("pump_1")
     assert released >= 0
+
+
+async def test_disconnect_null_port_refuses(fake_client):
+    fake, client = fake_client
+    add_standard_devices(fake)
+    fake.devices["pump_1"]["port"] = None  # stuck/unbound device: no resolvable port
+    console = Console(client)
+    # a null port must refuse (ValueError) rather than fall through to a whole-agent disconnect
+    with pytest.raises(ValueError):
+        await console.disconnect("pump_1")
+
+
+async def test_disconnect_unknown_device_raises(fake_client):
+    fake, client = fake_client
+    add_standard_devices(fake)
+    console = Console(client)
+    with pytest.raises(ValueError):
+        await console.disconnect("pump_99")
