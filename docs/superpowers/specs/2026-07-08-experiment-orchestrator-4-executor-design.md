@@ -39,7 +39,9 @@ Engine-level decisions settled in this doc (each marked **[settled]** where defi
 executor-owned job polling via the clock (§6); occupancy check-and-mark with no
 intervening await (§7); in-flight jobs stay tracked across cancelled waits (§7); operator
 input validated by the executor, fail-safe on violation, providers own re-prompting (§8);
-trailing `gap_after` and trailing loop `pace` skipped (§9); `pace` honored in both loop
+`gap_after` honored unconditionally while a trailing loop `pace` is skipped — gap is
+end→next-start (defined transitively, e.g. the next loop iteration), pace is a floor
+between iteration starts (§9); `pace` honored in both loop
 modes (§9); pause gates block dispatch only — job polls, offsets/gaps in progress, and the
 finalizer ignore the gate (§10); LIFO teardown order (§11); registry gains `result_field`
 (§14); `job_timeout` default `None` (§3).
@@ -83,7 +85,8 @@ citing its design section):
 | `occupancy.py` | `BusyTracker` + open-mode registry (`Occupancy`) |
 | `execute.py` | recursive walker + command dispatch pipeline |
 | `finalize.py` | the finalizer (§11) |
-| `run.py` | `RunContext`, `RunOptions`, `RunReport`, `ExperimentRun` |
+| `context.py` | `RunOptions`, `RunContext` (imported by `execute.py`/`finalize.py`; keeping them in `run.py` would be a circular import) |
+| `run.py` | `assign_block_ids`, `RunReport`, `ExperimentRun` |
 
 `errors.py` gains the run taxonomy (§15); `registry.py` gains `result_field` (§14);
 `blocks.py` gains `BlockBase.id` (§13). The package `__init__` re-exports the new public
@@ -207,9 +210,11 @@ class OperatorInputProvider(Protocol):
 
 ## 9. Container semantics
 
-- **Serial** — children in order. `gap_after` on a child = `clock.sleep` between that
-  child's end and the next child's start; **[settled]** a trailing `gap_after` on the last
-  child is skipped (there is no next start to delay).
+- **Serial** — children in order. `gap_after` on a child = `clock.sleep` after that
+  child's end; **[settled]** honored unconditionally, including on a container's last
+  child — parent §15.2 places `gap_after` on the last loop-body child to pace
+  iterations, so the "next start" is defined transitively (next iteration, or whatever
+  follows the container); at run end a trailing gap merely delays finalize.
 - **Parallel** — `asyncio.TaskGroup`, one task per child: `await
   clock.sleep(start_offset)` (if set) → execute child. Device-distinctness is already
   proven by the validator; the busy-tracker is the safety net. A child failure cancels
