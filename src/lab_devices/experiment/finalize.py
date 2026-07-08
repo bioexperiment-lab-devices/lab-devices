@@ -20,10 +20,18 @@ _SWEEP: dict[str, tuple[tuple[str, dict[str, Any]], ...]] = {
 }
 
 
+def _emit(ctx: RunContext, kind: str, **data: Any) -> None:
+    """Best-effort: a raising log sink must never stop the safe-state sweep (§11)."""
+    try:
+        ctx.emit(kind, **data)
+    except BaseException:  # noqa: BLE001 - deliberate, mirrors _issue
+        pass
+
+
 async def run_finalizer(ctx: RunContext) -> list[BaseException]:
     """Best-effort, fixed-order shutdown; a failed step never skips the rest (§11)."""
     errors: list[BaseException] = []
-    ctx.emit("finalize_started")
+    _emit(ctx, "finalize_started")
     # 1. Cancel in-flight jobs: stop each device that still owns a live job.
     for device_id in dict.fromkeys(entry[0] for entry in ctx.in_flight.values()):
         await _issue(ctx, device_id, "stop", {}, "job_cancelled", errors)
@@ -39,7 +47,7 @@ async def run_finalizer(ctx: RunContext) -> list[BaseException]:
     for device_id in ctx.touched:
         for verb, params in _SWEEP.get(device_type(device_id), ()):
             await _issue(ctx, device_id, verb, dict(params), "sweep_command", errors)
-    ctx.emit("finalize_finished", errors=len(errors))
+    _emit(ctx, "finalize_finished", errors=len(errors))
     return errors
 
 
@@ -60,7 +68,7 @@ async def _issue(
             await method(**params)
     except BaseException as exc:
         errors.append(exc)
-        ctx.emit("finalize_step_failed", device=device_id, verb=verb, error=str(exc))
+        _emit(ctx, "finalize_step_failed", device=device_id, verb=verb, error=str(exc))
         return False
-    ctx.emit(kind, device=device_id, verb=verb)
+    _emit(ctx, kind, device=device_id, verb=verb)
     return True

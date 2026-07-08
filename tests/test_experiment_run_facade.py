@@ -151,6 +151,58 @@ async def test_external_cancellation_finalizes_and_reraises(fake_client):
     assert seq.count(("pump_2", "stop")) >= 1  # rotate torn down
 
 
+class FinalizeRaisingSink:
+    """Public-API log sink that raises on every finalize-phase / reporting emit; earlier
+    phases delegate to an inner InMemoryRunLog so the run reaches the finalizer (§11)."""
+
+    _RAISING = frozenset({"teardown_issued", "sweep_command", "job_cancelled", "run_finished"})
+
+    def __init__(self):
+        self.inner = InMemoryRunLog()
+
+    def emit(self, event):
+        if event.kind.startswith("finalize") or event.kind in self._RAISING:
+            raise OSError("log sink boom")
+        self.inner.emit(event)
+
+    @property
+    def events(self):
+        return self.inner.events
+
+
+async def test_raising_log_sink_never_skips_safe_state_sweep(fake_client):
+    fake, client = fake_client
+    add_standard_devices(fake)
+    wf = make_workflow([
+        {"command": {"device": "pump_2", "verb": "rotate",
+                     "params": {"direction": "forward", "speed_ml_min": 2.0}}},
+    ])  # rotate left open: the finalizer must tear it down and sweep despite the sink
+    run = make_run(client, wf, log_sink=FinalizeRaisingSink())
+    report = await drive(run._options.clock, run.execute())
+    assert report.status == "completed"       # reporting survived the raising sink
+    assert run.report is report               # report set despite finalize-phase raises
+    assert verbs(fake).count(("pump_2", "stop")) == 2  # teardown + sweep both hit the wire
+    assert run._ctx.occupancy.open_modes() == ()       # mode closed after teardown
+
+
+async def test_finalizer_teardown_failure_notes_the_block_error(fake_client):
+    fake, client = fake_client
+    add_standard_devices(fake)
+    fake.fail_jobs.add("dispense")
+    fake.inject_error("pump_2", "stop", "hardware_error", "stall", times=1)  # teardown fails
+    wf = make_workflow([
+        {"command": {"device": "pump_2", "verb": "rotate",
+                     "params": {"direction": "forward", "speed_ml_min": 2.0}}},
+        {"command": {"device": "pump_1", "verb": "dispense", "params": {"volume_ml": 1.0}}},
+    ])
+    run = make_run(client, wf)
+    with pytest.raises(BlockFailedError) as info:
+        await drive(run._options.clock, run.execute())
+    assert run.report.status == "failed"
+    assert run.report.finalize_errors  # teardown of the open rotate mode failed
+    assert any(n.startswith("finalizer:") for n in getattr(info.value, "__notes__", []))
+
+
 def test_public_exports():
     import lab_devices.experiment as exp
 

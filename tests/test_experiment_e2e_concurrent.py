@@ -2,6 +2,8 @@
 """Concurrent flagships (spec §16 #9-10): same-device channel overlap, input lanes."""
 import asyncio
 
+import pytest
+
 from lab_devices.experiment import ExperimentRun, RunOptions
 from lab_devices.experiment.inputs import InputRequest
 from lab_devices.experiment.state import BindingValue
@@ -77,3 +79,24 @@ async def test_flagship_operator_input_blocks_only_its_lane(fake_client):
     report = await drive(clock, task)
     assert report.status == "completed"
     assert report.state.bindings == {"target": 1.5}
+
+
+async def test_flagship_concurrent_failure_single_finalize_pass(fake_client):
+    """Flagship 9b: a failing parallel child cancels its sibling and the run finalizes
+    exactly once through the facade (single safe-state pass, §9/§11)."""
+    fake, client = fake_client
+    add_standard_devices(fake)
+    fake.inject_error("pump_1", "dispense", "hardware_error", "stall")
+    wf = make_workflow([
+        {"parallel": {"children": [
+            {"command": {"device": "pump_1", "verb": "dispense", "params": {"volume_ml": 1.0}}},
+            {"command": {"device": "pump_2", "verb": "dispense", "params": {"volume_ml": 1.0}}},
+        ]}},
+    ])
+    run = ExperimentRun(client, wf, options=RunOptions(clock=FakeClock()))
+    with pytest.raises(BaseExceptionGroup):
+        await drive(run._options.clock, run.execute())
+    report = run.report
+    assert report.status == "failed"
+    starts = [e for e in report.log.events if e.kind == "finalize_started"]
+    assert len(starts) == 1  # exactly one safe-state pass despite concurrent lanes

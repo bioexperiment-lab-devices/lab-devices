@@ -123,7 +123,10 @@ class ExperimentRun:
         except BaseException as exc:
             error = exc
         self._finalizing = True
-        finalize_errors = tuple(await run_finalizer(ctx))
+        try:
+            finalize_errors = tuple(await run_finalizer(ctx))
+        except BaseException as fin_exc:  # finalizer failed catastrophically: still report
+            finalize_errors = (fin_exc,)
         if error is not None:
             for fin_err in finalize_errors:
                 error.add_note(f"finalizer: {fin_err!r}")
@@ -133,7 +136,10 @@ class ExperimentRun:
             status=status, error=error, finalize_errors=finalize_errors,
             state=ctx.state, log=self._options.log_sink,
         )
-        ctx.emit("run_finished", status=status)
+        try:
+            ctx.emit("run_finished", status=status)
+        except BaseException:  # a raising log sink must not abort reporting (§11)
+            pass
         if cancelled:
             assert error is not None  # isinstance check above guarantees this (mypy narrowing)
             if ctx.abort_requested:  # operator abort (wired in plan 4b Task 3)

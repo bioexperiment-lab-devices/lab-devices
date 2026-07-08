@@ -148,3 +148,21 @@ async def test_flagship_operator_input_feeds_param(fake_client):
     report = await drive(run._options.clock, run.execute())
     assert report.status == "completed"
     assert fake.calls[0][2]["volume_ml"] == pytest.approx(4.2)
+
+
+async def test_flagship_operator_input_unattended_fails_through_facade(fake_client):
+    """Flagship 5b: no input_provider -> the default UnattendedInputProvider fails the
+    block through the facade, yet the finalizer still runs (fail-safe, §8/§11)."""
+    fake, client = fake_client
+    add_standard_devices(fake)
+    wf = make_workflow([
+        {"operator_input": {"name": "target", "type": "float"}},
+        {"command": {"device": "pump_1", "verb": "dispense",
+                     "params": {"volume_ml": "target / 10"}}},
+    ])
+    run = make_run(client, wf)  # DEFAULT unattended provider
+    with pytest.raises(BlockFailedError, match="no input provider"):
+        await drive(run._options.clock, run.execute())
+    assert run.report.status == "failed"
+    kinds = [e.kind for e in run.report.log.events]
+    assert "finalize_started" in kinds and "finalize_finished" in kinds

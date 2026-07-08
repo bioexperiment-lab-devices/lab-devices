@@ -11,6 +11,7 @@ from tests.experiment_run_helpers import (
     verbs,
 )
 from tests.fakeclock import FakeClock, drive
+from tests.fakelab import JOB_RESULTS
 
 
 def make_ctx(client, workflow, *, clock=None, inputs=None):
@@ -176,3 +177,39 @@ async def test_unattended_input_fails_safe(fake_client):
     ctx = make_ctx(client, wf)  # default UnattendedInputProvider
     with pytest.raises(BlockFailedError, match="no input provider"):
         await run_blocks(ctx)
+
+
+async def test_measure_scalar_extraction_failure_after_dispatch(fake_client, monkeypatch):
+    fake, client = fake_client
+    add_standard_devices(fake)
+    monkeypatch.setitem(JOB_RESULTS, "measure_blank", {})  # job succeeds with empty result
+    wf = make_workflow(
+        [{"measure": {"device": "densitometer_1", "verb": "measure_blank", "into": "S"}}],
+        streams={"S": {}},
+    )
+    ctx = make_ctx(client, wf)
+    with pytest.raises(BlockFailedError) as info:
+        await run_blocks(ctx)
+    assert info.value.block_id == "blocks[0]"  # failure carries the measure block's id
+    assert ("densitometer_1", "measure_blank") in verbs(fake)  # dispatched before extraction
+    failed = [e for e in ctx.options.log_sink.events if e.kind == "block_failed"]
+    assert len(failed) == 1
+    ctx.occupancy.acquire("densitometer_1", frozenset({"optics"}), "probe")  # slot re-acquirable
+
+
+async def test_group_ref_body_child_failure_carries_own_id(fake_client):
+    fake, client = fake_client
+    add_standard_devices(fake)
+    fake.fail_jobs.add("dispense")
+    wf = make_workflow(
+        [{"group_ref": {"name": "g"}}],
+        groups={"g": {"body": [
+            {"command": {"device": "pump_1", "verb": "dispense", "params": {"volume_ml": 1.0}}},
+        ]}},
+    )
+    ctx = make_ctx(client, wf)
+    with pytest.raises(BlockFailedError) as info:
+        await run_blocks(ctx)
+    assert info.value.block_id == "groups['g'].body[0]"  # body child's own structural id
+    failed = [e for e in ctx.options.log_sink.events if e.kind == "block_failed"]
+    assert len(failed) == 1 and failed[0].block_id == "groups['g'].body[0]"

@@ -126,6 +126,21 @@ async def test_branch_then_else(fake_client):
     assert verbs(fake) == [("valve_1", "home")]
 
 
+async def test_branch_else_taken(fake_client):
+    fake, client = fake_client
+    add_standard_devices(fake)
+    wf = make_workflow(
+        [{"branch": {"if": "count(OD) > 0",  # false on the pre-created empty stream
+                     "then": [{"command": {"device": "valve_1", "verb": "home",
+                                           "params": {"position": 1}}}],
+                     "else": [STOP]}}],
+        streams={"OD": {}},
+    )
+    ctx = make_ctx(client, wf)
+    await run_blocks(ctx)
+    assert verbs(fake) == [("pump_1", "stop")]  # else ran, then skipped
+
+
 async def test_group_ref_executes_body_inline(fake_client):
     fake, client = fake_client
     add_standard_devices(fake)
