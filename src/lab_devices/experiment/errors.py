@@ -82,3 +82,7 @@ class FinalizeError(ExperimentRunError):
 class PersistenceError(ExperimentRunError):
     """A persistence sink could not be built: bad/missing config, missing output_dir,
     a target file already exists, a stream-name collision, or a bad format (design 5 §10)."""
+
+
+class DeviceBusyError(ExperimentRunError):
+    """A recovery-tier action targeted a device that is not idle (design 5 §9-10)."""

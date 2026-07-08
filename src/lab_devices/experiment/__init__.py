@@ -27,6 +27,7 @@ from lab_devices.experiment.context import RunOptions
 from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import (
     BlockFailedError,
+    DeviceBusyError,
     Diagnostic,
     EvaluationError,
     ExperimentError,
@@ -107,7 +108,7 @@ __all__ = [
     "OperatorInputProvider", "InputRequest", "UnattendedInputProvider",
     "RunEvent", "RunLogSink", "InMemoryRunLog",
     "ExperimentRunError", "BlockFailedError", "InvariantViolationError",
-    "RunAbortedError", "FinalizeError", "PersistenceError",
+    "RunAbortedError", "FinalizeError", "PersistenceError", "DeviceBusyError",
     "CsvRunLogSink", "CsvStreamSink", "JsonlRunLogSink", "JsonlStreamSink",
     "SinkSet", "StreamSink",
 ]
