@@ -46,3 +46,38 @@ class ValidationError(ExperimentError):
         self.diagnostics = tuple(diagnostics)
         lines = "\n".join(f"  - {d}" for d in self.diagnostics)
         super().__init__(f"{len(self.diagnostics)} validation error(s):\n{lines}")
+
+
+class ExperimentRunError(ExperimentError):
+    """Base for errors raised while executing a workflow (design 4-exec §15)."""
+
+
+class BlockFailedError(ExperimentRunError):
+    """A block failed at dispatch or completion; `__cause__` carries the original error."""
+
+    def __init__(self, block_id: str, message: str) -> None:
+        self.block_id = block_id
+        super().__init__(f"block {block_id}: {message}")
+
+
+class InvariantViolationError(ExperimentRunError):
+    """A proven-impossible occupancy state was observed (busy-slot conflict or hardware
+    BusyError). Never retried: the static proof was violated (design 4-exec §7)."""
+
+
+class RunAbortedError(ExperimentRunError):
+    """The operator aborted the run; the finalizer has completed (design 4-exec §10)."""
+
+
+class FinalizeError(ExperimentRunError):
+    """The run completed, but the finalizer could not fully reach safe state (D8)."""
+
+    def __init__(self, errors: Sequence[BaseException]) -> None:
+        self.errors = tuple(errors)
+        super().__init__(
+            f"{len(self.errors)} finalizer error(s); hardware may not be in a safe state"
+        )
+
+
+class UnsupportedPersistenceError(ExperimentRunError):
+    """The workflow requests persistence that arrives in Increment 5 (design 4-exec D4)."""
