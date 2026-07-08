@@ -3,6 +3,7 @@ See design 4-exec §7-9."""
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -252,4 +253,15 @@ async def _run_branch(block: B.Branch, ctx: RunContext) -> None:
 
 
 async def _run_parallel(block: B.Parallel, ctx: RunContext) -> None:
-    raise NotImplementedError("Parallel execution lands in plan 4b")
+    """One task per child (design §9). Device-distinctness is statically proven; the
+    occupancy model is the runtime net. A failing child cancels its siblings; the
+    TaskGroup's ExceptionGroup propagates unflattened."""
+    async with asyncio.TaskGroup() as tg:
+        for child in block.children:
+            tg.create_task(_parallel_child(child, ctx))
+
+
+async def _parallel_child(child: B.Block, ctx: RunContext) -> None:
+    if child.start_offset is not None:
+        await ctx.clock.sleep(parse_duration(child.start_offset))
+    await execute_block(child, ctx)

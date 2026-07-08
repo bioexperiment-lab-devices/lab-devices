@@ -68,6 +68,28 @@ def test_release_only_frees_own_holds():
         occ.acquire("pump_1", MOTOR, "blocks[1]")
 
 
+def test_close_one_of_two_co_resident_modes_is_identity_based():
+    """Two modes co-reside on one device across disjoint channels; closing ONE frees
+    only its channel. Identity-based close (Task 4a-6 review Q3): set_led stays open and
+    its optics channel stays blocked while thermal is released."""
+    occ = Occupancy()
+    led = OpenMode("densitometer_1", "set_led", "set_led", {"level": 0}, OPTICS, "b1")
+    thermo = OpenMode(
+        "densitometer_1", "set_thermostat", "set_thermostat", {"enabled": False},
+        THERMAL, "b2",
+    )
+    occ.acquire("densitometer_1", OPTICS, "b1")
+    occ.register_open(led)
+    occ.acquire("densitometer_1", THERMAL, "b2")
+    occ.register_open(thermo)
+    closed = occ.register_close("densitometer_1", "set_thermostat")
+    assert closed is not None and closed.mode_verb == "set_thermostat"
+    assert [m.mode_verb for m in occ.open_modes()] == ["set_led"]  # set_led survives
+    with pytest.raises(InvariantViolationError, match="mode 'set_led'"):
+        occ.acquire("densitometer_1", OPTICS, "b3")  # optics still blocked by set_led
+    occ.acquire("densitometer_1", THERMAL, "b4")  # thermal freed by the close
+
+
 def test_open_modes_snapshot_in_open_order():
     occ = Occupancy()
     led = OpenMode("densitometer_1", "set_led", "set_led", {"level": 0}, OPTICS, "b1")
