@@ -1,3 +1,11 @@
+import httpx
+import pytest
+
+from lab_devices import errors
+from lab_devices.client import LabClient
+from tests.fakelab import FakeLab
+
+
 async def test_ping_and_devices_list(lab_transport):
     fake, transport = lab_transport
     fake.add_device("pump_1", "pump")
@@ -72,3 +80,78 @@ async def test_get_devices_shows_unreachable_as_disconnected(lab_transport):
 
     assert devices["pump_1"]["connected"] is True
     assert devices["pump_2"]["connected"] is False
+
+
+# ---- Increment-4 extensions (executor test surface) ----
+
+
+@pytest.fixture
+def fake_and_client():
+    fake = FakeLab()
+    fake.add_device("pump_1", "pump")
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(fake.handler), base_url="http://lab"
+    )
+    return fake, LabClient("lab", 80, http=http)
+
+
+async def test_calls_recorded_in_order_without_polls(fake_and_client):
+    fake, client = fake_and_client
+    pump = client.pump(1)
+    await pump.rotate(direction="forward", speed_ml_min=2.0)
+    job = await pump.dispense(volume_ml=1.0)
+    await job.result()
+    await pump.stop()
+    assert [(d, c) for d, c, _ in fake.calls] == [
+        ("pump_1", "rotate"), ("pump_1", "dispense"), ("pump_1", "stop")
+    ]
+    assert fake.calls[0][2] == {"direction": "forward", "speed_ml_min": 2.0}
+
+
+async def test_record_polls_opt_in(fake_and_client):
+    fake, client = fake_and_client
+    fake.record_polls = True
+    job = await client.pump(1).dispense(volume_ml=1.0)
+    await job.result()
+    assert ("pump_1", "get_job") in [(d, c) for d, c, _ in fake.calls]
+
+
+async def test_inject_error_once_then_normal(fake_and_client):
+    fake, client = fake_and_client
+    fake.inject_error("pump_1", "dispense", "busy", "job j-9 running")
+    with pytest.raises(errors.BusyError):
+        await client.pump(1).dispense(volume_ml=1.0)
+    job = await client.pump(1).dispense(volume_ml=1.0)  # queue drained
+    assert (await job.result()).dispensed_ml == 10.0
+
+
+async def test_fail_jobs_per_command(fake_and_client):
+    fake, client = fake_and_client
+    fake.fail_jobs.add("dispense")
+    job = await client.pump(1).dispense(volume_ml=1.0)
+    with pytest.raises(errors.JobFailedError):
+        await job.result()
+
+
+async def test_hold_and_complete_job(fake_and_client):
+    fake, client = fake_and_client
+    fake.hold_job("dispense")
+    job = await client.pump(1).dispense(volume_ml=1.0)
+    await job.refresh()
+    await job.refresh()
+    assert job.state == "running"  # held: polls never complete it
+    fake.complete_job(job.job_id)
+    await job.refresh()
+    assert job.state == "succeeded"
+
+
+async def test_polls_to_complete_by_cmd(fake_and_client):
+    fake, client = fake_and_client
+    fake.polls_to_complete_by_cmd["dispense"] = 3
+    job = await client.pump(1).dispense(volume_ml=1.0)
+    await job.refresh()
+    assert job.state == "running"
+    await job.refresh()
+    assert job.state == "running"
+    await job.refresh()
+    assert job.state == "succeeded"
