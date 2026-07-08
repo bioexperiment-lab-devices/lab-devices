@@ -223,11 +223,32 @@ async def _run_operator_input(block: B.OperatorInput, ctx: RunContext) -> None:
 
 
 async def _run_loop(block: B.Loop, ctx: RunContext) -> None:
-    raise NotImplementedError  # Task 11
+    """Loop semantics per design §8/§9: post-test default, pace is a floor from
+    iteration start (both modes), no trailing pace, gate re-checked per iteration."""
+    pace = parse_duration(block.pace) if block.pace is not None else None
+    iterations = 0
+    while True:
+        await ctx.gate.wait()  # quiesce point at each iteration top (design §10)
+        if block.until is not None and block.check == "before" and _condition(block.until, ctx):
+            break
+        started = ctx.clock.now()
+        await execute_blocks(block.body, ctx)
+        iterations += 1
+        if block.until is not None and block.check == "after" and _condition(block.until, ctx):
+            break
+        if block.count is not None and iterations >= block.count:
+            break
+        if pace is not None:
+            remaining = pace - (ctx.clock.now() - started)
+            if remaining > 0:
+                await ctx.clock.sleep(remaining)  # floor, not deadline (design §8)
 
 
 async def _run_branch(block: B.Branch, ctx: RunContext) -> None:
-    raise NotImplementedError  # Task 11
+    if _condition(block.if_, ctx):
+        await execute_blocks(block.then, ctx)
+    elif block.else_ is not None:
+        await execute_blocks(block.else_, ctx)
 
 
 async def _run_parallel(block: B.Parallel, ctx: RunContext) -> None:
