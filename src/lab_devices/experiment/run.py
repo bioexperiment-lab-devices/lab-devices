@@ -222,6 +222,9 @@ class ExperimentRun:
 
     def _flush_and_close_sinks(self) -> None:
         if self._sinks is not None and not self._sinks_closed:
-            self._sinks.flush_all()
-            self._sinks.close_all()
+            try:
+                self._sinks.flush_all()
+                self._sinks.close_all()
+            except BaseException:  # a foreign sink's flush/close must not unset the report
+                pass
             self._sinks_closed = True

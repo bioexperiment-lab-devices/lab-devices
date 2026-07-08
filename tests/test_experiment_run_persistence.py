@@ -7,7 +7,13 @@ import httpx
 import pytest
 
 from lab_devices.client import LabClient
-from lab_devices.experiment import ExperimentRun, PersistenceError, RunAbortedError, RunOptions
+from lab_devices.experiment import (
+    ExperimentRun,
+    InMemoryRunLog,
+    PersistenceError,
+    RunAbortedError,
+    RunOptions,
+)
 from lab_devices.experiment.persist import run_event_to_dict
 from tests.experiment_run_helpers import add_standard_devices, make_workflow
 from tests.fakeclock import FakeClock, drive
@@ -151,6 +157,25 @@ class _RaisingLogSink:
     def emit(self, event) -> None:
         self.calls += 1
         raise RuntimeError("sink boom")
+
+
+class _RaisingFlushSink(InMemoryRunLog):
+    """A non-conformant injected sink whose flush raises (goes beyond the emit-only protocol)."""
+
+    def flush(self) -> None:
+        raise RuntimeError("flush boom")
+
+
+async def test_report_set_when_injected_sink_flush_raises(fake_client):
+    # A foreign sink's flush/close must never unset the report (report-always-set invariant).
+    fake, client = fake_client
+    add_standard_devices(fake)
+    wf = make_workflow([{"command": {"device": "pump_1", "verb": "stop"}}])
+    run = ExperimentRun(client, wf, RunOptions(clock=FakeClock(), log_sink=_RaisingFlushSink()))
+    clock = run._options.clock
+    report = await drive(clock, run.execute())  # must NOT raise the sink's flush RuntimeError
+    assert report.status == "completed"
+    assert run.report is not None
 
 
 async def test_disk_files_complete_and_parseable_after_abort(fake_client, tmp_path: Path):
