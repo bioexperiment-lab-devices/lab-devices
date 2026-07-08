@@ -104,7 +104,7 @@ class ExperimentRun:
         ctx.abort_requested = True
         if self._started and first and self.report is None:
             ctx.emit("abort_requested")
-        if self._task is not None and not self._finalizing:
+        if first and self._task is not None and not self._finalizing:
             self._task.cancel()
 
     # ---- control-plane seams for Console (design 5 §9) ----
