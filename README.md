@@ -5,7 +5,7 @@ distribution valves, and densitometers — over the SerialHop / lab-bridge API.
 
 ## Install
 
-    poetry install         # installs runtime + dev deps
+    poetry install --all-extras    # runtime + dev deps
     # or, without Poetry:
     pip install -e ".[dev]"
 
