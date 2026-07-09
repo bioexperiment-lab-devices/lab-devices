@@ -1,5 +1,8 @@
 # lab_devices
 
+[![CI](https://github.com/bioexperiment-lab-devices/lab-devices/actions/workflows/ci.yml/badge.svg)](https://github.com/bioexperiment-lab-devices/lab-devices/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/bioexperiment-lab-devices.svg)](https://pypi.org/project/bioexperiment-lab-devices/)
+
 Async Python library to discover and manage lab devices — peristaltic pumps,
 distribution valves, and densitometers — over the SerialHop / lab-bridge API.
 
