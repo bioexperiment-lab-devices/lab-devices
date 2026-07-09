@@ -5,7 +5,11 @@ distribution valves, and densitometers — over the SerialHop / lab-bridge API.
 
 ## Install
 
-    poetry install --all-extras    # runtime + dev deps
+    pip install bioexperiment-lab-devices    # import as: import lab_devices
+
+For development (runtime + dev deps):
+
+    poetry install --all-extras
     # or, without Poetry:
     pip install -e ".[dev]"
 

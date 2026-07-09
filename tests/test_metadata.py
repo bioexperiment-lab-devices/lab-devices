@@ -4,7 +4,7 @@ import lab_devices
 
 
 def test_version_matches_installed_metadata():
-    assert lab_devices.__version__ == version("lab-devices")
+    assert lab_devices.__version__ == version("bioexperiment-lab-devices")
 
 
 def test_version_is_not_uninstalled_fallback():
