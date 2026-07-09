@@ -102,3 +102,25 @@ def test_open_modes_snapshot_in_open_order():
     occ.acquire("densitometer_1", THERMAL, "b2")
     occ.register_open(thermo)
     assert [m.mode_verb for m in occ.open_modes()] == ["set_led", "set_thermostat"]
+
+
+def test_is_busy_tracks_holds():
+    from lab_devices.experiment.occupancy import Occupancy
+    occ = Occupancy()
+    assert occ.is_busy("pump_1") is False
+    occ.acquire("pump_1", frozenset({"motor"}), "blocks[0]")
+    assert occ.is_busy("pump_1") is True
+    assert occ.busy_devices() == {"pump_1"}
+    occ.release("pump_1", frozenset({"motor"}), "blocks[0]")
+    assert occ.is_busy("pump_1") is False
+    assert occ.busy_devices() == set()
+
+
+def test_is_busy_tracks_open_mode():
+    from lab_devices.experiment.occupancy import OpenMode, Occupancy
+    occ = Occupancy()
+    occ.acquire("pump_2", frozenset({"motor"}), "blocks[1]")
+    occ.register_open(OpenMode("pump_2", "rotate", "stop", {}, frozenset({"motor"}), "blocks[1]"))
+    assert occ.is_busy("pump_2") is True  # mode-held slot counts as busy
+    occ.register_close("pump_2", "rotate")
+    assert occ.is_busy("pump_2") is False

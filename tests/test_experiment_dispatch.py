@@ -141,7 +141,7 @@ async def test_busy_error_maps_to_invariant_violation_no_retry(fake_client):
     with pytest.raises(InvariantViolationError, match="busy"):
         await _run_action(cmd("pump_1", "dispense", {"volume_ml": 1.0}), ctx)
     assert verbs(fake) == [("pump_1", "dispense")]  # exactly one attempt, never retried
-    events = [e.kind for e in ctx.options.log_sink.events]
+    events = [e.kind for e in ctx.log_sink.events]
     assert "invariant_violation" in events
     ctx.occupancy.acquire("pump_1", frozenset({"motor"}), "blocks[9]")  # slot rolled back
 

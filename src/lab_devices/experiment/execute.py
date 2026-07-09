@@ -21,6 +21,7 @@ from lab_devices.experiment.expr import parse_expression
 from lab_devices.experiment.inputs import InputRequest, validate_input_value
 from lab_devices.experiment.occupancy import OpenMode
 from lab_devices.experiment.registry import ParamSpec, Trait, lookup, mode_action
+from lab_devices.experiment.state import Sample
 from lab_devices.jobs import Job
 
 _TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
@@ -207,8 +208,13 @@ async def _run_measure(block: B.Measure, ctx: RunContext) -> None:
         raise EvaluationError(
             f"measure result field {field_name!r} is missing or non-numeric: {value!r}"
         )
-    ctx.state.record(block.into, ctx.clock.now(), float(value))
-    ctx.emit("measure_recorded", block.id, stream=block.into, value=float(value))
+    ts = ctx.clock.now()
+    fvalue = float(value)
+    ctx.state.record(block.into, ts, fvalue)
+    sink = ctx.stream_sinks.get(block.into)
+    if sink is not None:
+        sink.write(Sample(ts, fvalue))
+    ctx.emit("measure_recorded", block.id, stream=block.into, value=fvalue)
 
 
 async def _run_operator_input(block: B.OperatorInput, ctx: RunContext) -> None:

@@ -24,9 +24,11 @@ from lab_devices.experiment.blocks import (
 )
 from lab_devices.experiment.clock import Clock, MonotonicClock
 from lab_devices.experiment.context import RunOptions
+from lab_devices.experiment.control import Console
 from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import (
     BlockFailedError,
+    DeviceBusyError,
     Diagnostic,
     EvaluationError,
     ExperimentError,
@@ -34,9 +36,9 @@ from lab_devices.experiment.errors import (
     ExpressionError,
     FinalizeError,
     InvariantViolationError,
+    PersistenceError,
     RunAbortedError,
     UnknownVerbError,
-    UnsupportedPersistenceError,
     ValidationError,
     WorkflowLoadError,
 )
@@ -58,6 +60,14 @@ from lab_devices.experiment.inputs import (
     InputRequest,
     OperatorInputProvider,
     UnattendedInputProvider,
+)
+from lab_devices.experiment.persist import (
+    CsvRunLogSink,
+    CsvStreamSink,
+    JsonlRunLogSink,
+    JsonlStreamSink,
+    SinkSet,
+    StreamSink,
 )
 from lab_devices.experiment.run import ExperimentRun, RunReport, assign_block_ids
 from lab_devices.experiment.runlog import InMemoryRunLog, RunEvent, RunLogSink
@@ -94,10 +104,12 @@ __all__ = [
     "SampleWindow", "StatCall", "UnaryOp", "Window", "parse_expression", "parse_duration",
     "BindingValue", "RunState", "Sample", "Stream",
     "Value", "evaluate", "resolve",
-    "ExperimentRun", "RunOptions", "RunReport", "assign_block_ids",
+    "ExperimentRun", "RunOptions", "RunReport", "assign_block_ids", "Console",
     "Clock", "MonotonicClock",
     "OperatorInputProvider", "InputRequest", "UnattendedInputProvider",
     "RunEvent", "RunLogSink", "InMemoryRunLog",
     "ExperimentRunError", "BlockFailedError", "InvariantViolationError",
-    "RunAbortedError", "FinalizeError", "UnsupportedPersistenceError",
+    "RunAbortedError", "FinalizeError", "PersistenceError", "DeviceBusyError",
+    "CsvRunLogSink", "CsvStreamSink", "JsonlRunLogSink", "JsonlStreamSink",
+    "SinkSet", "StreamSink",
 ]

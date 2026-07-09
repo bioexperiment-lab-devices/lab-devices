@@ -22,7 +22,7 @@ async def test_untouched_run_sweeps_nothing(fake_client):
     ctx = make_ctx(client)
     errors = await run_finalizer(ctx)
     assert errors == [] and fake.calls == []
-    assert [e.kind for e in ctx.options.log_sink.events] == [
+    assert [e.kind for e in ctx.log_sink.events] == [
         "finalize_started", "finalize_finished",
     ]
 
@@ -93,7 +93,7 @@ async def test_best_effort_never_skips_sweep(fake_client):
         ("densitometer_1", "set_led"),
         ("densitometer_1", "set_thermostat"),
     ]
-    failed = [e.kind for e in ctx.options.log_sink.events if e.kind == "finalize_step_failed"]
+    failed = [e.kind for e in ctx.log_sink.events if e.kind == "finalize_step_failed"]
     assert len(failed) == 2
     assert len(ctx.occupancy.open_modes()) == 1  # failed teardown stays registered
 
@@ -142,5 +142,5 @@ async def test_cancelled_error_mid_sweep_never_skips(fake_client):
         ("densitometer_1", "set_led"),
         ("densitometer_1", "set_thermostat"),
     ]
-    failed = [e for e in ctx.options.log_sink.events if e.kind == "finalize_step_failed"]
+    failed = [e for e in ctx.log_sink.events if e.kind == "finalize_step_failed"]
     assert len(failed) == 1 and failed[0].data["verb"] == "stop"

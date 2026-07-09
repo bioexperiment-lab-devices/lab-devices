@@ -5,8 +5,8 @@ from lab_devices.experiment.errors import (
     ExperimentRunError,
     FinalizeError,
     InvariantViolationError,
+    PersistenceError,
     RunAbortedError,
-    UnsupportedPersistenceError,
 )
 
 
@@ -16,7 +16,7 @@ def test_taxonomy():
         InvariantViolationError,
         RunAbortedError,
         FinalizeError,
-        UnsupportedPersistenceError,
+        PersistenceError,
     ):
         assert issubclass(cls, ExperimentRunError)
     assert issubclass(ExperimentRunError, ExperimentError)

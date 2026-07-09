@@ -27,7 +27,7 @@ async def test_pause_quiesces_while_inflight_job_finishes(fake_client):
     job_id = next(iter(fake.jobs))
     fake.complete_job(job_id)          # hardware finishes WHILE paused
     await clock.advance(5.0)           # poll sleeps elapse; job wait completes
-    finished = [e for e in run._ctx.options.log_sink.events if e.kind == "block_finished"]
+    finished = [e for e in run._ctx.log_sink.events if e.kind == "block_finished"]
     assert any(e.block_id == "blocks[0]" for e in finished)  # in-flight block completed
     assert ("pump_2", "stop") not in verbs(fake)  # but nothing NEW dispatched
 
