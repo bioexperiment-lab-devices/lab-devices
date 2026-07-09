@@ -3,7 +3,7 @@ requires = ["poetry-core>=2.1"]
 build-backend = "poetry.core.masonry.api"
 
 [project]
-name = "lab-devices"
+name = "bioexperiment-lab-devices"
 version = "0.1.0"
 description = "Async Python library to discover and manage lab devices (pump, valve, densitometer)."
 readme = "README.md"
