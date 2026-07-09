@@ -76,7 +76,7 @@ from lab_devices.models import (
 )
 
 try:
-    __version__ = _version("lab-devices")
+    __version__ = _version("bioexperiment-lab-devices")
 except PackageNotFoundError:  # pragma: no cover - running from an uninstalled source tree
     __version__ = "0.0.0.dev0"
 
