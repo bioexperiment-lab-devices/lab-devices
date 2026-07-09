@@ -101,7 +101,10 @@ async def test_connect_missing_port_raises_endpoint_error():
 
 async def test_probe_against_real_server():
     async with _registry() as reg:
-        server = await asyncio.start_server(lambda r, w: None, "127.0.0.1", 0)
+        # Handler MUST close the accepted connection: on Python 3.12,
+        # Server.wait_closed() blocks until active client connections finish, so a
+        # no-op handler that leaves the probe's connection open hangs teardown below.
+        server = await asyncio.start_server(lambda r, w: w.close(), "127.0.0.1", 0)
         port = server.sockets[0].getsockname()[1]
         try:
             assert await reg._probe("127.0.0.1", port) is True
