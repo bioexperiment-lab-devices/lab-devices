@@ -5,6 +5,8 @@ distribution valves, and densitometers — over the SerialHop / lab-bridge API.
 
 ## Install
 
+    poetry install         # installs runtime + dev deps
+    # or, without Poetry:
     pip install -e ".[dev]"
 
 ## Core usage (host + port)
@@ -40,6 +42,6 @@ It only works from inside the lab-bridge network.
 
 ## Development
 
-    python -m pytest         # hermetic; no hardware needed
-    python -m mypy
-    python -m ruff check .
+    poetry run pytest        # hermetic; no hardware needed
+    poetry run mypy
+    poetry run ruff check .
