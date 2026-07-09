@@ -100,18 +100,20 @@ Update the Development section to prefer `poetry install`. Note the editable
 
 ## Publish workflow
 
-Tokens are secrets — the user runs the `poetry config pypi-token.*` commands themselves
-(via the `!` prefix or env vars) so tokens never appear in the assistant transcript.
+The user's `~/.pypirc` already holds tokens for both `testpypi` and `pypi`. `.pypirc` is
+twine's native config format (Poetry's `poetry publish` does not read it). So we **build
+with Poetry and upload with twine** — tokens stay in `.pypirc` and never appear in the
+assistant transcript.
 
-1. `poetry config repositories.testpypi https://test.pypi.org/legacy/`
-2. User configures TestPyPI token.
-3. `poetry publish -r testpypi` (build artifacts already present, or `poetry publish --build -r testpypi`).
-4. Verify clean install from TestPyPI in a throwaway venv:
+1. Ensure `twine` is available (`pipx run twine` / `uvx twine`, or add to dev deps).
+   Verify metadata first: `twine check dist/*`.
+2. Upload to TestPyPI: `twine upload --repository testpypi dist/*`.
+3. Verify clean install from TestPyPI in a throwaway venv:
    `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ lab-devices`
    then import and check `__version__`.
-5. **Gate:** explicit user go-ahead.
-6. User configures PyPI token; `poetry publish` to real PyPI.
-7. Confirm the package page renders at `https://pypi.org/project/lab-devices/`.
+4. **Gate:** explicit user go-ahead.
+5. Upload to real PyPI: `twine upload --repository pypi dist/*`.
+6. Confirm the package page renders at `https://pypi.org/project/lab-devices/`.
 
 ## Out of scope
 
