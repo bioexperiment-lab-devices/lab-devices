@@ -18,6 +18,8 @@ Server-only discovery (inside labnet):
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version as _version
+
 from lab_devices.client import LabClient
 from lab_devices.devices import Densitometer, Device, Pump, Valve
 from lab_devices.errors import (
@@ -73,7 +75,10 @@ from lab_devices.models import (
     ValveStatus,
 )
 
-__version__ = "0.1.0"
+try:
+    __version__ = _version("lab-devices")
+except PackageNotFoundError:  # pragma: no cover - running from an uninstalled source tree
+    __version__ = "0.0.0.dev0"
 
 # NOTE: kept as a plain sorted literal list (rather than `sorted([...])`) so ruff's
 # re-export detection (F401) recognizes every name below as intentionally exported.
