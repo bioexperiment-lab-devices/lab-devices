@@ -2,7 +2,9 @@
 
 from typing import Any
 
+from experiment_studio import roles
 from experiment_studio.roles import placeholder_ids, role_diagnostics, substitute
+from lab_devices.experiment import serialize
 
 
 def test_placeholder_ids_count_per_type_in_insertion_order() -> None:
@@ -121,3 +123,18 @@ def test_substitute_skips_malformed_nodes_without_crashing() -> None:
     assert diags == []  # malformed shapes are the engine loader's job to report
     assert out["blocks"][0] == "not-a-dict"
     assert out["blocks"][3]["command"]["device"] == 42
+
+
+def test_walker_grammar_matches_engine_serializer() -> None:
+    assert roles._TIMING_KEYS == serialize._TIMING_KEYS
+    covered = (
+        set(roles._DEVICE_BLOCKS) | set(roles._CHILD_LISTS) | set(roles._LEAF_BLOCKS)
+    )
+    assert covered == set(serialize._BUILDERS)
+    assert set(roles._DEVICE_BLOCKS) == {"command", "measure"}
+    assert roles._CHILD_LISTS == {
+        "serial": ("children",),
+        "parallel": ("children",),
+        "loop": ("body",),
+        "branch": ("then", "else"),
+    }

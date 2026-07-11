@@ -13,7 +13,6 @@ import aiosqlite
 from pydantic import BaseModel, Field
 
 from lab_devices.experiment import (
-    ExpressionError,
     ValidationError,
     WorkflowLoadError,
     validate,
@@ -150,7 +149,7 @@ def validate_doc(doc: ExperimentDoc) -> list[dict[str, str]]:
         return diags  # substitution unsound; engine output would duplicate (plan P3)
     try:
         workflow = workflow_from_dict(substituted)
-    except (WorkflowLoadError, ExpressionError) as exc:
+    except WorkflowLoadError as exc:
         return [{"category": "schema", "path": "workflow", "message": str(exc)}]
     try:
         validate(workflow)
