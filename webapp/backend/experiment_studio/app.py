@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
+from experiment_studio.api.catalog import router as catalog_router
 from experiment_studio.api.health import router as health_router
 from experiment_studio.config import Settings
 
@@ -15,6 +16,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings if settings is not None else Settings.from_env()
     app = FastAPI(title="experiment-studio")
     app.include_router(health_router, prefix="/api")
+    app.include_router(catalog_router, prefix="/api")
     if settings.static_dir is not None:
         _mount_spa(app, settings.static_dir)
     return app
