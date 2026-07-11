@@ -12,6 +12,16 @@ from typing import Any, Literal
 import aiosqlite
 from pydantic import BaseModel, Field
 
+from lab_devices.experiment import (
+    ExpressionError,
+    ValidationError,
+    WorkflowLoadError,
+    validate,
+    verb_catalog,
+    workflow_from_dict,
+)
+
+from experiment_studio import roles as roles_mod
 from experiment_studio.db import Database
 
 
@@ -126,3 +136,27 @@ class ExperimentsStore:
             except NameConflictError:
                 continue
         raise AssertionError("unreachable")
+
+
+def validate_doc(doc: ExperimentDoc) -> list[dict[str, str]]:
+    """§4.3: doc-level role checks, placeholder substitution, engine parse + validate."""
+    role_types = {name: role.type for name, role in doc.roles.items()}
+    diags = roles_mod.role_diagnostics(role_types, set(verb_catalog()))
+    substituted, ref_diags = roles_mod.substitute(
+        doc.workflow, roles_mod.placeholder_ids(role_types)
+    )
+    diags += ref_diags
+    if diags:
+        return diags  # substitution unsound; engine output would duplicate (plan P3)
+    try:
+        workflow = workflow_from_dict(substituted)
+    except (WorkflowLoadError, ExpressionError) as exc:
+        return [{"category": "schema", "path": "workflow", "message": str(exc)}]
+    try:
+        validate(workflow)
+    except ValidationError as exc:
+        return [
+            {"category": d.category, "path": d.path, "message": d.message}
+            for d in exc.diagnostics
+        ]
+    return []

@@ -18,6 +18,7 @@ from experiment_studio.api.catalog import router as catalog_router
 from experiment_studio.api.experiments import router as experiments_router
 from experiment_studio.api.health import router as health_router
 from experiment_studio.api.labs import router as labs_router
+from experiment_studio.api.validate import router as validate_router
 from experiment_studio.config import Settings
 from experiment_studio.db import Database
 from experiment_studio.docs_store import NameConflictError, UnknownExperimentError
@@ -73,6 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(catalog_router, prefix="/api")
     app.include_router(labs_router, prefix="/api/labs")
     app.include_router(experiments_router, prefix="/api/experiments")
+    app.include_router(validate_router, prefix="/api")
     if settings.static_dir is not None:
         _mount_spa(app, settings.static_dir)
     return app
