@@ -22,6 +22,12 @@ from lab_devices.experiment.blocks import (
     Serial,
     Wait,
 )
+from lab_devices.experiment.catalog import (
+    ParamEntry,
+    VerbEntry,
+    expression_functions,
+    verb_catalog,
+)
 from lab_devices.experiment.clock import Clock, MonotonicClock
 from lab_devices.experiment.context import RunOptions
 from lab_devices.experiment.control import Console
@@ -112,4 +118,5 @@ __all__ = [
     "RunAbortedError", "FinalizeError", "PersistenceError", "DeviceBusyError",
     "CsvRunLogSink", "CsvStreamSink", "JsonlRunLogSink", "JsonlStreamSink",
     "SinkSet", "StreamSink",
+    "ParamEntry", "VerbEntry", "expression_functions", "verb_catalog",
 ]
