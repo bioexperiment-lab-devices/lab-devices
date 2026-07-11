@@ -1,22 +1,63 @@
-"""FastAPI application factory: API routers + SPA static serving. See webapp design §5-6."""
+"""FastAPI application factory: API routers, error mapping, SPA static serving.
+See webapp design §5-6."""
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Callable, Coroutine
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+import httpx
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
+
+from lab_devices import errors as lab_errors
 
 from experiment_studio.api.catalog import router as catalog_router
 from experiment_studio.api.health import router as health_router
+from experiment_studio.api.labs import router as labs_router
 from experiment_studio.config import Settings
+
+# Spec §6: structured error envelope {detail, code}. Subclasses win over httpx.HTTPError
+# because Starlette resolves handlers along the exception's MRO.
+_ERROR_MAP: list[tuple[type[Exception], int, str]] = [
+    (lab_errors.UnknownLabClient, 404, "unknown_lab"),
+    (lab_errors.LabOffline, 502, "lab_offline"),
+    (lab_errors.ClientLookupEndpointUnreachable, 502, "roster_unreachable"),
+    (lab_errors.ClientLookupEndpointError, 502, "roster_error"),
+    (lab_errors.DiscoveryInProgressError, 409, "agent_busy"),
+    (lab_errors.JobInProgressError, 409, "agent_busy"),
+    (lab_errors.DiscoveryFailedError, 502, "discovery_failed"),
+    (httpx.HTTPError, 502, "lab_unreachable"),
+]
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    yield
+    labs = getattr(app.state, "labs", None)
+    if labs is not None:
+        await labs.aclose()
+
+
+def _error_handler(
+    status: int, code: str
+) -> Callable[[Request, Exception], Coroutine[Any, Any, JSONResponse]]:
+    async def handle(request: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse(status_code=status, content={"detail": str(exc), "code": code})
+
+    return handle
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings if settings is not None else Settings.from_env()
-    app = FastAPI(title="experiment-studio")
+    app = FastAPI(title="experiment-studio", lifespan=_lifespan)
+    for exc_type, status, code in _ERROR_MAP:
+        app.add_exception_handler(exc_type, _error_handler(status, code))
     app.include_router(health_router, prefix="/api")
     app.include_router(catalog_router, prefix="/api")
+    app.include_router(labs_router, prefix="/api/labs")
     if settings.static_dir is not None:
         _mount_spa(app, settings.static_dir)
     return app
