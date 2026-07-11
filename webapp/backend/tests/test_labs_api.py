@@ -176,3 +176,22 @@ async def test_discover_busy_agent_is_409(app: FastAPI, client: httpx.AsyncClien
         assert resp.json()["code"] == "agent_busy"
     finally:
         await service.aclose()
+
+
+async def test_devices_malformed_agent_body_is_502_lab_error(
+    app: FastAPI, client: httpx.AsyncClient
+) -> None:
+    service = LabsService(
+        _registry(),
+        client_factory=_agent_factory(
+            {"GET /api/v1/devices": httpx.Response(500, text="internal agent meltdown")}
+        ),
+        probe=_probe_all_online,
+    )
+    _install(app, service)
+    try:
+        resp = await client.get("/api/labs/khamit_desktop/devices")
+        assert resp.status_code == 502
+        assert resp.json()["code"] == "lab_error"
+    finally:
+        await service.aclose()

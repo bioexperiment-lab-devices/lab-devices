@@ -9,10 +9,12 @@ from experiment_studio.config import Settings
 
 
 def _make_static(tmp_path: Path) -> Path:
-    (tmp_path / "assets").mkdir()
-    (tmp_path / "index.html").write_text("<html>experiment studio</html>")
-    (tmp_path / "assets" / "app.js").write_text("console.log('studio')")
-    return tmp_path
+    static = tmp_path / "static"
+    (static / "assets").mkdir(parents=True)
+    (static / "index.html").write_text("<html>experiment studio</html>")
+    (static / "assets" / "app.js").write_text("console.log('studio')")
+    (tmp_path / "secret.txt").write_text("top secret")
+    return static
 
 
 def _client(static_dir: Path | None) -> httpx.AsyncClient:
@@ -48,11 +50,12 @@ async def test_unknown_api_path_stays_json_404(tmp_path: Path) -> None:
         assert resp.json()["detail"] == "Not Found"
 
 
-async def test_traversal_falls_back_to_index(tmp_path: Path) -> None:
+async def test_traversal_cannot_escape_static_root(tmp_path: Path) -> None:
     async with _client(_make_static(tmp_path)) as c:
-        resp = await c.get("/..%2fpyproject.toml")
+        resp = await c.get("/..%2fsecret.txt")
         assert resp.status_code == 200
         assert "experiment studio" in resp.text
+        assert "top secret" not in resp.text
 
 
 async def test_without_static_dir_root_is_404(tmp_path: Path) -> None:

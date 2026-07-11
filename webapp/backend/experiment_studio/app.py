@@ -19,8 +19,10 @@ from experiment_studio.api.health import router as health_router
 from experiment_studio.api.labs import router as labs_router
 from experiment_studio.config import Settings
 
-# Spec §6: structured error envelope {detail, code}. Subclasses win over httpx.HTTPError
-# because Starlette resolves handlers along the exception's MRO.
+# Spec §6: structured error envelope {detail, code}. Starlette resolves handlers along
+# the raised exception's MRO, so the specific entries below (e.g. DiscoveryInProgressError)
+# win over the LabError catch-all; httpx.HTTPError covers transport-level failures outside
+# the lab-error hierarchy.
 _ERROR_MAP: list[tuple[type[Exception], int, str]] = [
     (lab_errors.UnknownLabClient, 404, "unknown_lab"),
     (lab_errors.LabOffline, 502, "lab_offline"),
@@ -30,6 +32,7 @@ _ERROR_MAP: list[tuple[type[Exception], int, str]] = [
     (lab_errors.JobInProgressError, 409, "agent_busy"),
     (lab_errors.DiscoveryFailedError, 502, "discovery_failed"),
     (httpx.HTTPError, 502, "lab_unreachable"),
+    (lab_errors.LabError, 502, "lab_error"),
 ]
 
 
