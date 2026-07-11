@@ -42,3 +42,33 @@ jobs:
         run: poetry build
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  image:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute version tag
+        id: meta
+        env:
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: webapp/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/bioexperiment-lab-devices/experiment-studio:${{ steps.meta.outputs.version }}
+            ghcr.io/bioexperiment-lab-devices/experiment-studio:latest
