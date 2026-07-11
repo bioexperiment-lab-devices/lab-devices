@@ -8,3 +8,4 @@ dist/
 build/
 .venv/
 node_modules/
+webapp/backend/data/

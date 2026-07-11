@@ -10,13 +10,15 @@ Backend (own venv; root poetry venv is separate):
     cd webapp/backend
     python3 -m venv .venv
     .venv/bin/pip install -e ../.. -e '.[dev]'
-    .venv/bin/python -m uvicorn --factory experiment_studio.app:create_app --reload
+    STUDIO_DATA_DIR=data .venv/bin/python -m uvicorn --factory experiment_studio.app:create_app --reload
 
 Frontend (proxies /api to :8000):
 
     cd webapp/frontend
     npm install
     npm run dev
+
+SQLite + run artifacts land in $STUDIO_DATA_DIR (default /data; use a repo-ignored ./data in dev).
 
 ## Gates
 
