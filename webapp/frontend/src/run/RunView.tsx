@@ -6,6 +6,7 @@ import { useRecordsStore } from '../stores/recordsStore'
 import { useRunStore } from '../stores/runStore'
 import { StatusChip } from '../records/RecordsTable'
 import { formatElapsed } from '../records/format'
+import { StreamChart } from '../charts/StreamChart'
 import { EventLog } from './EventLog'
 import { InputDialog } from './InputDialog'
 
@@ -22,6 +23,21 @@ function Elapsed() {
   const drift =
     !feed.terminal && lastWallMs !== null ? (Date.now() - lastWallMs) / 1000 : 0
   return <span className="font-mono text-sm text-slate-500">{formatElapsed(base + drift)}</span>
+}
+
+function LiveChart() {
+  // feed is a fresh top-level object per accepted message (rev bump) — subscribing to it
+  // re-renders on every in-place sample append without copying the arrays
+  const feed = useRunStore((s) => s.feed)
+  const streamUnits = useRunStore((s) => s.streamUnits)
+  const origin = feed.origin ?? 0
+  const series = Object.entries(feed.samples).map(([label, s]) => ({
+    label,
+    units: streamUnits[label] ?? null,
+    t: s.t.map((t) => t - origin),
+    v: s.v,
+  }))
+  return <StreamChart series={series} />
 }
 
 export function RunView() {
@@ -106,7 +122,7 @@ export function RunView() {
         </div>
       )}
 
-      {/* Task 9 replaces this placeholder with the live StreamChart */}
+      <LiveChart />
       <EventLog events={feed.events} origin={feed.origin} rev={feed.rev} />
     </div>
   )
