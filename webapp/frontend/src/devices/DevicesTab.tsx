@@ -136,16 +136,20 @@ export function DevicesTab() {
                       <td className="px-2 py-1.5">{d.type}</td>
                       <td className="px-2 py-1.5 font-mono text-xs">{d.port ?? '—'}</td>
                       <td className="px-2 py-1.5">
-                        <span
-                          className={
-                            'rounded-full px-2 py-0.5 text-xs ' +
-                            (d.connected
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-slate-100 text-slate-500')
-                          }
-                        >
-                          {d.connected ? 'connected' : 'disconnected'}
-                        </span>
+                        {d.connected === null ? (
+                          <span className="text-xs text-slate-400">—</span>
+                        ) : (
+                          <span
+                            className={
+                              'rounded-full px-2 py-0.5 text-xs ' +
+                              (d.connected
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-slate-100 text-slate-500')
+                            }
+                          >
+                            {d.connected ? 'connected' : 'disconnected'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-2 py-1.5 text-xs">{d.model ?? '—'}</td>
                       <td className="px-2 py-1.5 text-xs">{d.firmware ?? '—'}</td>
