@@ -25,6 +25,7 @@ from experiment_studio.api.labs import router as labs_router
 from experiment_studio.api.records import router as records_router
 from experiment_studio.api.runs import router as runs_router
 from experiment_studio.api.validate import router as validate_router
+from experiment_studio.api.ws import router as ws_router
 from experiment_studio.config import Settings
 from experiment_studio.db import Database
 from experiment_studio.docs_store import NameConflictError, UnknownExperimentError
@@ -155,6 +156,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(validate_router, prefix="/api")
     app.include_router(runs_router, prefix="/api/runs")
     app.include_router(records_router, prefix="/api/records")
+    app.include_router(ws_router, prefix="/api")
     if settings.static_dir is not None:
         _mount_spa(app, settings.static_dir)
     return app
