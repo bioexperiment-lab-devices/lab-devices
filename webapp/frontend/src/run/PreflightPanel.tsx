@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getExperiment, listExperiments, validateDoc } from '../api/studio'
 import { savedMapping } from '../api/runs'
 import { useDocStore } from '../stores/docStore'
@@ -24,6 +24,7 @@ export function PreflightPanel() {
   const [diagnostics, setDiagnostics] = useState<Diagnostic[] | null>(null)
   const [validating, setValidating] = useState(false)
   const [chosen, setChosen] = useState<Record<string, string>>({})
+  const gen = useRef(0)
 
   useEffect(() => {
     listExperiments()
@@ -38,6 +39,7 @@ export function PreflightPanel() {
   }, [])
 
   const loadSelection = useCallback((id: string, currentLab: string | null) => {
+    const token = ++gen.current
     setDoc(null)
     setDocError(null)
     setDiagnostics(null)
@@ -45,16 +47,22 @@ export function PreflightPanel() {
     setValidating(true)
     getExperiment(id)
       .then(async (res) => {
+        if (gen.current !== token) return
         setDoc(res.doc)
         const [validation, saved] = await Promise.all([
           validateDoc(res.doc),
           currentLab !== null ? savedMapping(id, currentLab).catch(() => ({})) : Promise.resolve({}),
         ])
+        if (gen.current !== token) return
         setDiagnostics(validation.diagnostics)
         setChosen(prefillMapping(res.doc.roles, useLabsStore.getState().devices, saved))
       })
-      .catch((e: unknown) => setDocError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setValidating(false))
+      .catch((e: unknown) => {
+        if (gen.current === token) setDocError(e instanceof Error ? e.message : String(e))
+      })
+      .finally(() => {
+        if (gen.current === token) setValidating(false)
+      })
   }, [])
 
   useEffect(() => {
