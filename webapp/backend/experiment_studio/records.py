@@ -159,6 +159,14 @@ class RecordsStore:
             )
         await self._db.conn.commit()
 
+    async def load_mapping(self, experiment_id: str, lab: str) -> dict[str, str]:
+        """S2 mapping memory read: last device per role for (experiment, lab); {} if none."""
+        cur = await self._db.conn.execute(
+            "SELECT role, device_id FROM mappings WHERE experiment_id = ? AND lab = ?",
+            (experiment_id, lab),
+        )
+        return {row["role"]: row["device_id"] for row in await cur.fetchall()}
+
 
 # ---- artifact readers (§6: /records/{id}/events, /records/{id}/streams, download) ----
 

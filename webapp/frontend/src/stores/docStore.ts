@@ -10,7 +10,6 @@ import { treeToDoc, type DocContent } from '../builder/convert'
 import {
   containsUid,
   duplicateNode,
-  findNode,
   insertNode,
   moveNode,
   removeNode,
@@ -124,8 +123,7 @@ export const useDocStore = create<EditorState>()(
 
       removeBlock: (uid) =>
         set((s) => {
-          const [tree] = removeNode(s.tree, uid)
-          const removed = findNode(s.tree, uid)
+          const [tree, removed] = removeNode(s.tree, uid)
           const selectionGone =
             s.selectedUid !== null && removed !== null && containsUid(removed, s.selectedUid)
           return { tree, selectedUid: selectionGone ? null : s.selectedUid }
@@ -223,6 +221,9 @@ const temporalStore = (
 
 export const undo = (): void => temporalStore.getState().undo()
 export const redo = (): void => temporalStore.getState().redo()
+
+export const pauseHistory = (): void => temporalStore.getState().pause()
+export const resumeHistory = (): void => temporalStore.getState().resume()
 
 export function useTemporal<T>(selector: (s: TemporalState<DocSnapshot>) => T): T {
   return useStore(temporalStore, selector)

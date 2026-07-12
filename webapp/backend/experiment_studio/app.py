@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 
 from lab_devices import errors as lab_errors
@@ -140,6 +141,20 @@ async def _start_validation_handler(request: Request, exc: Exception) -> JSONRes
     )
 
 
+async def _request_validation_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Normalize FastAPI body-shape 422s to the §6 envelope (amended during W5): the
+    frontend branches on `code`, and the default list-shaped `detail` broke that."""
+    assert isinstance(exc, RequestValidationError)
+    errors = exc.errors()
+    first: dict[str, Any] = errors[0] if errors else {}
+    loc = ".".join(str(part) for part in first.get("loc", ()))
+    msg = str(first.get("msg", "invalid request body"))
+    return JSONResponse(
+        status_code=422,
+        content={"detail": f"{loc}: {msg}" if loc else msg, "code": "invalid_request"},
+    )
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings if settings is not None else Settings.from_env()
     app = FastAPI(title="experiment-studio", lifespan=_lifespan)
@@ -149,6 +164,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(RunActiveError, _run_active_handler)
     app.add_exception_handler(PreflightError, _preflight_handler)
     app.add_exception_handler(StartValidationError, _start_validation_handler)
+    app.add_exception_handler(RequestValidationError, _request_validation_handler)
     app.include_router(health_router, prefix="/api")
     app.include_router(catalog_router, prefix="/api")
     app.include_router(labs_router, prefix="/api/labs")

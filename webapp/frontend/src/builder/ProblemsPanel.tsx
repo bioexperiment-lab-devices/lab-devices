@@ -20,8 +20,12 @@ export function ProblemsPanel() {
         <span className="ml-auto text-slate-400">{open ? '▾' : '▸'}</span>
       </button>
       {open && (
-        <ul className="max-h-40 overflow-y-auto border-t border-red-100 px-3 py-1">
-          {validationError && <li className="py-0.5 text-xs text-amber-700">{validationError}</li>}
+        <ul className={`max-h-40 overflow-y-auto border-t border-red-100 px-3 py-1${validationError ? ' opacity-50' : ''}`}>
+          {validationError && (
+            <li className="py-0.5 text-xs text-amber-700">
+              {validationError} — the problems below are from the last successful check and may be stale
+            </li>
+          )}
           {diagnostics.map((d, i) => (
             <li key={i} className="py-0.5 text-xs">
               <button

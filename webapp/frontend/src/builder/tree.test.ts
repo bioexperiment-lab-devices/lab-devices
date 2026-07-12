@@ -10,6 +10,7 @@ import {
   newStructureNode,
   newVerbNode,
   removeNode,
+  replaceSlot,
   updateNode,
   withFreshUids,
   type BlockNode,
@@ -143,5 +144,14 @@ describe('tree ops', () => {
     expect(cmd).toMatchObject({ kind: 'command', device: 'feed_pump', verb: 'dispense', params: {} })
     const meas = newVerbNode('od_meter', 'measure', { kind: 'measure', params: [], result_field: 'absorbance' })
     expect(meas).toMatchObject({ kind: 'measure', device: 'od_meter', into: '' })
+  })
+
+  it('replaceSlot swaps the named slot and throws for leaf kinds', () => {
+    const serial = newStructureNode('serial')
+    const wait = newStructureNode('wait')
+    const out = replaceSlot(serial, 'children', [wait]) as SerialNode
+    expect(out.children).toHaveLength(1)
+    expect(out.uid).toBe(serial.uid)
+    expect(() => replaceSlot(wait, 'children', [])).toThrow(/no child slot/)
   })
 })
