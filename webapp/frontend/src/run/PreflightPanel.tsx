@@ -26,7 +26,8 @@ export function PreflightPanel() {
   const [chosen, setChosen] = useState<Record<string, string>>({})
   const gen = useRef(0)
 
-  useEffect(() => {
+  const loadExperiments = useCallback(() => {
+    setListError(null)
     listExperiments()
       .then((items) => {
         setExperiments(items)
@@ -35,8 +36,12 @@ export function PreflightPanel() {
         setSelectedId(items.some((i) => i.id === builderId) ? builderId : fallback)
       })
       .catch((e: unknown) => setListError(e instanceof Error ? e.message : String(e)))
-    if (useLabsStore.getState().selected !== null) void useLabsStore.getState().refreshDevices()
   }, [])
+
+  useEffect(() => {
+    loadExperiments()
+    if (useLabsStore.getState().selected !== null) void useLabsStore.getState().refreshDevices()
+  }, [loadExperiments])
 
   const loadSelection = useCallback((id: string, currentLab: string | null) => {
     const token = ++gen.current
@@ -44,6 +49,7 @@ export function PreflightPanel() {
     setDocError(null)
     setDiagnostics(null)
     setChosen({})
+    useRunStore.setState({ startError: null, startDiagnostics: null })
     setValidating(true)
     getExperiment(id)
       .then(async (res) => {
@@ -88,7 +94,17 @@ export function PreflightPanel() {
   return (
     <div className="mx-auto max-w-2xl space-y-4 rounded-lg border border-slate-200 bg-white p-6">
       <h2 className="text-sm font-semibold">Start a run on {lab}</h2>
-      {listError && <p className="text-xs text-red-600">{listError}</p>}
+      {listError && (
+        <div className="text-xs text-red-600">
+          <p>{listError}</p>
+          <button
+            onClick={loadExperiments}
+            className="mt-1 rounded border border-slate-300 px-3 py-1 text-xs hover:bg-slate-100"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {experiments !== null && experiments.length === 0 && (
         <p className="text-sm text-slate-500">No saved experiments — build one first.</p>
       )}
@@ -106,7 +122,17 @@ export function PreflightPanel() {
           </select>
         </label>
       )}
-      {docError && <p className="text-xs text-red-600">{docError}</p>}
+      {docError && (
+        <div className="text-xs text-red-600">
+          <p>{docError}</p>
+          <button
+            onClick={() => selectedId !== null && loadSelection(selectedId, lab)}
+            className="mt-1 rounded border border-slate-300 px-3 py-1 text-xs hover:bg-slate-100"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {devicesError && <p className="text-xs text-red-600">{devicesError}</p>}
       {doc !== null && (
         <div className="space-y-2">

@@ -89,8 +89,12 @@ export const useRunStore = create<RunUiState>()((set, get) => {
         // Fold phase + report into one set() so observers that poll for phase === 'terminal'
         // (e.g. the terminal-report screen) never see terminal without the report attached.
         void getRecord(recordId)
-          .then((d) => set({ phase: 'terminal', report: d.report, recordName: d.name }))
-          .catch(() => set({ phase: 'terminal', report: null }))
+          .then((d) => {
+            if (get().runId === runId) set({ phase: 'terminal', report: d.report, recordName: d.name })
+          })
+          .catch(() => {
+            if (get().runId === runId) set({ phase: 'terminal', report: null })
+          })
       },
       onGone: () => void get().attach(),
     })
