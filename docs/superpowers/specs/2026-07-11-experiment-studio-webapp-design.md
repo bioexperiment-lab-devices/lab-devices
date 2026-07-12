@@ -326,9 +326,10 @@ persisted to localStorage).
 ### 9.2 Devices tab
 
 Lab picker from `/api/labs` (online badges) → device table (id, type, port, connected,
-firmware from `identify`) with per-device ping and a global "Rediscover" button (confirm
-dialog; explains it re-enumerates the bus). Read-only otherwise — device control belongs to
-experiments.
+firmware from `identify`) and a global "Rediscover" button (confirm dialog; explains it
+re-enumerates the bus). Per-device ping deferred to the v2 backlog (amended 2026-07-12
+during W3: §6 defines no ping endpoint and the §6 table is the API contract). Read-only
+otherwise — device control belongs to experiments.
 
 ### 9.3 Builder tab
 
@@ -349,7 +350,9 @@ Three panes:
 - **Inspector (right):** form for the selected block, generated from the catalog's
   ParamSpecs (number/int/string/bool widgets, required markers). Measure gets an
   `into`-stream picker (from declared streams, with inline "new stream"). Wait gets a
-  duration field (`"5s"`, `"2m"` grammar). Loop gets count / until / pace / check-before-after;
+  duration field (`"5s"`, `"2min"` grammar — units ms|s|min|h; amended 2026-07-12 during
+  W3: the original `"2m"` example was not the engine grammar). Loop gets count / until /
+  pace / check-before-after;
   Branch gets its condition. Serial children get optional `gap_after`; Parallel children
   optional `start_offset`.
 
