@@ -8,6 +8,6 @@ export function RecordsTab() {
   useEffect(() => {
     void useRecordsStore.getState().refresh()
   }, [])
-  if (openId !== null) return <RecordViewer id={openId} />
+  if (openId !== null) return <RecordViewer key={openId} id={openId} />
   return <RecordsTable />
 }
