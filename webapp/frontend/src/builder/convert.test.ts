@@ -1,0 +1,115 @@
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+import type { ExperimentDocJson } from '../types/doc'
+import { DocConvertError, docToTree, nodeToBlock, treeToDoc } from './convert'
+import type { LoopNode, MeasureNode, SerialNode } from './tree'
+
+const fixture = (name: string): ExperimentDocJson =>
+  JSON.parse(
+    readFileSync(new URL(`../../../fixtures/${name}.json`, import.meta.url), 'utf8'),
+  ) as ExperimentDocJson
+
+describe('docToTree', () => {
+  it('parses the golden fixture into an editor tree', () => {
+    const content = docToTree(fixture('valid-od-growth'))
+    expect(content.name).toBe('OD growth curve')
+    expect(content.roles).toEqual({
+      feed_pump: { type: 'pump' },
+      od_meter: { type: 'densitometer' },
+    })
+    expect(content.streams).toEqual({ od: { units: 'AU' } })
+    expect(content.tree).toHaveLength(1)
+    const root = content.tree[0] as SerialNode
+    expect(root.kind).toBe('serial')
+    expect(root.children.map((c) => c.kind)).toEqual(['command', 'loop'])
+    const loop = root.children[1] as LoopNode
+    expect(loop).toMatchObject({
+      mode: 'until',
+      until: 'mean(od, last=3) > 0.6',
+      check: 'after',
+      pace: '30s',
+    })
+    const measure = loop.body[0] as MeasureNode
+    expect(measure).toMatchObject({ device: 'od_meter', verb: 'measure', into: 'od' })
+  })
+
+  it('parses both invalid fixtures without throwing (they are diagnostics cases, not parse cases)', () => {
+    expect(() => docToTree(fixture('invalid-roles'))).not.toThrow()
+    expect(() => docToTree(fixture('invalid-workflow'))).not.toThrow()
+  })
+
+  it('assigns unique uids to every node', () => {
+    const { tree } = docToTree(fixture('valid-od-growth'))
+    const uids: string[] = []
+    const visit = (nodes: typeof tree): void => {
+      for (const n of nodes) {
+        uids.push(n.uid)
+        if (n.kind === 'serial' || n.kind === 'parallel') visit(n.children)
+        if (n.kind === 'loop') visit(n.body)
+        if (n.kind === 'branch') {
+          visit(n.then)
+          if (n.else) visit(n.else)
+        }
+      }
+    }
+    visit(tree)
+    expect(new Set(uids).size).toBe(uids.length)
+    expect(uids.length).toBe(5)
+  })
+
+  it('refuses docs that use groups or group_ref blocks', () => {
+    const doc = fixture('valid-od-growth')
+    doc.workflow.groups = { prep: { body: [] } }
+    expect(() => docToTree(doc)).toThrow(DocConvertError)
+    const doc2 = fixture('valid-od-growth')
+    doc2.workflow.blocks = [{ group_ref: { name: 'prep' } }]
+    expect(() => docToTree(doc2)).toThrow(/group_ref/)
+  })
+})
+
+describe('treeToDoc', () => {
+  it('round-trips the golden fixture exactly', () => {
+    const raw = fixture('valid-od-growth')
+    expect(treeToDoc(docToTree(raw))).toEqual(raw)
+  })
+
+  it('emits check only alongside until, and omits count in until mode', () => {
+    const { tree } = docToTree(fixture('valid-od-growth'))
+    const root = tree[0] as SerialNode
+    const loop = root.children[1] as LoopNode
+    const untilJson = nodeToBlock(loop)
+    expect(untilJson.loop).toMatchObject({ until: 'mean(od, last=3) > 0.6', check: 'after' })
+    expect(untilJson.loop).not.toHaveProperty('count')
+    const countJson = nodeToBlock({ ...loop, mode: 'count', count: 3 })
+    expect(countJson.loop).toMatchObject({ count: 3 })
+    expect(countJson.loop).not.toHaveProperty('until')
+    expect(countJson.loop).not.toHaveProperty('check')
+  })
+
+  it('omits empty params, null timing keys, and null else', () => {
+    const { tree } = docToTree(fixture('valid-od-growth'))
+    const root = tree[0] as SerialNode
+    const measureJson = nodeToBlock((root.children[1] as LoopNode).body[0])
+    expect(measureJson.measure).not.toHaveProperty('params')
+    expect(measureJson).not.toHaveProperty('label')
+    expect(measureJson).not.toHaveProperty('gap_after')
+    const branchJson = nodeToBlock({
+      uid: 'b', kind: 'branch', condition: 'last(od) > 1', then: [], else: null,
+      label: null, gapAfter: null, startOffset: null,
+    })
+    expect(branchJson.branch).not.toHaveProperty('else')
+    const withElse = nodeToBlock({
+      uid: 'b', kind: 'branch', condition: 'last(od) > 1', then: [], else: [],
+      label: null, gapAfter: null, startOffset: null,
+    })
+    expect(withElse.branch).toHaveProperty('else', [])
+  })
+
+  it('always stamps builder-owned metadata and persistence sections', () => {
+    const doc = treeToDoc({ name: 'X', description: null, roles: {}, streams: {}, tree: [] })
+    expect(doc.workflow.metadata).toEqual({ name: 'X' })
+    expect(doc.workflow.persistence).toEqual({ default: 'in_memory', format: 'jsonl' })
+    expect(doc.workflow.blocks).toEqual([])
+    expect(doc.doc_version).toBe(1)
+  })
+})
