@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, Request
 
 from lab_devices.discovery import LabRegistry
 
+from experiment_studio.api.deps import get_run_manager
 from experiment_studio.labs import LabsService
+from experiment_studio.runner import RunActiveError, RunManager
 
 router = APIRouter()
 
@@ -36,6 +38,11 @@ async def lab_devices(
 
 @router.post("/{lab}/discover")
 async def lab_discover(
-    lab: str, service: LabsService = Depends(get_labs_service)
+    lab: str,
+    service: LabsService = Depends(get_labs_service),
+    manager: RunManager = Depends(get_run_manager),
 ) -> list[dict[str, Any]]:
+    active = manager.active()
+    if active is not None and active.lab == lab:
+        raise RunActiveError(active.run_id)  # §6: 409 while a run is active on that lab
     return await service.discover(lab)

@@ -17,6 +17,29 @@ MIGRATIONS: list[str] = [
         updated_at TEXT NOT NULL
     )
     """,
+    """
+    CREATE TABLE records (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        experiment_id TEXT,
+        experiment_name TEXT NOT NULL,
+        lab TEXT NOT NULL,
+        role_mapping TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        dir TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE mappings (
+        experiment_id TEXT NOT NULL,
+        lab TEXT NOT NULL,
+        role TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        PRIMARY KEY (experiment_id, lab, role)
+    )
+    """,
 ]
 
 
@@ -36,7 +59,11 @@ class Database:
         conn = await aiosqlite.connect(path)
         conn.row_factory = aiosqlite.Row
         db = cls(conn)
-        await db._migrate()
+        try:
+            await db._migrate()
+        except BaseException:
+            await conn.close()
+            raise
         return db
 
     async def _migrate(self) -> None:
@@ -44,9 +71,16 @@ class Database:
         row = await cur.fetchone()
         version = int(row[0]) if row is not None else 0
         for i, statement in enumerate(MIGRATIONS[version:], start=version + 1):
-            await self._conn.execute(statement)
-            await self._conn.execute(f"PRAGMA user_version = {i}")
-            await self._conn.commit()
+            # DDL + version bump commit together: a crash between them would re-run
+            # the DDL on next boot and fail forever (W2 repro).
+            await self._conn.execute("BEGIN")
+            try:
+                await self._conn.execute(statement)
+                await self._conn.execute(f"PRAGMA user_version = {i}")
+                await self._conn.commit()
+            except BaseException:
+                await self._conn.rollback()
+                raise
 
     async def close(self) -> None:
         await self._conn.close()

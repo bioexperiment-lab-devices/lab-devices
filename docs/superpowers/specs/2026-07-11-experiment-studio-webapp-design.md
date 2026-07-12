@@ -205,6 +205,7 @@ All under `/api`; SPA served at `/` (catch-all to `index.html`).
 | `POST /api/runs/{id}/input` | body `{value}`; resolves the pending `InputRequest` (§7.4); 409 if none pending |
 | `WS /api/runs/{id}/events?since=N` | replays buffered events with `seq > N`, then live-streams (§7.5) |
 | `GET /api/records` | list with metadata (§8.1) |
+| `GET /api/records/{id}` | record row + parsed `report.json` + source `doc.json` for the viewer (amended 2026-07-12 during W4: §9.5's viewer needs the report summary and workflow snapshot; the original table had no single-record read) |
 | `PATCH /api/records/{id}` | rename |
 | `DELETE /api/records/{id}` | delete row + artifact dir |
 | `GET /api/records/{id}/download` | zip of the artifact dir, filename from record name |
@@ -271,7 +272,9 @@ block fails) never triggers here since the provider is always wired.
 - Server messages: `{type: "event", seq, timestamp, kind, block_id, data}` (one per
   RunEvent — this includes `measure_recorded {stream, value}`, which **is** the live chart
   feed; no second data path) and `{type: "status", status}` on lifecycle edges
-  (running/paused/finished-with-outcome).
+  (running/paused/finished-with-outcome). Status messages carry a `seq` from the same
+  counter as events (amended 2026-07-12 during W4) so replay is a single ordered
+  buffer.
 - `?since=N` replays every buffered event with `seq > N` before going live — refresh-proof.
   The buffer is the tee's in-memory list (bounded by run length; block-boundary events are
   small even for multi-day runs).

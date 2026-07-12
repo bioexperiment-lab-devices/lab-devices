@@ -90,6 +90,7 @@ class ExperimentsStore:
                 (row_id, doc.name, doc.model_dump_json(), now, now),
             )
         except sqlite3.IntegrityError:
+            await self._db.conn.rollback()
             raise NameConflictError(f"experiment name {doc.name!r} already exists") from None
         await self._db.conn.commit()
         return await self.get(row_id)
@@ -111,8 +112,10 @@ class ExperimentsStore:
                 (doc.name, doc.model_dump_json(), _now(), experiment_id),
             )
         except sqlite3.IntegrityError:
+            await self._db.conn.rollback()
             raise NameConflictError(f"experiment name {doc.name!r} already exists") from None
         if cur.rowcount == 0:
+            await self._db.conn.rollback()
             raise UnknownExperimentError(f"no experiment {experiment_id!r}")
         await self._db.conn.commit()
         return await self.get(experiment_id)
@@ -122,6 +125,7 @@ class ExperimentsStore:
             "DELETE FROM experiments WHERE id = ?", (experiment_id,)
         )
         if cur.rowcount == 0:
+            await self._db.conn.rollback()
             raise UnknownExperimentError(f"no experiment {experiment_id!r}")
         await self._db.conn.commit()
 
