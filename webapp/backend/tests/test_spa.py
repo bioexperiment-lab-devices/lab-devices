@@ -62,3 +62,10 @@ async def test_without_static_dir_root_is_404(tmp_path: Path) -> None:
     async with _client(None) as c:
         resp = await c.get("/")
         assert resp.status_code == 404
+
+
+async def test_api_exact_path_is_json_404(tmp_path: Path) -> None:
+    async with _client(_make_static(tmp_path)) as c:
+        resp = await c.get("/api")
+        assert resp.status_code == 404
+        assert resp.headers["content-type"].startswith("application/json")

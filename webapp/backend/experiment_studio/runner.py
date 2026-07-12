@@ -174,6 +174,9 @@ def _write_report(
     (artifact_dir / "report.json").write_text(json.dumps(payload, indent=2))
 
 
+_TERMINAL_STATUSES = frozenset({"completed", "failed", "aborted", "cancelled", "interrupted"})
+
+
 class RunManager:
     """Process singleton owning at most one (LabClient, ExperimentRun, Task) (§7.1)."""
 
@@ -202,6 +205,8 @@ class RunManager:
         current = self._current
         if current is None or current.task is None or current.task.done():
             return None
+        if current.status in _TERMINAL_STATUSES:
+            return None  # finalization window (§7.1.5): run is over, task still flushing
         return current
 
     def active_payload(self) -> dict[str, Any] | None:
@@ -219,10 +224,6 @@ class RunManager:
             "seq": current.tee.last_seq,
             "pending_input": dataclasses.asdict(pending) if pending is not None else None,
         }
-
-    def is_lab_busy(self, lab: str) -> bool:
-        current = self.active()
-        return current is not None and current.lab == lab
 
     def current_task(self) -> asyncio.Task[None] | None:
         return self._current.task if self._current is not None else None
