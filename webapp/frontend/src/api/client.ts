@@ -37,6 +37,11 @@ const isDiagnostic = (d: unknown): d is Diagnostic =>
   typeof (d as Diagnostic).path === 'string' &&
   typeof (d as Diagnostic).message === 'string'
 
+/** App-absolute '/api/...' → base-relative 'api/...': resolved by fetch/href against the
+ * document base URL, so the SPA works both at '/' and behind a prefix-stripping proxy
+ * (deployed at /studio/ — companion lab-bridge integration spec). */
+export const apiPath = (path: string): string => path.replace(/^\//, '')
+
 export async function toApiError(path: string, resp: Response): Promise<ApiError> {
   let message = `${path}: HTTP ${resp.status}`
   let code: string | null = null
@@ -60,7 +65,7 @@ export async function toApiError(path: string, resp: Response): Promise<ApiError
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(path, init)
+  const resp = await fetch(apiPath(path), init)
   if (!resp.ok) throw await toApiError(path, resp)
   if (resp.status === 204) return undefined as T
   const text = await resp.text()

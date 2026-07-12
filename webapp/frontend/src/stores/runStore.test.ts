@@ -39,7 +39,7 @@ const push = (msg: RunWsMsg) => sockets[0].handlers.onMessage(msg)
 describe('runStore', () => {
   it('attach adopts an active run and opens a socket', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) =>
-      url.includes('/api/records/') ? json(RECORD) : json(ACTIVE)))
+      url.includes('api/records/') ? json(RECORD) : json(ACTIVE)))
     await useRunStore.getState().attach()
     const s = useRunStore.getState()
     expect(s.phase).toBe('active')
@@ -55,7 +55,7 @@ describe('runStore', () => {
   })
   it('events fold into the feed; terminal close fetches the report', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) =>
-      url.includes('/api/records/') ? json(RECORD) : json(ACTIVE)))
+      url.includes('api/records/') ? json(RECORD) : json(ACTIVE)))
     await useRunStore.getState().attach()
     push({ type: 'event', seq: 0, timestamp: 1, kind: 'run_started', block_id: null, data: {} })
     push({ type: 'status', seq: 1, status: 'completed' })
@@ -68,7 +68,7 @@ describe('runStore', () => {
       min: 1, max: 10, choices: null, block_id: 'b1' } }
     let calls = 0
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (url.includes('/api/records/')) return json(RECORD)
+      if (url.includes('api/records/')) return json(RECORD)
       calls += 1
       return json(calls === 1 ? ACTIVE : pending)
     }))

@@ -1,6 +1,7 @@
 /** Reconnecting WebSocket for /api/runs/{id}/events (§7.5). Close 1000 = terminal
  * (buffer drained after the final status), 4404 = not the active run; anything else
  * is transport loss → reconnect with ?since=<lastSeq> after a backoff. */
+import { apiPath } from './client'
 import type { RunWsMsg } from '../types/runs'
 
 export interface RunSocketHandlers {
@@ -26,8 +27,11 @@ export class RunSocket {
 
   connect(): void {
     if (this.stopped) return
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const url = `${proto}://${window.location.host}/api/runs/${this.runId}/events?since=${this.lastSeq()}`
+    const url = new URL(
+      apiPath(`/api/runs/${this.runId}/events?since=${this.lastSeq()}`),
+      window.location.href,
+    )
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
     const ws = new WebSocket(url)
     this.ws = ws
     ws.onmessage = (e: MessageEvent<string>) => {

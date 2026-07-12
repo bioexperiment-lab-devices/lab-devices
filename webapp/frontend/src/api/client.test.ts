@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, getJson, postJson, toApiError } from './client'
+import { apiPath, ApiError, getJson, postJson, toApiError } from './client'
+
+describe('apiPath', () => {
+  it('strips the leading slash so fetch resolves against the document base', () => {
+    expect(apiPath('/api/labs')).toBe('api/labs')
+    expect(apiPath('/api/runs/xyz/events?since=3')).toBe('api/runs/xyz/events?since=3')
+  })
+  it('leaves already-relative paths alone', () => {
+    expect(apiPath('api/labs')).toBe('api/labs')
+  })
+})
 
 describe('toApiError', () => {
   it('extracts the structured {detail, code} envelope', async () => {
