@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.2.0...v0.3.0) (2026-07-12)
+
+
+### Features
+
+* **studio:** sub-path portability — relative asset/API/WS URLs ([c65da46](https://github.com/bioexperiment-lab-devices/lab-devices/commit/c65da46b3d1e67e6e3ddb8b40531b7b5c76c2d20))
+* **studio:** W6 — integration polish, sub-path portability, operator docs ([da19dbc](https://github.com/bioexperiment-lab-devices/lab-devices/commit/da19dbc812c59db47450ede47c2dfc4fa8ec4e6d))
+
+
+### Bug Fixes
+
+* **studio:** final-review wave — abort-idempotency wording, body-read timeout mapping, artifact-dir "." hardening ([faa57b4](https://github.com/bioexperiment-lab-devices/lab-devices/commit/faa57b43e21f26f4f1b6c1c9d1258016384e5759))
+* **studio:** preflight prefill survives late roster load; pin 409-adopt path ([675ac07](https://github.com/bioexperiment-lab-devices/lab-devices/commit/675ac076a225db98be62021ee6e441547c211cdd))
+* **studio:** release-please stamps experiment-studio version (health seam) ([b2c9327](https://github.com/bioexperiment-lab-devices/lab-devices/commit/b2c9327a0458036dd935c1c6981143d64f86e0a7))
+* **studio:** terminal-window active() guard, artifact-dir containment, zip off-loop, /api JSON 404 ([f8dc5c9](https://github.com/bioexperiment-lab-devices/lab-devices/commit/f8dc5c960741048634191455121c0622e33f38a7))
+* **studio:** viewer origin fallback, log-truncation hint, fetch timeouts, uid fallback, tsconfig strict ([8c88bc6](https://github.com/bioexperiment-lab-devices/lab-devices/commit/8c88bc6a40b3e157aae72e958511dc9c04d5a2db))
+
+
+### Documentation
+
+* W6 integration plan ([3523b53](https://github.com/bioexperiment-lab-devices/lab-devices/commit/3523b53c0e0d79de644714a2a3a76b1910f28531))
+* W6 spec amendments + studio operator/deployment guide ([1ad8fd6](https://github.com/bioexperiment-lab-devices/lab-devices/commit/1ad8fd64b196d074920224099dc4994ff9c6ee8e))
+
 ## [0.2.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.1.1...v0.2.0) (2026-07-12)
 
 
