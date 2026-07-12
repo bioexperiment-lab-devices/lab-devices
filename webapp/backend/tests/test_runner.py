@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import runsupport
+from fakelab import FakeLab
 from experiment_studio.docs_store import ExperimentDoc
 from experiment_studio.records import RecordsStore
 from experiment_studio.runner import PreflightError, RunActiveError, StartValidationError
@@ -22,6 +23,18 @@ async def _finish(env: SimpleNamespace, timeout: float = 10.0) -> None:
     task = env.manager.current_task()
     assert task is not None
     await asyncio.wait_for(task, timeout)
+
+
+async def _wait_for_job(fake: FakeLab, job_id: str, timeout: float = 5.0) -> None:
+    """Poll until the background run task has actually issued `job_id` (Finding 3:
+    start() no longer awaits anything after create_task, so the task isn't
+    guaranteed to have run at all by the time start() returns)."""
+
+    async def _poll() -> None:
+        while job_id not in fake.jobs:
+            await asyncio.sleep(0.001)
+
+    await asyncio.wait_for(_poll(), timeout)
 
 
 async def test_happy_path_completes_with_full_artifacts(env: SimpleNamespace) -> None:
@@ -101,6 +114,7 @@ async def test_second_start_rejected_while_active(env: SimpleNamespace) -> None:
     with pytest.raises(RunActiveError) as info:
         await env.manager.start(experiment_id, runsupport.LAB, runsupport.MAPPING)
     assert info.value.active_run_id == run_id
+    await _wait_for_job(env.fake, "j-1")
     env.fake.complete_job("j-1")
     await _finish(env)
 
@@ -146,3 +160,24 @@ async def test_construction_validation_failure_finalizes_failed_record(
     assert (art / "workflow.json").is_file()
     assert not (art / "run_log.jsonl").exists()
     assert env.manager.active_payload() is None
+
+
+async def test_unexpected_start_failure_finalizes_failed_record(
+    env: SimpleNamespace,
+) -> None:
+    """§10: no phantom 'running' record when start fails after record creation."""
+    env.manager._run_options["bogus_option"] = 1  # RunOptions(**...) will TypeError
+    experiment_id = await _create_doc(env, runsupport.HAPPY_BLOCKS)
+    with pytest.raises(TypeError):
+        await env.manager.start(experiment_id, runsupport.LAB, runsupport.MAPPING)
+    records = await RecordsStore(env.db, env.data_dir).list()
+    assert len(records) == 1
+    assert records[0]["status"] == "failed"
+    assert records[0]["ended_at"] is not None
+    assert env.manager.active_payload() is None
+    # a subsequent start succeeds
+    del env.manager._run_options["bogus_option"]
+    await env.manager.start(experiment_id, runsupport.LAB, runsupport.MAPPING)
+    task = env.manager.current_task()
+    assert task is not None
+    await asyncio.wait_for(task, 10)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import json
 import logging
@@ -294,65 +295,95 @@ class RunManager:
             started_at=started_at,
             dir=dir_rel,
         )
-        (artifact_dir / "doc.json").write_text(json.dumps(stored["doc"], indent=2))
-        (artifact_dir / "workflow.json").write_text(json.dumps(substituted, indent=2))
-
-        tee = TeeRunLogSink()
-        inputs = WebInputProvider()
-        options = RunOptions(
-            log_sink=tee,
-            input_provider=inputs,
-            output_dir=artifact_dir,
-            **self._run_options,
-        )
         try:
-            # construction runs the engine validator against the REAL device ids —
-            # this is the real-mapping re-validation (two roles on one device etc.)
-            run = ExperimentRun(client, workflow_from_dict(substituted), options)
-        except (ValidationError, WorkflowLoadError) as exc:
-            diagnostics = _engine_diagnostics(exc)
-            ended_at = _utc_now()
-            _write_report(
-                artifact_dir,
-                report=None,
-                status="failed",
-                clock_origin=None,
-                started_at=started_at,
-                ended_at=ended_at,
+            (artifact_dir / "doc.json").write_text(json.dumps(stored["doc"], indent=2))
+            (artifact_dir / "workflow.json").write_text(
+                json.dumps(substituted, indent=2)
+            )
+
+            tee = TeeRunLogSink()
+            inputs = WebInputProvider()
+            options = RunOptions(
+                log_sink=tee,
+                input_provider=inputs,
+                output_dir=artifact_dir,
+                **self._run_options,
+            )
+            try:
+                # construction runs the engine validator against the REAL device ids —
+                # this is the real-mapping re-validation (two roles on one device etc.)
+                run = ExperimentRun(client, workflow_from_dict(substituted), options)
+            except (ValidationError, WorkflowLoadError) as exc:
+                diagnostics = _engine_diagnostics(exc)
+                ended_at = _utc_now()
+                _write_report(
+                    artifact_dir,
+                    report=None,
+                    status="failed",
+                    clock_origin=None,
+                    started_at=started_at,
+                    ended_at=ended_at,
+                    experiment_name=doc.name,
+                    lab=lab,
+                    role_mapping=role_mapping,
+                    error=str(exc),
+                    diagnostics=diagnostics,
+                )
+                await records.finalize(run_id, status="failed", ended_at=ended_at)
+                raise StartValidationError(diagnostics, run_id) from exc
+
+            clock_origin = options.clock.now()
+            current = ActiveRun(
+                run_id=run_id,
+                record_id=run_id,
+                experiment_id=experiment_id,
                 experiment_name=doc.name,
                 lab=lab,
-                role_mapping=role_mapping,
-                error=str(exc),
-                diagnostics=diagnostics,
+                role_mapping=dict(role_mapping),
+                status="running",
+                run=run,
+                tee=tee,
+                inputs=inputs,
+                client=client,
+                artifact_dir=artifact_dir,
             )
-            await records.finalize(run_id, status="failed", ended_at=ended_at)
-            raise StartValidationError(diagnostics, run_id) from exc
-
-        clock_origin = options.clock.now()
-        current = ActiveRun(
-            run_id=run_id,
-            record_id=run_id,
-            experiment_id=experiment_id,
-            experiment_name=doc.name,
-            lab=lab,
-            role_mapping=dict(role_mapping),
-            status="running",
-            run=run,
-            tee=tee,
-            inputs=inputs,
-            client=client,
-            artifact_dir=artifact_dir,
-        )
-        self._current = current
-        tee.append_status("running")
-        current.task = asyncio.create_task(
-            self._execute(current, clock_origin=clock_origin, started_at=started_at)
-        )
-        try:
-            await records.save_mapping(experiment_id, lab, role_mapping)  # S2 memory
-        except Exception:
-            _LOG.exception("failed saving role mapping for %s", run_id)
-        return run_id
+            # must run before self._current/create_task below: if start() is
+            # cancelled here, no task is running yet and the guard below finalizes
+            # the record as failed instead of yanking the client out from under
+            # the just-launched task (see Finding 3 in the run-backend review).
+            try:
+                await records.save_mapping(experiment_id, lab, role_mapping)  # S2 memory
+            except Exception:
+                _LOG.exception("failed saving role mapping for %s", run_id)
+            self._current = current
+            tee.append_status("running")
+            current.task = asyncio.create_task(
+                self._execute(current, clock_origin=clock_origin, started_at=started_at)
+            )
+            return run_id
+        except StartValidationError:
+            raise  # its own path already finalized the record
+        except BaseException as exc:
+            # any other failure after records.create() above — e.g. an OSError
+            # writing artifacts, a bad **self._run_options key, or cancellation —
+            # must not leave a phantom 'running' record (design §10).
+            ended_at = _utc_now()
+            with contextlib.suppress(Exception):
+                _write_report(
+                    artifact_dir,
+                    report=None,
+                    status="failed",
+                    clock_origin=None,
+                    started_at=started_at,
+                    ended_at=ended_at,
+                    experiment_name=doc.name,
+                    lab=lab,
+                    role_mapping=role_mapping,
+                    error=str(exc),
+                )
+            with contextlib.suppress(Exception):
+                await records.finalize(run_id, status="failed", ended_at=ended_at)
+            raise
 
     async def _execute(
         self, current: ActiveRun, *, clock_origin: float, started_at: str
@@ -371,6 +402,9 @@ class RunManager:
             ended_at = _utc_now()
             try:
                 _write_run_log(current.artifact_dir, current.tee)
+            except Exception:
+                _LOG.exception("failed writing run log for run %s", current.run_id)
+            try:
                 _write_report(
                     current.artifact_dir,
                     report=report,
@@ -382,8 +416,8 @@ class RunManager:
                     lab=current.lab,
                     role_mapping=current.role_mapping,
                 )
-            except OSError:
-                _LOG.exception("failed writing artifacts for run %s", current.run_id)
+            except Exception:
+                _LOG.exception("failed writing report for run %s", current.run_id)
             try:
                 await RecordsStore(self._db, self._data_dir).finalize(
                     current.record_id, status=status, ended_at=ended_at
