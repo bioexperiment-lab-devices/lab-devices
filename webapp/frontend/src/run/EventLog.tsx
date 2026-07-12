@@ -37,6 +37,11 @@ export function EventLog(props: { events: ReadonlyArray<LogEvent>; origin: numbe
       onMouseLeave={() => setHovered(false)}
       className="h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 font-mono text-xs"
     >
+      {props.events.length > shown.length && (
+        <p className="text-slate-400">
+          … showing last {shown.length} of {props.events.length} events (download the zip for the full log)
+        </p>
+      )}
       {shown.length === 0 && <p className="text-slate-400">no events yet</p>}
       {shown.map((e, i) => (
         <div key={`${props.events.length - shown.length + i}`} className="flex gap-2 py-px">

@@ -156,7 +156,13 @@ async def test_pause_resume_abort_endpoints(api: SimpleNamespace) -> None:
     assert body["status"] == "paused"
     assert (await api.client.post(f"/api/runs/{run_id}/resume")).status_code == 204
     assert (await api.client.post(f"/api/runs/{run_id}/abort")).status_code == 204
-    assert (await api.client.post(f"/api/runs/{run_id}/abort")).status_code == 204
+    # W6: active() hides the finalization window (§7.1.5) — once the task has
+    # recorded a terminal status the run is no longer "active", even before its
+    # background task fully finishes flushing artifacts, so a second abort 404s
+    # instead of silently no-op'ing.
+    response = await api.client.post(f"/api/runs/{run_id}/abort")
+    assert response.status_code == 404
+    assert response.json()["code"] == "unknown_run"
     await _wait_for_job(api)
     api.fake.complete_job("j-1")
     await _finish(api)

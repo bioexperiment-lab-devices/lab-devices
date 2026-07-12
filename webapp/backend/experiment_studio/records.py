@@ -56,7 +56,11 @@ class RecordsStore:
         self._data_dir = data_dir
 
     def artifact_dir(self, record: dict[str, Any]) -> Path:
-        return self._data_dir / str(record["dir"])
+        base = self._data_dir.resolve()
+        target = (self._data_dir / str(record["dir"])).resolve()
+        if target == base or not target.is_relative_to(base):
+            raise UnknownRecordError(f"record {record['id']!r} artifact dir escapes data dir")
+        return target
 
     async def create(
         self,
@@ -127,8 +131,11 @@ class RecordsStore:
             "DELETE FROM records WHERE id = ?", (record_id,)
         )
         await self._db.conn.commit()
-        target = (self._data_dir / record["dir"]).resolve()
-        if target.is_relative_to(self._data_dir.resolve()) and target.is_dir():
+        try:
+            target = self.artifact_dir(record)
+        except UnknownRecordError:
+            return  # row removed; never touch a path outside data_dir
+        if target.is_dir():
             shutil.rmtree(target, ignore_errors=True)
 
     async def sweep_interrupted(self) -> int:

@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, getJson, postJson, toApiError } from './client'
+import { apiPath, ApiError, getJson, postJson, toApiError } from './client'
+
+describe('apiPath', () => {
+  it('strips the leading slash so fetch resolves against the document base', () => {
+    expect(apiPath('/api/labs')).toBe('api/labs')
+    expect(apiPath('/api/runs/xyz/events?since=3')).toBe('api/runs/xyz/events?since=3')
+  })
+  it('leaves already-relative paths alone', () => {
+    expect(apiPath('api/labs')).toBe('api/labs')
+  })
+})
 
 describe('toApiError', () => {
   it('extracts the structured {detail, code} envelope', async () => {
@@ -51,6 +61,28 @@ describe('request', () => {
   it('parses a JSON null body', async () => {
     stubFetch(new Response('null', { status: 200 }))
     expect(await getJson<unknown>('/api/x')).toBeNull()
+  })
+  it('maps a fetch TimeoutError to a retryable ApiError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(
+      new DOMException('The operation timed out.', 'TimeoutError'),
+    ))
+    await expect(getJson('/api/labs')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 0,
+      message: '/api/labs: request timed out',
+    })
+  })
+  it('maps a TimeoutError during body read to a retryable ApiError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.reject(new DOMException('The operation timed out.', 'TimeoutError')),
+    } as unknown as Response))
+    await expect(getJson('/api/labs')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 0,
+      message: '/api/labs: request timed out',
+    })
   })
   it('throws ApiError with envelope extras on failure', async () => {
     const body = {

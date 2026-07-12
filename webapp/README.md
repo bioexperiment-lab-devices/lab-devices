@@ -31,3 +31,35 @@ SQLite + run artifacts land in $STUDIO_DATA_DIR (default /data; use a repo-ignor
     docker run --rm -p 8000:8000 experiment-studio:dev
 
 Published on release as `ghcr.io/bioexperiment-lab-devices/experiment-studio:{version,latest}`.
+
+## Deployment
+
+One container serves API + SPA on port 8000. Persistent state lives entirely under
+`STUDIO_DATA_DIR` (SQLite + run artifacts) — mount a volume there.
+
+| Env | Default | Meaning |
+|---|---|---|
+| `STUDIO_DATA_DIR` | `/data` | SQLite db + `runs/<id>/` artifact dirs |
+| `STUDIO_STATIC_DIR` | set in-image | built SPA; unset = API only (dev) |
+| `LAB_DEVICES_DISCOVERY_URL` | `http://siteapp:8000/api/clients/` | lab roster endpoint |
+
+All URLs the SPA emits are relative: the app works at `/` and behind a
+prefix-stripping reverse proxy (lab-bridge serves it at `/studio/` — see that repo's
+`docs/superpowers/specs/2026-07-12-experiment-studio-integration.md`). The app is
+single-user: one active run per instance (second start → 409); auth belongs to the
+proxy edge. Run exactly one replica per data dir.
+
+## Operating (the four tabs)
+
+1. **Devices** — pick the lab (persisted), inspect its device roster, or Rediscover
+   (live bus rescan; refused with 409 while that lab runs an experiment).
+2. **Builder** — define roles (name + device type) and streams (name + units), then
+   drag verbs/structure blocks onto the canvas. Save/validate as you go: diagnostics
+   badge blocks running, never saving.
+3. **Run** — pick a saved experiment, map every role to a live device (pre-filled
+   from the last run on that lab), Start. Live chart + event log + pause/resume/abort;
+   operator-input prompts pop a dialog. A finished run shows its report and links to
+   the record.
+4. **Records** — one record per run: rename, delete, download zip (doc, workflow,
+   run log, report, stream CSVs), or open the viewer (chart, log, report, read-only
+   workflow snapshot).

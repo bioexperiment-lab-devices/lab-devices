@@ -37,3 +37,16 @@ export function prefillMapping(
 
 export const mappingComplete = (rows: MappingRow[]): boolean =>
   rows.length > 0 && rows.every((r) => r.selected !== null)
+
+/** W6 (a): apply the prefill once the roster arrives without clobbering user picks —
+ * loadSelection snapshots the devices list once; a slow roster fetch used to silently
+ * drop the saved S2 mapping. */
+export function mergePrefill(
+  chosen: Record<string, string>,
+  roles: Record<string, { type: string }>,
+  devices: LabDevice[] | null,
+  saved: Record<string, string>,
+): Record<string, string> {
+  if (devices === null || Object.keys(chosen).length > 0) return chosen
+  return prefillMapping(roles, devices, saved)
+}

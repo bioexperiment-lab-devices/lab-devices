@@ -185,7 +185,7 @@ def _mount_spa(app: FastAPI, static_dir: Path) -> None:
 
     @app.get("/{path:path}", include_in_schema=False)
     async def spa(path: str) -> FileResponse:
-        if path.startswith("api/"):
+        if path == "api" or path.startswith("api/"):
             raise HTTPException(status_code=404)
         candidate = (root / path).resolve()
         if path and candidate.is_file() and candidate.is_relative_to(root):

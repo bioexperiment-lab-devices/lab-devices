@@ -41,8 +41,12 @@ export function RecordViewer(props: { id: string }) {
     return <p className="p-6 text-sm text-slate-400">loading record…</p>
   }
 
-  const origin = detail.report?.clock_origin ??
-    (events.length > 0 ? events[0].timestamp : 0)
+  const firstTs = Object.values(streams)
+    .map((s) => s.t[0])
+    .filter((t): t is number => t !== undefined)
+  const origin =
+    detail.report?.clock_origin ??
+    (events.length > 0 ? events[0].timestamp : firstTs.length > 0 ? Math.min(...firstTs) : 0)
   const series = Object.entries(streams).map(([label, s]) => ({
     label,
     units: s.units,

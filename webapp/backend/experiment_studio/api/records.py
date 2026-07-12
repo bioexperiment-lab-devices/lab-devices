@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from pathlib import Path
@@ -73,7 +74,7 @@ async def download_record(
     record_id: str, store: RecordsStore = Depends(get_records_store)
 ) -> Response:
     record = await store.get(record_id)
-    payload = build_zip(store.artifact_dir(record))
+    payload = await asyncio.to_thread(build_zip, store.artifact_dir(record))
     stem = re.sub(r"[^A-Za-z0-9._-]+", "_", record["name"]).strip("._") or record["id"]
     return Response(
         content=payload,
