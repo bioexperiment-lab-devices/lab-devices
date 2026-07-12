@@ -12,7 +12,7 @@
 
 - Spec: `docs/superpowers/specs/2026-07-11-experiment-studio-webapp-design.md`. Engine semantics win; the webapp adapts (spec header).
 - Branch: `feat/experiment-studio-5-run-records-ui` off `main`.
-- Backend gates (own venv): `cd webapp/backend && .venv/bin/python -m pytest -q && .venv/bin/python -m mypy . && .venv/bin/python -m ruff check .` — line length ≤ 100 everywhere (src AND tests).
+- Backend gates (own venv): `cd webapp/backend && .venv/bin/python -m pytest -q && .venv/bin/python -m mypy && .venv/bin/python -m ruff check .` — line length ≤ 100 everywhere (src AND tests).
 - Frontend gates: `cd webapp/frontend && npm run lint && npm run typecheck && npm test && npm run build`.
 - Engine (`src/lab_devices/`) and root `tests/` MUST NOT change in this increment.
 - Vitest stays `environment: 'node'`; tests are pure-logic only (reducers, helpers, stores). Do not add jsdom/@testing-library.
@@ -164,7 +164,7 @@ explicit error states with retry (never infinite spinners).
 
 - [ ] **Step 5: Run the full backend gate**
 
-Run: `cd webapp/backend && .venv/bin/python -m pytest -q && .venv/bin/python -m mypy . && .venv/bin/python -m ruff check . && awk 'length > 100 {print FILENAME": "FNR; bad=1} END {exit bad}' experiment_studio/**/*.py tests/*.py`
+Run: `cd webapp/backend && .venv/bin/python -m pytest -q && .venv/bin/python -m mypy && .venv/bin/python -m ruff check . && awk 'length > 100 {print FILENAME": "FNR; bad=1} END {exit bad}' experiment_studio/**/*.py tests/*.py`
 Expected: all pass (suite grows 118 → 121).
 
 - [ ] **Step 6: Commit**
@@ -3082,7 +3082,7 @@ Add `.devdata/` to `webapp/backend/.gitignore` (create or extend the file).
 
 NOTE: the lifespan still builds a real (unused) RunManager/LabsService on app.state — the dependency overrides win for every route; the idle real objects are harmless and their shutdown is guarded.
 
-- [ ] **Step 3: Backend gate** — `cd webapp/backend && .venv/bin/python -m pytest -q && .venv/bin/python -m mypy . && .venv/bin/python -m ruff check .` — green (devserver.py is type-checked and linted; not collected by pytest).
+- [ ] **Step 3: Backend gate** — `cd webapp/backend && .venv/bin/python -m pytest -q && .venv/bin/python -m mypy && .venv/bin/python -m ruff check .` — green (devserver.py is type-checked and linted; not collected by pytest).
 
 - [ ] **Step 4: Scripted walkthrough (the W5 gate)** — scratchpad playwright script, NOT committed. Recipe (adapt W3's `walk.mjs` pattern: `npm init -y && npm i playwright && npx playwright install chromium` in a scratchpad dir; `hasText` is case-insensitive; screenshots after each phase):
 
@@ -3130,7 +3130,7 @@ NOTE: the lifespan still builds a real (unused) RunManager/LabsService on app.st
 - [ ] **Step 5: Full final gates + engine-untouched check**
 
 ```bash
-cd webapp/backend && .venv/bin/python -m pytest -q && .venv/bin/python -m mypy . && .venv/bin/python -m ruff check .
+cd webapp/backend && .venv/bin/python -m pytest -q && .venv/bin/python -m mypy && .venv/bin/python -m ruff check .
 cd ../frontend && npm run lint && npm run typecheck && npm test && npm run build
 cd ../.. && git diff main --stat -- src/ tests/   # MUST be empty (engine untouched)
 ```
