@@ -5,8 +5,10 @@ import {
   loadDoc,
   newDoc,
   redo,
+  selectContent,
   selectDirty,
   selectDoc,
+  snapshotOf,
   undo,
   useDocStore,
   useTemporal,
@@ -70,29 +72,39 @@ export function Toolbar() {
     run(async () => {
       const state = useDocStore.getState()
       const doc = selectDoc(state)
+      const snapshot = snapshotOf(selectContent(state))
       const res = state.serverId
         ? await replaceExperiment(state.serverId, doc)
         : await createExperiment(doc)
-      markSaved(res.id)
+      markSaved(res.id, snapshot)
     })
 
   const saveAs = () => {
     const newName = window.prompt('Save as…', `${name} (copy)`)
     if (!newName) return
+    const previousName = useDocStore.getState().name
     void run(async () => {
       useDocStore.getState().setName(newName)
-      const res = await createExperiment(selectDoc(useDocStore.getState()))
-      markSaved(res.id)
+      const snapshot = snapshotOf(selectContent(useDocStore.getState()))
+      try {
+        const res = await createExperiment(selectDoc(useDocStore.getState()))
+        markSaved(res.id, snapshot)
+      } catch (e) {
+        useDocStore.getState().setName(previousName)
+        throw e
+      }
     })
   }
 
-  const duplicate = () =>
-    run(async () => {
+  const duplicate = () => {
+    if (selectDirty(useDocStore.getState()) && !window.confirm('Discard unsaved changes?')) return
+    return run(async () => {
       const id = useDocStore.getState().serverId
       if (!id) return
       const res = await duplicateExperiment(id)
       loadDoc(docToTree(res.doc), res.id)
     })
+  }
 
   const fresh = () => {
     if (selectDirty(useDocStore.getState()) && !window.confirm('Discard unsaved changes?')) return

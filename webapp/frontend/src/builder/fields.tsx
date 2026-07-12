@@ -46,6 +46,36 @@ export function TextField(props: {
   )
 }
 
+export function TextAreaField(props: {
+  value: string
+  onCommit: (v: string) => void
+  rows?: number
+  mono?: boolean
+  placeholder?: string
+}) {
+  const [draft, setDraft] = useState(props.value)
+  useEffect(() => setDraft(props.value), [props.value])
+  const commit = () => {
+    if (draft !== props.value) props.onCommit(draft)
+  }
+  return (
+    <textarea
+      value={draft}
+      rows={props.rows ?? 3}
+      placeholder={props.placeholder}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') setDraft(props.value)
+      }}
+      className={
+        'w-full rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs focus:border-blue-400 focus:outline-none' +
+        (props.mono ? ' font-mono' : '')
+      }
+    />
+  )
+}
+
 export function NumberField(props: {
   value: number | null
   onCommit: (v: number | null) => void

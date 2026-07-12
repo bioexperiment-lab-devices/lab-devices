@@ -63,7 +63,7 @@ export interface EditorState extends DocSnapshot {
   setDiagnostics: (diags: MappedDiagnostic[]) => void
   setValidating: (v: boolean) => void
   setValidationError: (e: string | null) => void
-  markSaved: (serverId: string) => void
+  markSaved: (serverId: string, savedSnapshot?: string) => void
 }
 
 export const selectContent = (s: DocSnapshot): DocContent => ({
@@ -200,8 +200,8 @@ export const useDocStore = create<EditorState>()(
       setDiagnostics: (diagnostics) => set({ diagnostics }),
       setValidating: (validating) => set({ validating }),
       setValidationError: (validationError) => set({ validationError }),
-      markSaved: (serverId) =>
-        set((s) => ({ serverId, savedSnapshot: snapshotOf(selectContent(s)) })),
+      markSaved: (serverId, savedSnapshot) =>
+        set((s) => ({ serverId, savedSnapshot: savedSnapshot ?? snapshotOf(selectContent(s)) })),
     }),
     {
       partialize: (state): DocSnapshot => ({

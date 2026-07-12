@@ -9,6 +9,7 @@ import {
   ExpressionInput,
   FieldRow,
   NumberField,
+  TextAreaField,
   TextField,
 } from './fields'
 import {
@@ -56,12 +57,7 @@ function DocProperties() {
     <div>
       <h2 className="mb-2 text-sm font-semibold text-slate-700">Experiment</h2>
       <FieldRow label="Description">
-        <textarea
-          defaultValue={description ?? ''}
-          onBlur={(e) => setDescription(e.target.value || null)}
-          rows={3}
-          className="w-full rounded border border-slate-300 px-1.5 py-0.5 text-xs"
-        />
+        <TextAreaField value={description ?? ''} onCommit={(v) => setDescription(v || null)} />
       </FieldRow>
       <p className="mt-2 text-xs text-slate-400">
         {Object.keys(roles).length} roles · {Object.keys(streams).length} streams ·{' '}
@@ -422,18 +418,17 @@ function OperatorInputForm({ node }: { node: OperatorInputNode }) {
       )}
       {node.inputType === 'enum' && (
         <FieldRow label="Choices (one per line)" required>
-          <textarea
-            defaultValue={(node.choices ?? []).join('\n')}
-            onBlur={(e) =>
+          <TextAreaField
+            mono
+            value={(node.choices ?? []).join('\n')}
+            onCommit={(v) =>
               patchBlock(node.uid, {
-                choices: e.target.value
+                choices: v
                   .split('\n')
                   .map((line) => line.trim())
                   .filter((line) => line !== ''),
               })
             }
-            rows={3}
-            className="w-full rounded border border-slate-300 px-1.5 py-0.5 font-mono text-xs"
           />
         </FieldRow>
       )}

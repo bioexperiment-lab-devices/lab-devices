@@ -41,6 +41,21 @@ describe('role refs', () => {
     expect(countRoleRefs(next, 'acid_pump')).toBe(2)
     expect(countRoleRefs(tree, 'feed_pump')).toBe(2) // input untouched
   })
+
+  it('cascades renames through both branch lanes', () => {
+    const branched: BlockNode[] = [
+      {
+        uid: 'b1', kind: 'branch', condition: 'last(od) > 1', ...base,
+        then: [cmd('t1', 'feed_pump')],
+        else: [meas('e1', 'feed_pump', 'od')],
+      },
+    ]
+    const next = renameRoleRefs(branched, 'feed_pump', 'acid_pump')
+    expect(countRoleRefs(next, 'acid_pump')).toBe(2)
+    expect(countRoleRefs(next, 'feed_pump')).toBe(0)
+    const renamed = renameStreamRefs(next, 'od', 'od600')
+    expect(countStreamRefs(renamed, 'od600')).toBe(1)
+  })
 })
 
 describe('stream refs', () => {
