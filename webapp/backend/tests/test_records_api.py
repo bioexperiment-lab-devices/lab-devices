@@ -148,3 +148,20 @@ async def test_escaping_artifact_dir_is_refused(api: SimpleNamespace) -> None:
     resp = await api.client.delete(f"/api/records/{record_id}")
     assert resp.status_code == 204  # row deleted; escaping dir untouched
     assert (await api.client.get(f"/api/records/{record_id}")).status_code == 404
+
+
+async def test_dot_artifact_dir_is_refused(api: SimpleNamespace) -> None:
+    """Row doctored to dir="." resolves to data_dir itself; containment must reject
+    self, not just true escapes, or delete() would rmtree the whole data dir."""
+    record = await _seed_record(api)
+    record_id = record["id"]
+    await api.db.conn.execute(
+        "UPDATE records SET dir = ? WHERE id = ?", (".", record_id)
+    )
+    await api.db.conn.commit()
+    resp = await api.client.get(f"/api/records/{record_id}/download")
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "unknown_record"
+    resp = await api.client.delete(f"/api/records/{record_id}")
+    assert resp.status_code == 204  # row deleted; data dir itself untouched
+    assert (api.data_dir / "studio.db").exists()

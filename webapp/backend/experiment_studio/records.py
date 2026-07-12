@@ -56,8 +56,9 @@ class RecordsStore:
         self._data_dir = data_dir
 
     def artifact_dir(self, record: dict[str, Any]) -> Path:
+        base = self._data_dir.resolve()
         target = (self._data_dir / str(record["dir"])).resolve()
-        if not target.is_relative_to(self._data_dir.resolve()):
+        if target == base or not target.is_relative_to(base):
             raise UnknownRecordError(f"record {record['id']!r} artifact dir escapes data dir")
         return target
 

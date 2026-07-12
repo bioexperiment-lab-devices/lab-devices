@@ -72,6 +72,18 @@ describe('request', () => {
       message: '/api/labs: request timed out',
     })
   })
+  it('maps a TimeoutError during body read to a retryable ApiError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.reject(new DOMException('The operation timed out.', 'TimeoutError')),
+    } as unknown as Response))
+    await expect(getJson('/api/labs')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 0,
+      message: '/api/labs: request timed out',
+    })
+  })
   it('throws ApiError with envelope extras on failure', async () => {
     const body = {
       detail: 'preflight failed', code: 'preflight_failed',

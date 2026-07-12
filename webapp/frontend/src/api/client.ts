@@ -69,18 +69,18 @@ const DEFAULT_TIMEOUT_MS = 30_000 // generous: guards hangs, not slow agents
 async function request<T>(
   path: string, init?: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
-  let resp: Response
+  let text: string
   try {
-    resp = await fetch(apiPath(path), { signal: AbortSignal.timeout(timeoutMs), ...init })
+    const resp = await fetch(apiPath(path), { signal: AbortSignal.timeout(timeoutMs), ...init })
+    if (!resp.ok) throw await toApiError(path, resp)
+    if (resp.status === 204) return undefined as T
+    text = await resp.text()
   } catch (e) {
     if (e instanceof DOMException && e.name === 'TimeoutError') {
       throw new ApiError(0, `${path}: request timed out`)
     }
     throw e
   }
-  if (!resp.ok) throw await toApiError(path, resp)
-  if (resp.status === 204) return undefined as T
-  const text = await resp.text()
   if (text === '') return undefined as T // W3 carry-forward: empty 2xx body is legal
   return JSON.parse(text) as T
 }
