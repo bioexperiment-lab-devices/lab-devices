@@ -62,6 +62,16 @@ describe('request', () => {
     stubFetch(new Response('null', { status: 200 }))
     expect(await getJson<unknown>('/api/x')).toBeNull()
   })
+  it('maps a fetch TimeoutError to a retryable ApiError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(
+      new DOMException('The operation timed out.', 'TimeoutError'),
+    ))
+    await expect(getJson('/api/labs')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 0,
+      message: '/api/labs: request timed out',
+    })
+  })
   it('throws ApiError with envelope extras on failure', async () => {
     const body = {
       detail: 'preflight failed', code: 'preflight_failed',

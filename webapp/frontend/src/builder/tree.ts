@@ -95,7 +95,10 @@ export interface ParentInfo {
   index: number
 }
 
-export const newUid = (): string => crypto.randomUUID()
+export const newUid = (): string =>
+  typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `uid-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
 
 export function childSlots(node: BlockNode): Array<[string, BlockNode[]]> {
   switch (node.kind) {

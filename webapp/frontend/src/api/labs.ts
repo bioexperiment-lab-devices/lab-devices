@@ -7,4 +7,4 @@ export const labDevices = (lab: string) =>
   getJson<LabDevice[]>(`/api/labs/${encodeURIComponent(lab)}/devices`)
 
 export const labDiscover = (lab: string) =>
-  postJson<LabDevice[]>(`/api/labs/${encodeURIComponent(lab)}/discover`, {})
+  postJson<LabDevice[]>(`/api/labs/${encodeURIComponent(lab)}/discover`, {}, 120_000)

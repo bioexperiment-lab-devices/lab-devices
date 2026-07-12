@@ -64,8 +64,20 @@ export async function toApiError(path: string, resp: Response): Promise<ApiError
   return new ApiError(resp.status, message, code, extras)
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(apiPath(path), init)
+const DEFAULT_TIMEOUT_MS = 30_000 // generous: guards hangs, not slow agents
+
+async function request<T>(
+  path: string, init?: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+  let resp: Response
+  try {
+    resp = await fetch(apiPath(path), { signal: AbortSignal.timeout(timeoutMs), ...init })
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'TimeoutError') {
+      throw new ApiError(0, `${path}: request timed out`)
+    }
+    throw e
+  }
   if (!resp.ok) throw await toApiError(path, resp)
   if (resp.status === 204) return undefined as T
   const text = await resp.text()
@@ -79,8 +91,9 @@ const jsonInit = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 })
 
-export const getJson = <T>(path: string) => request<T>(path)
-export const postJson = <T>(path: string, body: unknown) => request<T>(path, jsonInit('POST', body))
+export const getJson = <T>(path: string, timeoutMs?: number) => request<T>(path, undefined, timeoutMs)
+export const postJson = <T>(path: string, body: unknown, timeoutMs?: number) =>
+  request<T>(path, jsonInit('POST', body), timeoutMs)
 export const putJson = <T>(path: string, body: unknown) => request<T>(path, jsonInit('PUT', body))
 export const patchJson = <T>(path: string, body: unknown) => request<T>(path, jsonInit('PATCH', body))
 export const deleteJson = (path: string) => request<void>(path, { method: 'DELETE' })
