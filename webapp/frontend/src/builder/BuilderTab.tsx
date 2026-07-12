@@ -16,6 +16,7 @@ import { findNode, newStructureNode, newVerbNode } from './tree'
 import { blockSummary } from './summary'
 import { Palette } from './Palette'
 import { Canvas } from './Canvas'
+import { Inspector } from './Inspector'
 
 const STRUCTURE_TITLES: Record<string, string> = {
   serial: 'Serial',
@@ -112,10 +113,7 @@ export function BuilderTab() {
         <div className="flex min-h-0 flex-1 overflow-hidden rounded-lg border border-slate-200 bg-white">
           <Palette />
           <Canvas />
-          <aside
-            data-slot="inspector"
-            className="w-80 shrink-0 overflow-y-auto border-l border-slate-200 bg-slate-50 p-3"
-          />
+          <Inspector />
         </div>
         <DragOverlay>
           {dragPayload && (
