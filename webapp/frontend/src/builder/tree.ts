@@ -213,7 +213,9 @@ export function canDrop(tree: BlockNode[], dragUid: string, at: SlotRef): boolea
   const dragged = findNode(tree, dragUid)
   if (!dragged) return false
   if (at.parentUid === null) return true
-  if (findNode(tree, at.parentUid) === null) return false
+  const target = findNode(tree, at.parentUid)
+  if (target === null) return false
+  if (!childSlots(target).some(([name]) => name === at.slot)) return false
   return !containsUid(dragged, at.parentUid)
 }
 

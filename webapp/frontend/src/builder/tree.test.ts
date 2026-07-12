@@ -74,6 +74,24 @@ describe('tree ops', () => {
     expect(illegal).toBe(tree)
   })
 
+  it('refuses to drop into a slot the target does not expose', () => {
+    const tree = [wait('w1'), serial('s1', []), { uid: 'b1', kind: 'branch' as const, condition: '', then: [], else: null, label: null, gapAfter: null, startOffset: null }]
+    // leaf target: wait has no child slots
+    expect(canDrop(tree, 's1', { parentUid: 'w1', slot: 'children', index: 0 })).toBe(false)
+    // wrong slot name on a real container
+    expect(canDrop(tree, 'w1', { parentUid: 's1', slot: 'body', index: 0 })).toBe(false)
+    // branch else slot while else is null
+    expect(canDrop(tree, 'w1', { parentUid: 'b1', slot: 'else', index: 0 })).toBe(false)
+    // moveNode must never lose the node in any of these cases
+    for (const at of [
+      { parentUid: 'w1', slot: 'children', index: 0 },
+      { parentUid: 's1', slot: 'body', index: 0 },
+      { parentUid: 'b1', slot: 'else', index: 0 },
+    ]) {
+      expect(moveNode(tree, 'w1', at)).toBe(tree)
+    }
+  })
+
   it('adjusts the index when moving forward within the same list', () => {
     const tree = [wait('a'), wait('b'), wait('c')]
     const next = moveNode(tree, 'a', { parentUid: null, slot: 'blocks', index: 2 })
