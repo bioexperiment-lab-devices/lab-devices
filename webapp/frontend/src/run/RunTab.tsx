@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useRunStore } from '../stores/runStore'
 import { PreflightPanel } from './PreflightPanel'
+import { RunView } from './RunView'
 
 export function RunTab() {
   const phase = useRunStore((s) => s.phase)
@@ -11,6 +12,6 @@ export function RunTab() {
     return <p className="p-6 text-sm text-slate-400">checking for an active run…</p>
   }
   if (phase === 'idle') return <PreflightPanel />
-  // 'active' | 'terminal' — RunView lands in the next task
-  return <p className="p-6 text-sm text-slate-400">run view lands in the next task</p>
+  // 'active' | 'terminal'
+  return <RunView />
 }
