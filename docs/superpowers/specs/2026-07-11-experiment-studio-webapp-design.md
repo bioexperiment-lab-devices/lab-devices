@@ -55,7 +55,7 @@ User-settled at brainstorm (2026-07-11):
 | Live updates | WebSocket (FastAPI native) | Push run events + samples; supports replay-on-reconnect (§7.5). |
 | Metadata store | SQLite via `aiosqlite` | Single user; two small tables plus a nice-to-have mapping table (§8.1). Hand-rolled `PRAGMA user_version` migrations, no ORM/alembic. |
 | Run artifacts | Plain directories (§8.2) | The engine's own disk sinks already produce them; downloads are just zips. |
-| Frontend | React 18 + TypeScript + Vite | Mainstream, reliable to generate and maintain. |
+| Frontend | React 19 + TypeScript + Vite 8 (amended 2026-07-12 during W6: pinned versions as actually shipped) | Mainstream, reliable to generate and maintain. |
 | Styling | Tailwind CSS | Utility-first, no design system to maintain. |
 | Drag & drop | dnd-kit | Handles nested sortable trees; the canvas tree *is* the AST. |
 | State | zustand + zundo | Document store with undo/redo via snapshots. |
@@ -178,13 +178,23 @@ webapp/
   installs the library from the local source tree, so the image always ships the exact
   matching engine.
 - **Backend gates mirror the library:** pytest, mypy, ruff, line length ≤ 100.
-  **Frontend gates:** `tsc --noEmit`, eslint, vitest, `vite build`.
+  **Frontend gates:** `tsc --noEmit`, oxlint, vitest, `vite build` (amended 2026-07-12
+  during W6: oxlint replaced eslint — faster, zero-config, same rule intent).
 - **CI:** two new PR jobs (webapp-backend, webapp-frontend) that trigger on `webapp/**`
   changes; a release-triggered job builds the image and pushes
   `ghcr.io/bioexperiment-lab-devices/experiment-studio:{version,latest}` (S9).
-- **Runtime env:** `STUDIO_DATA_DIR=/data` (volume), `LAB_DEVICES_DISCOVERY_URL` (engine
-  default already points at the in-stack siteapp roster), `STUDIO_PORT` (default 8000).
-  No auth (S3 — authelia guards the edge; same trust model as the internal roster).
+- **Runtime env:** `STUDIO_DATA_DIR=/data` (volume), `STUDIO_STATIC_DIR` (set in-image;
+  unset in dev = API-only), `LAB_DEVICES_DISCOVERY_URL` (engine default already points at
+  the in-stack siteapp roster). No auth (S3 — authelia guards the edge; same trust model
+  as the internal roster) (amended 2026-07-12 during W6: replaces the `STUDIO_PORT`
+  sentence with the real env surface — the port is fixed at 8000 in the image CMD, never
+  configurable via env, and `STUDIO_STATIC_DIR` is the actual toggle between serving the
+  built SPA and running API-only in dev).
+- **Packaging note (amended 2026-07-12 during W6):** the SPA emits **relative**
+  asset/API/WS URLs, so the same image runs both at `/` and behind a prefix-stripping
+  reverse proxy with no build-time base-path configuration. The deployment route and
+  proxy snippets live in the companion spec `lab-bridge:
+  docs/superpowers/specs/2026-07-12-experiment-studio-integration.md`.
 
 ## 6. Backend API surface
 
@@ -201,7 +211,7 @@ All under `/api`; SPA served at `/` (catch-all to `index.html`).
 | `POST /api/validate` | §4.3; body = doc, response = `{ok, diagnostics[]}` |
 | `GET /api/experiments/{id}/mappings/{lab}` | S2 mapping memory read: `{role: device_id}` remembered from the last successful start of this experiment on this lab; `{}` when none (amended 2026-07-12 during W5: §9.4's preflight pre-fill needs a read endpoint; the table had none) |
 | `POST /api/runs` | body `{experiment_id, lab, role_mapping}`; 409 `{active_run_id}` if busy; 422 if mapping incomplete/mistyped; otherwise creates record + starts run, returns `{run_id}` |
-| `GET /api/runs/active` | `null` or `{run_id, record_id, experiment, lab, status, seq, pending_input}` — everything a freshly-loaded browser needs to reattach |
+| `GET /api/runs/active` | `null` or `{run_id, record_id, experiment, lab, status, seq, pending_input}` — everything a freshly-loaded browser needs to reattach; `status` in the payload is only ever `running\|paused` — it also returns `null` during the terminal finalization window (amended 2026-07-12 during W6: a run whose task has reached a terminal status but is still flushing `run_log.jsonl`/`report.json`/the record row must not be reported as an active `running`/`paused` run, so `active()` treats terminal-status-but-not-yet-cleared the same as no run) |
 | `POST /api/runs/{id}/pause` / `resume` / `abort` | engine `pause()/resume()/abort()`; 404 if not the active run; abort is idempotent |
 | `POST /api/runs/{id}/input` | body `{value}`; resolves the pending `InputRequest` (§7.4); 409 if none pending |
 | `WS /api/runs/{id}/events?since=N` | replays buffered events with `seq > N`, then live-streams (§7.5) |
@@ -380,7 +390,11 @@ status chip.
   lab's roster, pre-filled from `mappings` when available) plus the doc's validation
   status (`/api/validate`; no separate endpoint — `POST /api/runs` is the final
   authority and 422s on anything preflight missed), then a big Start button (enabled
-  when validation is clean and every role is mapped).
+  when validation is clean and every role is mapped). Documented deviation (amended
+  2026-07-12 during W6): an experiment with **zero roles can never Start** — the
+  mapping-complete gate requires at least one mapped role by design (an empty role set
+  does not vacuously satisfy "every role is mapped"), so a doc with no roles defined is
+  permanently un-runnable until a role is added.
 - **Active run:** status header (experiment, lab, state, elapsed), controls
   (Pause/Resume/Abort — abort confirms), **live chart** (uPlot; one series per stream,
   legend toggles, elapsed-time x-axis, fed from `measure_recorded` WS events), scrolling
@@ -395,7 +409,12 @@ status chip.
 Table (name, experiment, lab, status chip, started, duration) with rename (inline),
 delete (confirm), download. Row click opens the viewer: chart rebuilt from
 `/records/{id}/streams`, event log from `/records/{id}/events`, report summary, and the
-workflow snapshot rendered read-only on the canvas component.
+workflow snapshot rendered read-only on the canvas component. The viewer chart's
+elapsed-time origin (mirroring §7.5's live `elapsed = t − clock_origin`) follows a
+fallback chain (amended 2026-07-12 during W6): `report.clock_origin` → the first event
+log entry's timestamp → the minimum of each stream's first timestamp → `0` — so a
+record still charts sensibly even when `report.clock_origin` is absent (e.g. a run that
+failed before finalizing a report).
 
 ## 10. Error handling
 
@@ -421,7 +440,8 @@ workflow snapshot rendered read-only on the canvas component.
   contents + zip), 409/422 guards, crash-sweep, records CRUD + download.
 - **Frontend (vitest):** pure-logic tests — doc ↔ canvas-tree mapping, role
   rename/delete cascades, placeholder-path → block resolution, expression-help
-  generation, WS reducer (replay + live merge). `tsc` + eslint + `vite build` as gates.
+  generation, WS reducer (replay + live merge). `tsc` + oxlint + `vite build` as gates
+  (amended 2026-07-12 during W6: oxlint replaced eslint, see §5).
 - **Cross-checked contract:** golden doc fixtures under `webapp/fixtures/` consumed by
   both backend (parse/validate) and frontend (type + mapping tests) so the two sides
   cannot drift on doc_version 1.
