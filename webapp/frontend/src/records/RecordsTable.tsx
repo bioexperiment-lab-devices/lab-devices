@@ -61,6 +61,8 @@ function NameCell(props: { row: RecordRow }) {
         onClick={() => {
           setDraft(props.row.name)
           setEditing(true)
+          setError(null)
+          cancelled.current = false
         }}
         className="text-xs text-slate-300 hover:text-slate-600"
       >

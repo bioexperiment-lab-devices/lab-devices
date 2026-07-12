@@ -65,6 +65,7 @@ export function StreamsPanel() {
                   setEditing(name)
                   setDraft(name)
                   setError(null)
+                  cancelled.current = false
                 }}
                 className="rounded px-1 font-mono text-xs hover:bg-slate-200"
               >
