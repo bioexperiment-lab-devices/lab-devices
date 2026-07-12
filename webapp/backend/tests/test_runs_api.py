@@ -62,6 +62,7 @@ async def test_start_returns_run_id_and_active_payload(api: SimpleNamespace) -> 
     assert body["experiment"]["name"] == "Growth run"
     assert body["seq"] >= 0
     assert body["pending_input"] is None
+    await _wait_for_job(api)
     api.fake.complete_job("j-1")
     await _finish(api)
     response = await api.client.get("/api/runs/active")
