@@ -6,7 +6,7 @@ import { useLabsStore } from '../stores/labsStore'
 import { useNavStore } from '../stores/navStore'
 import { useRunStore } from '../stores/runStore'
 import type { Diagnostic, ExperimentDocJson, ExperimentSummary } from '../types/doc'
-import { buildMappingRows, mappingComplete, prefillMapping } from './preflight'
+import { buildMappingRows, mappingComplete, mergePrefill, prefillMapping } from './preflight'
 
 export function PreflightPanel() {
   const lab = useLabsStore((s) => s.selected)
@@ -24,6 +24,7 @@ export function PreflightPanel() {
   const [diagnostics, setDiagnostics] = useState<Diagnostic[] | null>(null)
   const [validating, setValidating] = useState(false)
   const [chosen, setChosen] = useState<Record<string, string>>({})
+  const [saved, setSaved] = useState<Record<string, string>>({})
   const gen = useRef(0)
 
   const loadExperiments = useCallback(() => {
@@ -49,19 +50,21 @@ export function PreflightPanel() {
     setDocError(null)
     setDiagnostics(null)
     setChosen({})
+    setSaved({})
     useRunStore.setState({ startError: null, startDiagnostics: null })
     setValidating(true)
     getExperiment(id)
       .then(async (res) => {
         if (gen.current !== token) return
         setDoc(res.doc)
-        const [validation, saved] = await Promise.all([
+        const [validation, savedMap] = await Promise.all([
           validateDoc(res.doc),
           currentLab !== null ? savedMapping(id, currentLab).catch(() => ({})) : Promise.resolve({}),
         ])
         if (gen.current !== token) return
         setDiagnostics(validation.diagnostics)
-        setChosen(prefillMapping(res.doc.roles, useLabsStore.getState().devices, saved))
+        setSaved(savedMap)
+        setChosen(prefillMapping(res.doc.roles, useLabsStore.getState().devices, savedMap))
       })
       .catch((e: unknown) => {
         if (gen.current === token) setDocError(e instanceof Error ? e.message : String(e))
@@ -74,6 +77,12 @@ export function PreflightPanel() {
   useEffect(() => {
     if (selectedId !== null) loadSelection(selectedId, lab)
   }, [selectedId, lab, loadSelection])
+
+  // W6 (a): re-apply the prefill when the roster lands after loadSelection resolved.
+  useEffect(() => {
+    if (doc === null) return
+    setChosen((c) => mergePrefill(c, doc.roles, devices, saved))
+  }, [doc, devices, saved])
 
   if (lab === null) {
     return (

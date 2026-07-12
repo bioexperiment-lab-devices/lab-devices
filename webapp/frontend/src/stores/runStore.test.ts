@@ -81,6 +81,25 @@ describe('runStore', () => {
       data: { name: 'target', value: 5 } })
     expect(useRunStore.getState().pendingInput).toBeNull()
   })
+  it('adopts the already-active run on 409 run_active', async () => {
+    let getActiveCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return new Response(JSON.stringify({
+          detail: 'a run is already active', code: 'run_active', active_run_id: 'other',
+        }), { status: 409 })
+      }
+      if (url.includes('api/records/')) return json(RECORD)
+      getActiveCalls += 1
+      return json(getActiveCalls === 1 ? null : { ...ACTIVE, run_id: 'other', record_id: 'other' })
+    }))
+    await useRunStore.getState().attach()
+    await useRunStore.getState().start({ experiment_id: 'e1', lab: 'lab_a', role_mapping: {} })
+    const s = useRunStore.getState()
+    expect(s.phase).toBe('active')
+    expect(s.runId).toBe('other')
+    expect(s.startError).toBeNull()
+  })
   it('start surfaces 422 diagnostics without leaving idle', async () => {
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
       if (init?.method === 'POST') {

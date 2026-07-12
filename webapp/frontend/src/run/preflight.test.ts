@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMappingRows, mappingComplete, prefillMapping } from './preflight'
+import { buildMappingRows, mappingComplete, mergePrefill, prefillMapping } from './preflight'
 import type { LabDevice } from '../types/labs'
 
 const dev = (id: string, type: string): LabDevice =>
@@ -34,5 +34,21 @@ describe('mappingComplete', () => {
     const rows = buildMappingRows(ROLES, DEVICES, { feed: 'pump_1', meter: 'densitometer_1' })
     expect(mappingComplete(rows)).toBe(true)
     expect(mappingComplete(buildMappingRows(ROLES, DEVICES, { feed: 'pump_1' }))).toBe(false)
+  })
+})
+
+describe('mergePrefill', () => {
+  const roles = { feed: { type: 'pump' } }
+  const devices = [{ id: 'pump_1', type: 'pump' }] as LabDevice[]
+
+  it('fills an empty selection once the roster arrives', () => {
+    expect(mergePrefill({}, roles, devices, { feed: 'pump_1' })).toEqual({ feed: 'pump_1' })
+  })
+  it('does nothing while the roster is still loading', () => {
+    expect(mergePrefill({}, roles, null, { feed: 'pump_1' })).toEqual({})
+  })
+  it('never clobbers an existing selection', () => {
+    const chosen = { feed: 'pump_2' }
+    expect(mergePrefill(chosen, roles, devices, { feed: 'pump_1' })).toBe(chosen)
   })
 })
