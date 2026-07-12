@@ -5,6 +5,7 @@ import { TabShell } from './shell/TabShell'
 import { BuilderTab } from './builder/BuilderTab'
 import { DevicesTab } from './devices/DevicesTab'
 import { RecordsTab } from './records/RecordsTab'
+import { RunTab } from './run/RunTab'
 import { useLabsStore } from './stores/labsStore'
 import { useNavStore } from './stores/navStore'
 
@@ -25,11 +26,7 @@ export default function App() {
     <TabShell active={tab} onSelect={setTab} statusLine={describeHealth(health, error)} lab={lab}>
       {tab === 'Devices' && <DevicesTab />}
       {tab === 'Builder' && <BuilderTab />}
-      {tab === 'Run' && (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          Run controls land in the next task.
-        </div>
-      )}
+      {tab === 'Run' && <RunTab />}
       {tab === 'Records' && <RecordsTab />}
     </TabShell>
   )
