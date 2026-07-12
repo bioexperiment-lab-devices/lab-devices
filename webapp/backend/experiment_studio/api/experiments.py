@@ -6,8 +6,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
+from experiment_studio.api.deps import get_records_store
 from experiment_studio.db import Database
 from experiment_studio.docs_store import ExperimentDoc, ExperimentsStore
+from experiment_studio.records import RecordsStore
 
 router = APIRouter()
 
@@ -62,3 +64,15 @@ async def duplicate_experiment(
     experiment_id: str, store: ExperimentsStore = Depends(get_store)
 ) -> dict[str, Any]:
     return await store.duplicate(experiment_id)
+
+
+@router.get("/{experiment_id}/mappings/{lab}")
+async def experiment_mappings(
+    experiment_id: str,
+    lab: str,
+    store: ExperimentsStore = Depends(get_store),
+    records: RecordsStore = Depends(get_records_store),
+) -> dict[str, str]:
+    """S2 mapping-memory read for preflight pre-fill (§9.4; §6 amended during W5)."""
+    await store.get(experiment_id)  # 404 unknown_experiment when absent
+    return await records.load_mapping(experiment_id, lab)

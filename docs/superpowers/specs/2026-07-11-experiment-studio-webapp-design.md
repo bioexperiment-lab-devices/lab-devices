@@ -199,6 +199,7 @@ All under `/api`; SPA served at `/` (catch-all to `index.html`).
 | `GET /api/catalog` | §4.4 payload |
 | `GET/POST /api/experiments`, `GET/PUT/DELETE /api/experiments/{id}`, `POST /api/experiments/{id}/duplicate` | CRUD on docs (§8.1); PUT is whole-doc replace; duplicate suffixes the name |
 | `POST /api/validate` | §4.3; body = doc, response = `{ok, diagnostics[]}` |
+| `GET /api/experiments/{id}/mappings/{lab}` | S2 mapping memory read: `{role: device_id}` remembered from the last successful start of this experiment on this lab; `{}` when none (amended 2026-07-12 during W5: §9.4's preflight pre-fill needs a read endpoint; the table had none) |
 | `POST /api/runs` | body `{experiment_id, lab, role_mapping}`; 409 `{active_run_id}` if busy; 422 if mapping incomplete/mistyped; otherwise creates record + starts run, returns `{run_id}` |
 | `GET /api/runs/active` | `null` or `{run_id, record_id, experiment, lab, status, seq, pending_input}` — everything a freshly-loaded browser needs to reattach |
 | `POST /api/runs/{id}/pause` / `resume` / `abort` | engine `pause()/resume()/abort()`; 404 if not the active run; abort is idempotent |
@@ -212,8 +213,10 @@ All under `/api`; SPA served at `/` (catch-all to `index.html`).
 | `GET /api/records/{id}/events` | parsed `run_log.jsonl` (record viewer) |
 | `GET /api/records/{id}/streams` | parsed stream series `{name: {t: [...], v: [...], units}}` (record viewer chart) |
 
-Errors are structured `{detail, code}`; the frontend renders explicit error states with
-retry (never infinite spinners).
+Errors are structured `{detail, code}`; request-body validation failures are normalized
+to this envelope with `code: "invalid_request"` (amended 2026-07-12 during W5 — FastAPI's
+default list-shaped 422 broke the client's branch-on-`code` rule). The frontend renders
+explicit error states with retry (never infinite spinners).
 
 ## 7. Run pipeline
 

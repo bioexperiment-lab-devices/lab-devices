@@ -119,6 +119,23 @@ async def test_save_mapping_upserts(store: RecordsStore, db: Database) -> None:
     assert rows == [("feed", "pump_2"), ("meter", "densitometer_1")]
 
 
+async def test_load_mapping_roundtrip(tmp_path: Path) -> None:
+    db = await Database.connect(tmp_path / "studio.db")
+    try:
+        store = RecordsStore(db, tmp_path)
+        assert await store.load_mapping("exp-1", "lab_a") == {}
+        await store.save_mapping("exp-1", "lab_a", {"feed": "pump_1", "meter": "densitometer_1"})
+        await store.save_mapping("exp-1", "lab_b", {"feed": "pump_9"})
+        assert await store.load_mapping("exp-1", "lab_a") == {
+            "feed": "pump_1",
+            "meter": "densitometer_1",
+        }
+        assert await store.load_mapping("exp-1", "lab_b") == {"feed": "pump_9"}
+        assert await store.load_mapping("other", "lab_a") == {}
+    finally:
+        await db.close()
+
+
 # ---- artifact readers ----
 
 

@@ -1,8 +1,13 @@
 """Experiments CRUD endpoints at the ASGI level (design §6)."""
 
+from pathlib import Path
 from typing import Any
 
 import httpx
+from fastapi import FastAPI
+
+import runsupport
+from experiment_studio.records import RecordsStore
 
 
 def doc_payload(name: str = "OD growth curve", **overrides: Any) -> dict[str, Any]:
@@ -88,3 +93,18 @@ async def test_malformed_doc_is_422(client: httpx.AsyncClient) -> None:
     ):
         resp = await client.post("/api/experiments", json=bad)
         assert resp.status_code == 422
+
+
+async def test_experiment_mappings_endpoint(
+    client: httpx.AsyncClient, app: FastAPI, tmp_path: Path
+) -> None:
+    doc = runsupport.make_doc(runsupport.HAPPY_BLOCKS)
+    created = (await client.post("/api/experiments", json=doc)).json()
+    resp = await client.get(f"/api/experiments/{created['id']}/mappings/lab_a")
+    assert resp.status_code == 200 and resp.json() == {}
+    store = RecordsStore(app.state.db, tmp_path)
+    await store.save_mapping(created["id"], "lab_a", {"feed": "pump_1"})
+    resp = await client.get(f"/api/experiments/{created['id']}/mappings/lab_a")
+    assert resp.json() == {"feed": "pump_1"}
+    resp = await client.get("/api/experiments/nope/mappings/lab_a")
+    assert resp.status_code == 404 and resp.json()["code"] == "unknown_experiment"

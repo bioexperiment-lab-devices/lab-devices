@@ -4,6 +4,8 @@ import asyncio
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
+
 import runsupport
 
 
@@ -212,3 +214,11 @@ async def test_run_artifacts_via_records_endpoints(api: SimpleNamespace) -> None
     assert record["status"] == "completed"
     assert record["report"]["status"] == "completed"
     assert record["doc"]["doc_version"] == 1
+
+
+async def test_body_shape_422_is_normalized(client: httpx.AsyncClient) -> None:
+    resp = await client.post("/api/runs", json={"experiment_id": "x", "lab": "lab_a"})
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["code"] == "invalid_request"
+    assert isinstance(body["detail"], str) and "role_mapping" in body["detail"]
