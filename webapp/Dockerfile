@@ -16,5 +16,6 @@ COPY webapp/backend ./backend
 RUN pip install --no-cache-dir ./backend
 COPY --from=frontend /build/dist /app/static
 ENV STUDIO_STATIC_DIR=/app/static
+ENV STUDIO_DATA_DIR=/data
 EXPOSE 8000
 CMD ["uvicorn", "--factory", "experiment_studio.app:create_app", "--host", "0.0.0.0", "--port", "8000"]

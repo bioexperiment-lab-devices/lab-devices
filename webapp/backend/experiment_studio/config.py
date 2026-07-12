@@ -10,11 +10,15 @@ from pathlib import Path
 @dataclass(frozen=True)
 class Settings:
     static_dir: Path | None = None
+    data_dir: Path = Path("/data")
 
     @classmethod
     def from_env(cls) -> Settings:
         raw = os.environ.get("STUDIO_STATIC_DIR")
-        if not raw:
-            return cls(static_dir=None)
-        static = Path(raw)
-        return cls(static_dir=static if static.is_dir() else None)
+        static = Path(raw) if raw else None
+        if static is not None and not static.is_dir():
+            static = None
+        return cls(
+            static_dir=static,
+            data_dir=Path(os.environ.get("STUDIO_DATA_DIR") or "/data"),
+        )

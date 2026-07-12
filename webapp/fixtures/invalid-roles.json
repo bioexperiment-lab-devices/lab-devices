@@ -1,0 +1,15 @@
+{
+  "doc_version": 1,
+  "name": "Broken roles",
+  "description": null,
+  "roles": {
+    "Feed_Pump": {"type": "pump"},
+    "mixer": {"type": "stirrer"}
+  },
+  "workflow": {
+    "schema_version": 1,
+    "blocks": [
+      {"command": {"device": "ghost_pump", "verb": "stop"}}
+    ]
+  }
+}

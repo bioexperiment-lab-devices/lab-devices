@@ -39,7 +39,7 @@ User-settled at brainstorm (2026-07-11):
 | S1 | Builder technology | **Custom tree builder** (dnd-kit), not Blockly / React Flow. Serial renders as a vertical stack, Parallel as **N side-by-side lanes** with add/remove-lane affordances. Rationale: maps 1:1 onto the engine's tree AST (no bidirectional translation layer), parallelism is *spatially* visible (Blockly stacks statement arms vertically), and param forms generate from the verb registry. |
 | S2 | Device references | **Symbolic roles.** Workflows never contain concrete device ids. The builder defines roles (name + device type); blocks reference roles. Before each run the operator maps every role to a live device of that type. Mapping memory (pre-filled from the previous run of the same experiment+lab) is a **nice-to-have**, not core — may slip to a late increment without redesign. |
 | S3 | Packaging | **Single image**: multi-stage Docker build; FastAPI serves both the API and the built frontend. One compose service, one caddy route. |
-| S4 | v1 feature scope | Core blocks + **Branch (if/else)** + **OperatorInput with run-time prompts**. Stream-statistics conditions (e.g. `mean(od[-5:]) > 0.6` in Loop `until` / Branch `if`) are first-class in expression fields. Groups and expression autocomplete deferred. |
+| S4 | v1 feature scope | Core blocks + **Branch (if/else)** + **OperatorInput with run-time prompts**. Stream-statistics conditions (e.g. `mean(od, last=5) > 0.6` in Loop `until` / Branch `if`) are first-class in expression fields. Groups and expression autocomplete deferred. |
 | S5 | Stream persistence | **All streams are always recorded.** The builder exposes no persistence knobs; the streams panel is name + units only. The backend forces disk persistence on every run (§7.2). |
 | S6 | Records placement | Four top-level tabs — Devices, Builder, Run, Records — stepper-styled but freely navigable. Records is its own tab so Run stays focused on the active run. |
 | S7 | Run-log durability | Run log is written to disk **once, at run finish**, from the in-memory tee (§7.3). Streams are engine-flushed to disk every ~30 s throughout. A backend crash mid-run loses only the event-log tail, never stream data. Accepted for a single-user tool. |
@@ -356,8 +356,10 @@ Three panes:
 **Expression fields** (Loop `until`, Branch `if`, and any param accepting expressions) are
 single-line text inputs with a help popover generated from `/api/catalog` + declared
 streams: available stream names, bindings (OperatorInput names), stat functions, and window
-syntax (`od[-5:]`, `od[30s]`) with one example each (S4: stream-statistics conditions are
-first-class). Errors arrive via the same validate diagnostics.
+syntax (`mean(od, last=5)`, `mean(od, last=30s)`) with one example each (S4: stream-statistics
+conditions are first-class). Errors arrive via the same validate diagnostics.
+(Amended 2026-07-11 during W2: the original bracket-window examples were not the engine
+grammar; engine specs win.)
 
 Toolbar: save, save-as, load (experiment list with search), duplicate, new, validation
 status chip.
