@@ -1,5 +1,7 @@
 """Health endpoint contract."""
 
+from importlib.metadata import version
+
 import httpx
 
 
@@ -9,4 +11,4 @@ async def test_health_reports_ok_and_versions(client: httpx.AsyncClient) -> None
     body = resp.json()
     assert body["status"] == "ok"
     assert body["library"]
-    assert body["studio"] == "0.1.0"
+    assert body["studio"] == version("experiment-studio")
