@@ -17,6 +17,9 @@ import { blockSummary } from './summary'
 import { Palette } from './Palette'
 import { Canvas } from './Canvas'
 import { Inspector } from './Inspector'
+import { Toolbar } from './Toolbar'
+import { ProblemsPanel } from './ProblemsPanel'
+import { useValidation } from './useValidation'
 
 const STRUCTURE_TITLES: Record<string, string> = {
   serial: 'Serial',
@@ -40,6 +43,7 @@ export function BuilderTab() {
   useEffect(() => {
     void loadCatalog()
   }, [loadCatalog])
+  useValidation()
 
   const [dragPayload, setDragPayload] = useState<DragPayload | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
@@ -102,7 +106,7 @@ export function BuilderTab() {
 
   return (
     <div className="flex h-[calc(100vh-9rem)] flex-col gap-2">
-      <div data-slot="toolbar" />
+      <Toolbar />
       <DndContext
         sensors={sensors}
         collisionDetection={pointerWithin}
@@ -123,6 +127,7 @@ export function BuilderTab() {
           )}
         </DragOverlay>
       </DndContext>
+      <ProblemsPanel />
     </div>
   )
 }
