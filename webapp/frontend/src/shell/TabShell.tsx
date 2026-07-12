@@ -7,6 +7,7 @@ export function TabShell(props: {
   active: Tab
   onSelect: (tab: Tab) => void
   statusLine: string
+  lab: string | null
   children: ReactNode
 }) {
   return (
@@ -14,7 +15,17 @@ export function TabShell(props: {
       <header className="border-b border-slate-200 bg-white px-6 py-3">
         <div className="flex items-baseline justify-between">
           <h1 className="text-lg font-semibold">Experiment Studio</h1>
-          <span className="text-xs text-slate-500">{props.statusLine}</span>
+          <span className="flex items-center gap-3">
+            <span
+              className={
+                'rounded-full px-2 py-0.5 text-xs ' +
+                (props.lab ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400')
+              }
+            >
+              {props.lab ? `lab: ${props.lab}` : 'no lab selected'}
+            </span>
+            <span className="text-xs text-slate-500">{props.statusLine}</span>
+          </span>
         </div>
         <nav className="mt-3 flex gap-2">
           {TABS.map((tab, i) => (
