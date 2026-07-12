@@ -1,5 +1,5 @@
-/** Active-run screen (§9.4): status header + controls, event log, terminal report.
- * The live chart slot is filled by Task 9; the input dialog by Task 8. */
+/** Active-run screen (§9.4): status header + controls, event log, terminal report,
+ * operator-input dialog. The live chart slot is filled by Task 9. */
 import { useEffect, useState } from 'react'
 import { useNavStore } from '../stores/navStore'
 import { useRecordsStore } from '../stores/recordsStore'
@@ -7,6 +7,7 @@ import { useRunStore } from '../stores/runStore'
 import { StatusChip } from '../records/RecordsTable'
 import { formatElapsed } from '../records/format'
 import { EventLog } from './EventLog'
+import { InputDialog } from './InputDialog'
 
 function Elapsed() {
   const feed = useRunStore((s) => s.feed)
@@ -37,6 +38,7 @@ export function RunView() {
 
   return (
     <div className="space-y-3">
+      <InputDialog />
       <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{experiment?.name ?? 'experiment'}</p>
