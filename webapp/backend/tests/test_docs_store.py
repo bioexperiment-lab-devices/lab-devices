@@ -102,3 +102,24 @@ async def test_duplicate_suffixes_name(store: ExperimentsStore) -> None:
     assert first["doc"]["name"] == "X (copy)"
     assert first["doc"]["workflow"] == src["doc"]["workflow"]
     assert first["id"] != src["id"]
+
+
+async def test_name_conflict_rolls_back_transaction(tmp_path: Path) -> None:
+    """W2 carry-forward: a failed INSERT/UPDATE must not leave the connection in an
+    open transaction."""
+    db = await Database.connect(tmp_path / "studio.db")
+    store = ExperimentsStore(db)
+    doc = ExperimentDoc(doc_version=1, name="A", workflow={"schema_version": 1})
+    created = await store.create(doc)
+    with pytest.raises(NameConflictError):
+        await store.create(doc)
+    assert not db.conn.in_transaction
+    other = await store.create(doc.model_copy(update={"name": "B"}))
+    with pytest.raises(NameConflictError):
+        await store.replace(other["id"], doc)  # rename B -> A collides
+    assert not db.conn.in_transaction
+    with pytest.raises(UnknownExperimentError):
+        await store.delete("nope")
+    assert not db.conn.in_transaction
+    assert created["name"] == "A"
+    await db.close()
