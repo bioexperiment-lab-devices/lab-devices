@@ -38,6 +38,10 @@ export function LoadDialog(props: { onClose: () => void }) {
     if (!window.confirm(`Delete experiment '${item.name}'? Records are kept.`)) return
     try {
       await deleteExperiment(item.id)
+      if (useDocStore.getState().serverId === item.id) {
+        // server copy is gone: next Save must create, and the open doc is unsaved now
+        useDocStore.setState({ serverId: null, savedSnapshot: '' })
+      }
       refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

@@ -116,7 +116,7 @@ export function childSlots(node: BlockNode): Array<[string, BlockNode[]]> {
   }
 }
 
-function replaceSlot(node: BlockNode, slot: string, list: BlockNode[]): BlockNode {
+export function replaceSlot(node: BlockNode, slot: string, list: BlockNode[]): BlockNode {
   if (node.kind === 'serial' || node.kind === 'parallel') return { ...node, children: list }
   if (node.kind === 'loop') return { ...node, body: list }
   if (node.kind === 'branch') {

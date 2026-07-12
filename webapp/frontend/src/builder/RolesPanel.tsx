@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useDocStore } from '../stores/docStore'
 
 /** Inline rename/delete list for roles (spec §4.2): rename cascades through every
@@ -10,6 +10,7 @@ export function RolesPanel() {
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const cancelled = useRef(false)
 
   const commitRename = (from: string) => {
     const err = draft && draft !== from ? renameRole(from, draft) : null
@@ -30,10 +31,19 @@ export function RolesPanel() {
               autoFocus
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              onBlur={() => commitRename(name)}
+              onBlur={() => {
+                if (cancelled.current) {
+                  cancelled.current = false
+                  return
+                }
+                commitRename(name)
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') commitRename(name)
-                if (e.key === 'Escape') setEditing(null)
+                if (e.key === 'Escape') {
+                  cancelled.current = true
+                  setEditing(null)
+                }
               }}
               className="w-28 rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
             />

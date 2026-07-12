@@ -1,17 +1,12 @@
 /** Role/stream reference bookkeeping for the cascades in webapp design §4.2:
  * renaming rewrites referencing blocks; deleting is refused while references exist. */
-import { childSlots, visitNodes, type BlockNode } from './tree'
+import { childSlots, replaceSlot, visitNodes, type BlockNode } from './tree'
 
 function mapNodes(tree: BlockNode[], fn: (node: BlockNode) => BlockNode): BlockNode[] {
   return tree.map((node) => {
     let out = fn(node)
     for (const [slot, children] of childSlots(out)) {
-      const mapped = mapNodes(children, fn)
-      if (out.kind === 'serial' || out.kind === 'parallel') out = { ...out, children: mapped }
-      else if (out.kind === 'loop') out = { ...out, body: mapped }
-      else if (out.kind === 'branch') {
-        out = slot === 'then' ? { ...out, then: mapped } : { ...out, else: mapped }
-      }
+      out = replaceSlot(out, slot, mapNodes(children, fn))
     }
     return out
   })

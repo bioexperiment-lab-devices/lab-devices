@@ -4,7 +4,9 @@ import { newStructureNode } from '../builder/tree'
 import {
   loadDoc,
   newDoc,
+  pauseHistory,
   redo,
+  resumeHistory,
   selectDirty,
   selectDoc,
   undo,
@@ -116,5 +118,26 @@ describe('docStore', () => {
     expect(selectDirty(store())).toBe(true)
     store().markSaved('id-123')
     expect(selectDirty(store())).toBe(false)
+  })
+
+  it('pauseHistory suppresses undo tracking until resumeHistory', () => {
+    newDoc()
+    pauseHistory()
+    useDocStore.getState().setName('renamed while paused')
+    resumeHistory()
+    undo()
+    expect(useDocStore.getState().name).toBe('renamed while paused')
+  })
+
+  it('removeBlock clears selection when the removed container held it', () => {
+    newDoc()
+    const serial = newStructureNode('serial')
+    useDocStore.getState().insertBlock(serial, { parentUid: null, slot: 'blocks', index: 0 })
+    const wait = newStructureNode('wait')
+    useDocStore.getState().insertBlock(wait, { parentUid: serial.uid, slot: 'children', index: 0 })
+    useDocStore.getState().select(wait.uid)
+    useDocStore.getState().removeBlock(serial.uid)
+    expect(useDocStore.getState().selectedUid).toBeNull()
+    expect(useDocStore.getState().tree).toHaveLength(0)
   })
 })

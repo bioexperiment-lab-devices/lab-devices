@@ -4,7 +4,9 @@ import { createExperiment, duplicateExperiment, replaceExperiment } from '../api
 import {
   loadDoc,
   newDoc,
+  pauseHistory,
   redo,
+  resumeHistory,
   selectContent,
   selectDirty,
   selectDoc,
@@ -84,14 +86,19 @@ export function Toolbar() {
     if (!newName) return
     const previousName = useDocStore.getState().name
     void run(async () => {
-      useDocStore.getState().setName(newName)
-      const snapshot = snapshotOf(selectContent(useDocStore.getState()))
+      pauseHistory()
       try {
-        const res = await createExperiment(selectDoc(useDocStore.getState()))
-        markSaved(res.id, snapshot)
-      } catch (e) {
-        useDocStore.getState().setName(previousName)
-        throw e
+        useDocStore.getState().setName(newName)
+        const snapshot = snapshotOf(selectContent(useDocStore.getState()))
+        try {
+          const res = await createExperiment(selectDoc(useDocStore.getState()))
+          markSaved(res.id, snapshot)
+        } catch (e) {
+          useDocStore.getState().setName(previousName)
+          throw e
+        }
+      } finally {
+        resumeHistory()
       }
     })
   }
