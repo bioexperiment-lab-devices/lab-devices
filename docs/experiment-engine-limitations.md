@@ -13,6 +13,54 @@ Ranked by what they would actually unlock.
 
 ---
 
+## 0. No retry, and no tolerance for a transient device fault
+
+**This is the one that matters most, and it is the only one that makes the example unusable
+for its actual purpose.** It was found by running the example on real hardware, not by reading
+the code.
+
+**What.** A block that fails, fails the run. There is no retry, no back-off, no
+"tolerate this and carry on", no `on_error` branch. The engine's error model is all-or-nothing:
+any device error propagates up and terminates the experiment.
+
+**Where it bit.** The live run of the demo-speed doc on `windows_arm64_test_client` reached
+**cycle 17 of 25 — 23 minutes in — and then died** on a single flaky read:
+
+```
+block_failed  blocks[0].children[10].body[0].body[0].children[0]
+  "intensity array: record header/index mismatch (button interference?)"
+```
+
+One densitometer, one measurement, one transient firmware hiccup. Nothing was wrong with the
+workflow — the same block had already succeeded about 170 times. The run was destroyed anyway,
+and every culture in it with it.
+
+Now scale that. The faithful doc takes **3,600 measurements** over 24 h. The published
+experiment runs for **three weeks**. A per-measurement fault probability of even 1-in-1000
+gives a ~97% chance of losing a 24 h run, and a rounding error's chance of surviving three
+weeks. **The morbidostat cannot actually be run to completion on this stack today** — not
+because the algorithm is hard to express (it isn't; the rest of this document is a footnote by
+comparison) but because the engine treats a flaky sensor read as fatal.
+
+And there is no workaround. A workflow cannot catch, cannot retry, cannot skip a cycle. The
+author has no lever at all.
+
+**Suggested features**, in the order I would build them:
+
+1. **Retry policy on `command`/`measure`** — `{retry: {times: 3, backoff: "2s"}}`. Cheapest
+   possible fix and it alone would have saved this run: the fault is transient, and the very
+   next read succeeds.
+2. **`on_error` on a block** — `continue` (log it and move on) vs `fail` (today's behaviour),
+   so a workflow can declare that a missed sample is survivable but a missed *injection* is
+   not. The morbidostat wants exactly this distinction: a dropped OD reading should cost one
+   sample out of ten, not the experiment.
+3. **Per-device fault isolation** — one bad vial should not kill the other fourteen. Today a
+   `parallel` lane failure takes down the whole `TaskGroup`. This is what a 15-vial run needs.
+
+Until at least (1) exists, any long unattended run on this stack is a lottery.
+
+---
+
 ## 1. No computed bindings (no accumulator)
 
 **What.** Bindings are written only by `operator_input`. Streams are written only by a

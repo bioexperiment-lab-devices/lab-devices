@@ -208,18 +208,36 @@ Each of these is an engine limitation, catalogued with the rest in
 - **No Stock A→B escalation.** It needs a second drug line, and the escalation predicate is
   cross-cycle state the engine cannot hold.
 
-## 7. Verification
+## 7. Verification — results
 
-1. `POST /api/validate` on both docs → zero diagnostics (real engine validator via placeholder
-   substitution).
-2. **Simulated-culture execution** (`tests/test_examples_morbidostat.py`): a FakeLab whose
-   densitometers model exponential growth, dilution on injection, and drug inhibition. Asserts
-   the loop actually closes — tubes below `od_min` get nothing, a growing tube above `od_thr`
-   gets drug, and the controller holds OD in a band instead of running away.
-3. **Live smoke on preprod** (`windows_arm64_test_client`: 3 pumps, 3 valves, 3 densitometers)
-   of the demo-speed doc through the Studio REST API, answering operator inputs via
-   `POST /runs/{id}/input`. Pumps are pre-calibrated out of band (`set_calibration`), since
-   calibration is device provisioning, not experiment logic.
+1. **Engine validator**, both docs → **0 diagnostics** (via placeholder substitution).
+2. **Simulated-culture execution** (`tests/test_examples_morbidostat.py`) → **passes.** A
+   FakeLab whose densitometers model exponential growth, dilution on injection, and drug
+   inhibition, driven through all 120 real cycles on a FakeClock. The controller pins growth at
+   **0.34–0.38 /h against a setpoint of r_dil = 0.4**, settles drug at **~IC₅₀**, and exercises
+   all three arms: a tube starting at OD 0.01 gets **7 cycles of no action**, climbs out
+   undiluted, and rejoins. Drug is ~11% of injections — self-consistent with the 1/13 per-cycle
+   washout. The algorithm behaves as published.
+3. **Live smoke on preprod** (`windows_arm64_test_client`) of the demo-speed doc through the
+   Studio REST API → **incomplete, for reasons outside the workflow.** Two distinct findings:
+
+   - **Run 1 failed at 26 s** on the parallel thermostat block — the agent device-store race
+     (§4.2). Fixed by serializing setup.
+   - **Run 2 reached cycle 17 of 25 (23 min) and was killed by a single transient device
+     fault**: `intensity array: record header/index mismatch (button interference?)` on one
+     `measure`. The block had already succeeded ~170 times. **The engine has no retry, so one
+     flaky read destroys the run** — catalogued as limitation #0, and the single most important
+     outcome of this work. The faithful doc takes 3,600 measurements; the published experiment
+     runs three weeks. Until a retry policy exists, this example cannot be run to completion on
+     real hardware, and neither can any other long unattended workflow.
+
+   Coverage gap worth stating plainly: the simulated densitometers read **0.0 absorbance**, so
+   every cycle takes the `OD < od_min` → NOTHING branch and **no pump or valve ever actuates**
+   during the smoke. The injection/drain path is therefore verified separately, by driving the
+   exact tube-service sequence (both arms + drain) against the real devices through the engine.
+
+   Pumps are pre-calibrated out of band (`set_calibration`) — calibration is device
+   provisioning, not experiment logic, so it is deliberately absent from the example.
 
 ## 8. Deliverables
 

@@ -158,6 +158,19 @@ over 90 concurrent calls. Details in
 `pace` is a floor, not a deadline: the 10 min growth phase plus a ~1.4 min dilution pass fits
 inside the 12 min cycle, so cycles start exactly 12 min apart.
 
+## Before you trust this with a real experiment
+
+> **A single flaky sensor read will destroy your run.** The engine has no retry and no error
+> tolerance: any device error fails the whole experiment. A live run of the demo-speed doc got
+> to cycle 17 of 25 and was killed by one transient `measure` fault on one densitometer — a
+> block that had already succeeded ~170 times.
+>
+> The faithful doc takes **3,600 measurements** in 24 h, and the published experiment runs for
+> **three weeks**. Until the engine gains a retry policy, treat a long unattended run as a
+> lottery, and watch it. This is limitation #0 in
+> [`../docs/experiment-engine-limitations.md`](../docs/experiment-engine-limitations.md) — it
+> is not a flaw in the algorithm or in this document, and there is no workflow-level fix.
+
 ## Running it
 
 Map the nine roles to your devices, then answer the prompts. The published parameters:
