@@ -260,46 +260,78 @@ time-bounded conditions (`until: "elapsed() > 24h"`) direct rather than inferred
 
 ---
 
-## Not the engine: the agent's device-state store is not concurrency-safe
+## Not the engine: duplicate device serials collide in the agent's state store
 
-Filed here because it **changed the example**, but it is a SerialHop **agent** bug, not an
-engine limitation — and it is the only thing on this page that is actively breaking runs today.
+Filed here because it **changed the example**, but it is not an engine limitation — and the root
+cause is narrower and more specific than "the store isn't thread-safe", which is what it looked
+like at first.
 
-**What.** Commands that persist device state (`set_thermostat`, `home`, `configure`) write a
-per-device JSON file under `C:\ProgramData\SerialHop\devicestate\`. Issuing them to several
-devices *at once* loses a file race:
+**Root cause.** The SerialHop agent persists device state to a file keyed by
+**`<type>-<serial>`** under `C:\ProgramData\SerialHop\devicestate\`. The test client's simulated
+devices are *clones*: `identify` reports the **same serial for every device of a type**.
+
+| Device | Serial |
+|---|---|
+| `densitometer_1`, `_2`, `_3` | all `25-006` |
+| `pump_1`, `_2`, `_3` | all `26-025` |
+| `valve_1`, `_2`, `_3` | none (the valve has no serial command) |
+
+So three logically distinct densitometers **alias onto one state file**,
+`densitometer-25-006.json`. A state-persisting command (`set_thermostat`, `home`, `configure`,
+`set_calibration`) issued to all three at once becomes three concurrent writers to a single
+file — and the agent's save is a non-atomic write-temp-then-rename, which on Windows raises a
+sharing violation when another handle is open:
 
 ```
-persist thermostat: device store write / device store rename:
-  C:\ProgramData\SerialHop\devicestate\densitometer-25-006.json.tmp
+persist thermostat: device store rename:
+  rename ...\densitometer-25-006.json.tmp  ...\densitometer-25-006.json
+  The process cannot access the file because it is being used by another process.
+
+persist thermostat: device store write:
+  open ...\densitometer-25-006.json.tmp
   The process cannot access the file because it is being used by another process.
 ```
 
-**Measured on `windows_arm64_test_client`** (6 trials, 3 devices in parallel):
+**Measured on `windows_arm64_test_client`** (25 trials each, 3 devices):
 
 | Command | Parallel | Serial |
 |---|---|---|
-| `set_thermostat` (persists) | **2/6 failed** | 0/6 failed |
-| `measure` (pure read, 90 concurrent calls via the engine) | 0 failed | — |
-| `measure_blank` | 0 failed | — |
-| valve `configure` / `set_position` | 0/6 failed | — |
+| `set_thermostat` (persists, shared serial) | **23/25 failed** | **0/25 failed** |
+| valve `configure` (persists, *no* serial → no shared file) | 0/25 failed | — |
+| `measure` (pure read; 90 concurrent calls via the engine) | 0 failed | — |
 
-It is **intermittent** — the first live run of the example died on it, and a naive re-probe did
-not reproduce it. That is the worst possible failure mode: a workflow that passes validation,
-runs fine in testing, and then kills a three-week experiment on day 9.
+Every single failure named the *same* file. Valves never collide precisely because they have no
+serial and so are not keyed onto a shared one — which is itself the confirmation of the
+mechanism.
+
+**What is NOT broken (tested, so the alarming version can be ruled out).** Runtime device state
+is per-device, not shared: setting `pump_1`'s calibration to 0.002 left `pump_2` and `pump_3` at
+0.001. So the aliasing does **not** cause silent cross-talk during a run — three pumps do not
+share one live calibration. The damage is confined to the persist path, where it is loud (the
+command fails) rather than quiet. Persisted state presumably *is* last-writer-wins across an
+agent restart, but that was not tested.
 
 **Where it bit.** The example originally set all three thermostats in one `parallel` block —
-legal, validator-approved, three distinct devices. It failed the first live run 26 s in.
+legal, validator-approved, three distinct devices. It killed the first live run 26 s in.
 
 **Workaround used.** The example's one-time setup (thermostats, blanks, valve home/configure) is
-now **serial**. It costs ~2 s. The monitor loop's three simultaneous OD `measure` calls stay
-parallel: they are a pure read, they are what the science requires, and they were verified over
-90 concurrent calls.
+now **serial**, at a cost of ~2 s. The monitor loop's three simultaneous `measure` calls stay
+parallel: a pure read, what the science requires, verified over 90 concurrent calls.
 
-**The real fix is in the agent** — a per-store mutex, or writing the temp file inside the same
-directory and retrying the rename. Until then, *any* workflow that touches state-persisting
-verbs on multiple devices concurrently is quietly unsafe, and nothing in the engine or the
-validator will warn the author. A `lab-bridge` issue should be filed.
+**Fixes, in order of value:**
+
+1. **Give the simulated test devices distinct serials.** This is a test-client configuration
+   defect and fixing it removes the symptom entirely — parallel setup would then just work. Real
+   hardware presumably has unique serials, so a production lab is likely unaffected today, which
+   is why this never surfaced before.
+2. **Key the agent's state file by something actually unique** — device id or port — rather than
+   by serial, which is not guaranteed unique and is empirically not unique. A duplicate serial
+   should not be able to make two devices share a file.
+3. **Make the save robust**: retry the rename, or use an atomic replace with proper sharing
+   flags. Even with unique keys, an antivirus or indexer holding a handle can lose this race.
+
+Worth a `lab-bridge` issue. Note that nothing in the engine or the validator warns an author
+that a `parallel` block of state-persisting verbs is unsafe on such a roster.
 
 ---
 
@@ -321,5 +353,6 @@ the engine from a sequencer that reacts into a controller that reasons — and t
 `slope` optional rather than essential. **#4** is what the 15-vial version of this experiment
 needs before it can be written at all.
 
-Separately, and more urgently than any of them: the **agent's device-state race** above is
-losing runs *now*, and it is invisible to the author until it fires.
+Separately, the **duplicate-serial collision** above is not an engine issue at all, and it has a
+one-line fix: give the simulated test devices distinct serials. Until then, a `parallel` block of
+state-persisting verbs fails ~92% of the time on that roster, and nothing warns the author.

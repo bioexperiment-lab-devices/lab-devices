@@ -159,10 +159,15 @@ persist thermostat: device store rename:
   The process cannot access the file because it is being used by another process.
 ```
 
-The SerialHop agent's device-state store is not concurrency-safe. Measured over 6 trials of
-three devices in parallel: `set_thermostat` failed **2/6** in parallel and **0/6** serial;
-`measure` (pure read) survived **90 concurrent calls** through the engine with zero failures;
-valve `configure`/`set_position` were clean 0/6.
+**Root cause (established after the fact):** the agent keys its device-state file by
+`<type>-<serial>`, and the test client's simulated devices are clones — all three densitometers
+report serial `25-006`, all three pumps `26-025`, valves none. So three distinct devices alias
+onto one file and a `parallel` state-persisting command becomes three writers to it; the save is
+a non-atomic write-temp-then-rename, which loses on Windows. Measured over 25 trials:
+`set_thermostat` failed **23/25** in parallel, **0/25** serial; valve `configure` (no serial, so
+no shared file) **0/25**; `measure` (pure read) survived **90 concurrent calls**. Runtime state
+is *not* aliased — writing `pump_1`'s calibration left `pump_2/3` untouched — so there is no
+silent cross-talk, only a loud failure on the persist path.
 
 So: every state-persisting setup command is now serial (~2 s, one time), and the monitor loop's
 three simultaneous `measure` calls — the parallelism the science actually needs — stay parallel.

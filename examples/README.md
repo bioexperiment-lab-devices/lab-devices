@@ -148,11 +148,13 @@ dictates the block structure, and the validator enforces it.
 
 **Why the setup is `serial` even though it looks parallelisable** — a subtler lesson, and one
 the validator will *not* teach you. `set_thermostat`, `home`, and `configure` persist device
-state to a file on the agent host, and the agent's device-state store is not concurrency-safe:
-firing them at three densitometers at once intermittently loses a file race and kills the run.
-The first live run of this example died exactly that way, 26 s in. The fix costs about two
-seconds of setup. The monitor loop stays parallel because `measure` is a pure read — verified
-over 90 concurrent calls. Details in
+state to a file on the agent host, keyed by the device's *serial number*. On a test rig whose
+simulated devices are clones (all three densitometers reporting the same serial), those three
+files are **one** file — so setting three thermostats at once means three writers racing on it,
+which fails ~92% of the time and kills the run. The first live run of this example died exactly
+that way, 26 s in. Serialising costs about two seconds. The monitor loop stays parallel because
+`measure` is a pure read — verified over 90 concurrent calls. On real hardware with unique
+serials this should not arise; details and the fix in
 [`../docs/experiment-engine-limitations.md`](../docs/experiment-engine-limitations.md).
 
 `pace` is a floor, not a deadline: the 10 min growth phase plus a ~1.4 min dilution pass fits
