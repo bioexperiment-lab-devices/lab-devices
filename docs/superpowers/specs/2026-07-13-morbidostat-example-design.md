@@ -231,10 +231,13 @@ Each of these is an engine limitation, catalogued with the rest in
      runs three weeks. Until a retry policy exists, this example cannot be run to completion on
      real hardware, and neither can any other long unattended workflow.
 
-   Coverage gap worth stating plainly: the simulated densitometers read **0.0 absorbance**, so
-   every cycle takes the `OD < od_min` → NOTHING branch and **no pump or valve ever actuates**
-   during the smoke. The injection/drain path is therefore verified separately, by driving the
-   exact tube-service sequence (both arms + drain) against the real devices through the engine.
+   Coverage gap, stated plainly: the simulated densitometers read **0.0 absorbance**, so every
+   cycle takes the `OD < od_min` → NOTHING branch and **no pump or valve ever actuates** during
+   the smoke. The injection/drain path was therefore verified separately — driving the exact
+   tube-service sequence (medium arm, drug arm, and the over-draw drain) against the real
+   devices through the engine: **21 blocks, status completed.** So the actuation path is live-
+   verified; what is *not* live-verified end-to-end is the closed loop itself, because this test
+   client has no cultures to grow. That is what the simulated-culture test in (2) is for.
 
    Pumps are pre-calibrated out of band (`set_calibration`) — calibration is device
    provisioning, not experiment logic, so it is deliberately absent from the example.
