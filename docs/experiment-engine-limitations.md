@@ -210,6 +210,51 @@ time-bounded conditions (`until: "elapsed() > 24h"`) direct rather than inferred
 
 ---
 
+---
+
+## Not the engine: the agent's device-state store is not concurrency-safe
+
+Filed here because it **changed the example**, but it is a SerialHop **agent** bug, not an
+engine limitation — and it is the only thing on this page that is actively breaking runs today.
+
+**What.** Commands that persist device state (`set_thermostat`, `home`, `configure`) write a
+per-device JSON file under `C:\ProgramData\SerialHop\devicestate\`. Issuing them to several
+devices *at once* loses a file race:
+
+```
+persist thermostat: device store write / device store rename:
+  C:\ProgramData\SerialHop\devicestate\densitometer-25-006.json.tmp
+  The process cannot access the file because it is being used by another process.
+```
+
+**Measured on `windows_arm64_test_client`** (6 trials, 3 devices in parallel):
+
+| Command | Parallel | Serial |
+|---|---|---|
+| `set_thermostat` (persists) | **2/6 failed** | 0/6 failed |
+| `measure` (pure read, 90 concurrent calls via the engine) | 0 failed | — |
+| `measure_blank` | 0 failed | — |
+| valve `configure` / `set_position` | 0/6 failed | — |
+
+It is **intermittent** — the first live run of the example died on it, and a naive re-probe did
+not reproduce it. That is the worst possible failure mode: a workflow that passes validation,
+runs fine in testing, and then kills a three-week experiment on day 9.
+
+**Where it bit.** The example originally set all three thermostats in one `parallel` block —
+legal, validator-approved, three distinct devices. It failed the first live run 26 s in.
+
+**Workaround used.** The example's one-time setup (thermostats, blanks, valve home/configure) is
+now **serial**. It costs ~2 s. The monitor loop's three simultaneous OD `measure` calls stay
+parallel: they are a pure read, they are what the science requires, and they were verified over
+90 concurrent calls.
+
+**The real fix is in the agent** — a per-store mutex, or writing the temp file inside the same
+directory and retrying the rename. Until then, *any* workflow that touches state-persisting
+verbs on multiple devices concurrently is quietly unsafe, and nothing in the engine or the
+validator will warn the author. A `lab-bridge` issue should be filed.
+
+---
+
 ## Summary
 
 | # | Limitation | Blocks | Suggested feature |
@@ -227,3 +272,6 @@ If only two were built, **#1 (computed bindings)** and **#3 (computed streams)**
 the engine from a sequencer that reacts into a controller that reasons — and they make #2's
 `slope` optional rather than essential. **#4** is what the 15-vial version of this experiment
 needs before it can be written at all.
+
+Separately, and more urgently than any of them: the **agent's device-state race** above is
+losing runs *now*, and it is invisible to the author until it fires.

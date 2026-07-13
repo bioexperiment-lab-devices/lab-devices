@@ -119,7 +119,7 @@
               }
             },
             {
-              "parallel": {
+              "serial": {
                 "children": [
                   {
                     "command": {
@@ -156,10 +156,10 @@
                   }
                 ]
               },
-              "label": "thermostats to 30 C (the run finalizer switches them off again)"
+              "label": "thermostats to 30 C, one at a time (agent state store is not concurrency-safe); the finalizer switches them off again"
             },
             {
-              "parallel": {
+              "serial": {
                 "children": [
                   {
                     "measure": {
@@ -187,7 +187,7 @@
                   }
                 ]
               },
-              "label": "blank all three densitometers"
+              "label": "blank each densitometer (every later OD is measured against this)"
             },
             {
               "operator_input": {
@@ -197,92 +197,71 @@
               }
             },
             {
-              "parallel": {
+              "serial": {
                 "children": [
                   {
-                    "serial": {
-                      "children": [
-                        {
-                          "command": {
-                            "device": "medium_valve",
-                            "verb": "home",
-                            "params": {
-                              "position": 0
-                            }
-                          },
-                          "label": "medium_valve: declare parked at 0"
-                        },
-                        {
-                          "command": {
-                            "device": "medium_valve",
-                            "verb": "configure",
-                            "params": {
-                              "default_rotation": "direct"
-                            }
-                          },
-                          "label": "medium_valve: never rotate across the 0<->N boundary"
-                        }
-                      ]
+                    "command": {
+                      "device": "medium_valve",
+                      "verb": "home",
+                      "params": {
+                        "position": 0
+                      }
                     },
-                    "label": "medium_valve"
+                    "label": "medium_valve: declare parked at 0"
                   },
                   {
-                    "serial": {
-                      "children": [
-                        {
-                          "command": {
-                            "device": "drug_valve",
-                            "verb": "home",
-                            "params": {
-                              "position": 0
-                            }
-                          },
-                          "label": "drug_valve: declare parked at 0"
-                        },
-                        {
-                          "command": {
-                            "device": "drug_valve",
-                            "verb": "configure",
-                            "params": {
-                              "default_rotation": "direct"
-                            }
-                          },
-                          "label": "drug_valve: never rotate across the 0<->N boundary"
-                        }
-                      ]
+                    "command": {
+                      "device": "medium_valve",
+                      "verb": "configure",
+                      "params": {
+                        "default_rotation": "direct"
+                      }
                     },
-                    "label": "drug_valve"
+                    "label": "medium_valve: never rotate across the 0<->N boundary"
                   },
                   {
-                    "serial": {
-                      "children": [
-                        {
-                          "command": {
-                            "device": "waste_valve",
-                            "verb": "home",
-                            "params": {
-                              "position": 0
-                            }
-                          },
-                          "label": "waste_valve: declare parked at 0"
-                        },
-                        {
-                          "command": {
-                            "device": "waste_valve",
-                            "verb": "configure",
-                            "params": {
-                              "default_rotation": "direct"
-                            }
-                          },
-                          "label": "waste_valve: never rotate across the 0<->N boundary"
-                        }
-                      ]
+                    "command": {
+                      "device": "drug_valve",
+                      "verb": "home",
+                      "params": {
+                        "position": 0
+                      }
                     },
-                    "label": "waste_valve"
+                    "label": "drug_valve: declare parked at 0"
+                  },
+                  {
+                    "command": {
+                      "device": "drug_valve",
+                      "verb": "configure",
+                      "params": {
+                        "default_rotation": "direct"
+                      }
+                    },
+                    "label": "drug_valve: never rotate across the 0<->N boundary"
+                  },
+                  {
+                    "command": {
+                      "device": "waste_valve",
+                      "verb": "home",
+                      "params": {
+                        "position": 0
+                      }
+                    },
+                    "label": "waste_valve: declare parked at 0"
+                  },
+                  {
+                    "command": {
+                      "device": "waste_valve",
+                      "verb": "configure",
+                      "params": {
+                        "default_rotation": "direct"
+                      }
+                    },
+                    "label": "waste_valve: never rotate across the 0<->N boundary"
                   }
                 ]
               },
-              "label": "home + configure all three valves"
+              "label": "home + configure each valve (serial: `home` persists device state too)"
             },
             {
               "loop": {

@@ -125,10 +125,10 @@ does not move it — which is why an operator confirmation comes first.
 serial
 ├─ operator_input   od_min, od_thr, r_dil, dose_ml, drug_stock_x_mic
 ├─ operator_input   blanks_ready?
-├─ parallel         thermostats → 30 °C          (3 densitometers at once)
-├─ parallel         measure_blank → blank_1..3   ← every later OD is relative to this
+├─ serial           thermostats → 30 °C          ← serial on purpose, see below
+├─ serial           measure_blank → blank_1..3   ← every later OD is relative to this
 ├─ operator_input   cultures_ready?  (valves physically parked at 0?)
-├─ parallel         home + configure the 3 valves
+├─ serial           home + configure the 3 valves
 └─ loop ×120, pace 12min                          ← one 24 h "day"
    ├─ loop ×10, pace 1min                         ← growth phase
    │  └─ parallel   read tube 1 | tube 2 | tube 3
@@ -140,10 +140,20 @@ serial
 
 **Why the OD readings are `parallel` but the dilution pass is `serial`** — this is the most
 useful thing in the example. The three densitometers are independent devices, so they can read
-at once. The three tubes, however, *share* the pumps and valves. Trying to service them in
-parallel is not a style mistake; the engine's occupancy checker will reject the workflow,
-because two lanes would be reaching for the same pump. The hardware topology dictates the
-block structure, and the validator enforces it.
+at once, and they *must*: the three tubes have to be sampled at the same instant for their
+growth rates to be comparable. The three tubes, however, *share* the pumps and valves. Trying
+to service them in parallel is not a style mistake; the engine's occupancy checker will reject
+the workflow, because two lanes would be reaching for the same pump. The hardware topology
+dictates the block structure, and the validator enforces it.
+
+**Why the setup is `serial` even though it looks parallelisable** — a subtler lesson, and one
+the validator will *not* teach you. `set_thermostat`, `home`, and `configure` persist device
+state to a file on the agent host, and the agent's device-state store is not concurrency-safe:
+firing them at three densitometers at once intermittently loses a file race and kills the run.
+The first live run of this example died exactly that way, 26 s in. The fix costs about two
+seconds of setup. The monitor loop stays parallel because `measure` is a pure read — verified
+over 90 concurrent calls. Details in
+[`../docs/experiment-engine-limitations.md`](../docs/experiment-engine-limitations.md).
 
 `pace` is a floor, not a deadline: the 10 min growth phase plus a ~1.4 min dilution pass fits
 inside the 12 min cycle, so cycles start exactly 12 min apart.

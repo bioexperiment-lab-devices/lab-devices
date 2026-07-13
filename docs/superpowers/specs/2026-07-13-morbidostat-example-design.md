@@ -115,10 +115,10 @@ Division by `last(od_i)` is guarded by the enclosing `od_min` branch.
 serial
 ├─ operator_input  od_min, od_thr, r_dil, dose_ml, drug_stock_x_mic
 ├─ operator_input  blanks_ready (bool)
-├─ parallel        3x densitometer.set_thermostat(enabled=true, target_c=30)
-├─ parallel        3x densitometer.measure_blank → blank_i
+├─ serial          3x densitometer.set_thermostat(enabled=true, target_c=30)   # see §4.2
+├─ serial          3x densitometer.measure_blank → blank_i
 ├─ operator_input  cultures_ready (bool)   # inoculated; valves physically parked at 0
-├─ parallel        3x valve.home(position=0) + configure(default_rotation="direct")
+├─ serial          3x valve.home(position=0) + configure(default_rotation="direct")
 └─ loop count=120 pace=12min                        # one 24 h day
    ├─ loop count=10 pace=1min                       # growth phase — fills the OD trace
    │  └─ parallel  measure od_meter_1→od_1 | od_meter_2→od_2 | od_meter_3→od_3
@@ -147,6 +147,28 @@ no drain, so their volume is untouched.
 occupancy checker would reject a parallel pass. Only the OD readings — three distinct
 densitometers — go in a `parallel` block. This is a load-bearing teaching point, not an
 incidental choice.
+
+### 4.2 Setup is serial (amended 2026-07-13 after the first live smoke)
+
+Setup was originally three `parallel` blocks. The first live run on `windows_arm64_test_client`
+**failed 26 s in**, at `blocks[0].children[6].children[0]` — the parallel thermostat block:
+
+```
+persist thermostat: device store rename:
+  C:\ProgramData\SerialHop\devicestate\densitometer-25-006.json.tmp -> .json
+  The process cannot access the file because it is being used by another process.
+```
+
+The SerialHop agent's device-state store is not concurrency-safe. Measured over 6 trials of
+three devices in parallel: `set_thermostat` failed **2/6** in parallel and **0/6** serial;
+`measure` (pure read) survived **90 concurrent calls** through the engine with zero failures;
+valve `configure`/`set_position` were clean 0/6.
+
+So: every state-persisting setup command is now serial (~2 s, one time), and the monitor loop's
+three simultaneous `measure` calls — the parallelism the science actually needs — stay parallel.
+This is an **agent** bug, not an engine one; it is catalogued in
+`docs/experiment-engine-limitations.md` and warrants a `lab-bridge` issue. Nothing in the engine
+or the validator warns an author about it, which is what makes it dangerous.
 
 ### 4.1 Timing budget
 
