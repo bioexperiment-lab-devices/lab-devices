@@ -1,0 +1,622 @@
+{
+  "doc_version": 1,
+  "name": "Morbidostat",
+  "description": "Morbidostat (Toprak et al., Nat. Genet. 2012 / Nat. Protoc. 2013): three cultures held at their own continuously-moving IC50 by a bang-bang feedback loop.\n\nEvery cycle each tube is read 10 times, its growth rate is estimated from the trace, and it receives 1 ml of EITHER medium OR drug - the same volume either way, so the dilution rate is fixed and only the drug content is controlled. A tube out-growing its dilution (r > r_dil) above OD_THR gets drug; anything else gets medium; a tube too dilute to read (below OD_MIN) is left alone entirely.\n\nGrowth rate is computed from two trailing means: for evenly spaced samples m = 2*(mean(last=5) - mean(last=10))/(5*dt), and r = m/OD. With dt = 1 min that is the constant 24 you see in the branch condition. See examples/README.md for the derivation.\n\nThis doc is one 24 h 'day' (120 cycles of 12 min). To watch it run end-to-end instead, use the 'Morbidostat (demo speed)' example - the only differences are pace, count, pump speed, and the slope constant.",
+  "roles": {
+    "medium_pump": {
+      "type": "pump"
+    },
+    "drug_pump": {
+      "type": "pump"
+    },
+    "waste_pump": {
+      "type": "pump"
+    },
+    "medium_valve": {
+      "type": "valve"
+    },
+    "drug_valve": {
+      "type": "valve"
+    },
+    "waste_valve": {
+      "type": "valve"
+    },
+    "od_meter_1": {
+      "type": "densitometer"
+    },
+    "od_meter_2": {
+      "type": "densitometer"
+    },
+    "od_meter_3": {
+      "type": "densitometer"
+    }
+  },
+  "workflow": {
+    "schema_version": 1,
+    "metadata": {
+      "name": "Morbidostat",
+      "author": "lab-devices examples",
+      "description": "Morbidostat (Toprak et al., Nat. Genet. 2012 / Nat. Protoc. 2013): three cultures held at their own continuously-moving IC50 by a bang-bang feedback loop.\n\nEvery cycle each tube is read 10 times, its growth rate is estimated from the trace, and it receives 1 ml of EITHER medium OR drug - the same volume either way, so the dilution rate is fixed and only the drug content is controlled. A tube out-growing its dilution (r > r_dil) above OD_THR gets drug; anything else gets medium; a tube too dilute to read (below OD_MIN) is left alone entirely.\n\nGrowth rate is computed from two trailing means: for evenly spaced samples m = 2*(mean(last=5) - mean(last=10))/(5*dt), and r = m/OD. With dt = 1 min that is the constant 24 you see in the branch condition. See examples/README.md for the derivation.\n\nThis doc is one 24 h 'day' (120 cycles of 12 min). To watch it run end-to-end instead, use the 'Morbidostat (demo speed)' example - the only differences are pace, count, pump speed, and the slope constant."
+    },
+    "persistence": {
+      "default": "disk",
+      "format": "jsonl"
+    },
+    "streams": {
+      "od_1": {
+        "units": "AU"
+      },
+      "od_2": {
+        "units": "AU"
+      },
+      "od_3": {
+        "units": "AU"
+      },
+      "blank_1": {
+        "units": "AU/s"
+      },
+      "blank_2": {
+        "units": "AU/s"
+      },
+      "blank_3": {
+        "units": "AU/s"
+      }
+    },
+    "blocks": [
+      {
+        "serial": {
+          "children": [
+            {
+              "operator_input": {
+                "name": "od_min",
+                "type": "float",
+                "prompt": "Minimum OD before any injection (algorithm OD_MIN). Below this the tube is too dilute to read reliably and gets no action at all.",
+                "min": 0.005,
+                "max": 0.5
+              }
+            },
+            {
+              "operator_input": {
+                "name": "od_thr",
+                "type": "float",
+                "prompt": "Drug-injection OD threshold (algorithm OD_THR). Drug is only ever injected above this OD.",
+                "min": 0.01,
+                "max": 1.0
+              }
+            },
+            {
+              "operator_input": {
+                "name": "r_dil",
+                "type": "float",
+                "prompt": "Dilution rate in 1/h (algorithm r_dil). The controller's setpoint: a tube growing faster than this is out-growing its dilution and gets drug. By design r_dil = r0/2, which pins the culture at its own IC50.",
+                "min": 0.01,
+                "max": 5.0
+              }
+            },
+            {
+              "operator_input": {
+                "name": "dose_ml",
+                "type": "float",
+                "prompt": "Volume added per injection in ml (algorithm dV). Both branches add the same volume, so the dilution rate does not depend on the decision - only the drug content does.",
+                "min": 0.1,
+                "max": 5.0
+              }
+            },
+            {
+              "operator_input": {
+                "name": "drug_stock_x_mic",
+                "type": "float",
+                "prompt": "Drug stock concentration as a multiple of MIC (Stock A = 10x MIC). Recorded for provenance only - it is never actuated on, but it is what you need to reconstruct the per-cycle concentration from the run log.",
+                "min": 1.0,
+                "max": 1000.0
+              }
+            },
+            {
+              "operator_input": {
+                "name": "blanks_ready",
+                "type": "bool",
+                "prompt": "Blank tubes (sterile medium, no cells) seated in all three holders? The blank slope is what every later OD reading is measured against."
+              }
+            },
+            {
+              "serial": {
+                "children": [
+                  {
+                    "command": {
+                      "device": "od_meter_1",
+                      "verb": "set_thermostat",
+                      "params": {
+                        "enabled": true,
+                        "target_c": 30.0
+                      }
+                    },
+                    "label": "tube 1: hold 30 C"
+                  },
+                  {
+                    "command": {
+                      "device": "od_meter_2",
+                      "verb": "set_thermostat",
+                      "params": {
+                        "enabled": true,
+                        "target_c": 30.0
+                      }
+                    },
+                    "label": "tube 2: hold 30 C"
+                  },
+                  {
+                    "command": {
+                      "device": "od_meter_3",
+                      "verb": "set_thermostat",
+                      "params": {
+                        "enabled": true,
+                        "target_c": 30.0
+                      }
+                    },
+                    "label": "tube 3: hold 30 C"
+                  }
+                ]
+              },
+              "label": "thermostats to 30 C, one at a time (agent state store is not concurrency-safe); the finalizer switches them off again"
+            },
+            {
+              "serial": {
+                "children": [
+                  {
+                    "measure": {
+                      "device": "od_meter_1",
+                      "verb": "measure_blank",
+                      "into": "blank_1"
+                    },
+                    "label": "tube 1: blank"
+                  },
+                  {
+                    "measure": {
+                      "device": "od_meter_2",
+                      "verb": "measure_blank",
+                      "into": "blank_2"
+                    },
+                    "label": "tube 2: blank"
+                  },
+                  {
+                    "measure": {
+                      "device": "od_meter_3",
+                      "verb": "measure_blank",
+                      "into": "blank_3"
+                    },
+                    "label": "tube 3: blank"
+                  }
+                ]
+              },
+              "label": "blank each densitometer (every later OD is measured against this)"
+            },
+            {
+              "operator_input": {
+                "name": "cultures_ready",
+                "type": "bool",
+                "prompt": "Culture tubes seated, lines primed, and ALL THREE valves physically parked at position 0 (all closed)? `home` only declares the rotor position - it does not move it - so a wrong answer here mis-addresses every tube."
+              }
+            },
+            {
+              "serial": {
+                "children": [
+                  {
+                    "command": {
+                      "device": "medium_valve",
+                      "verb": "home",
+                      "params": {
+                        "position": 0
+                      }
+                    },
+                    "label": "medium_valve: declare parked at 0"
+                  },
+                  {
+                    "command": {
+                      "device": "medium_valve",
+                      "verb": "configure",
+                      "params": {
+                        "default_rotation": "direct"
+                      }
+                    },
+                    "label": "medium_valve: never rotate across the 0<->N boundary"
+                  },
+                  {
+                    "command": {
+                      "device": "drug_valve",
+                      "verb": "home",
+                      "params": {
+                        "position": 0
+                      }
+                    },
+                    "label": "drug_valve: declare parked at 0"
+                  },
+                  {
+                    "command": {
+                      "device": "drug_valve",
+                      "verb": "configure",
+                      "params": {
+                        "default_rotation": "direct"
+                      }
+                    },
+                    "label": "drug_valve: never rotate across the 0<->N boundary"
+                  },
+                  {
+                    "command": {
+                      "device": "waste_valve",
+                      "verb": "home",
+                      "params": {
+                        "position": 0
+                      }
+                    },
+                    "label": "waste_valve: declare parked at 0"
+                  },
+                  {
+                    "command": {
+                      "device": "waste_valve",
+                      "verb": "configure",
+                      "params": {
+                        "default_rotation": "direct"
+                      }
+                    },
+                    "label": "waste_valve: never rotate across the 0<->N boundary"
+                  }
+                ]
+              },
+              "label": "home + configure each valve (serial: `home` persists device state too)"
+            },
+            {
+              "loop": {
+                "count": 120,
+                "pace": "12min",
+                "body": [
+                  {
+                    "loop": {
+                      "count": 10,
+                      "pace": "1min",
+                      "body": [
+                        {
+                          "parallel": {
+                            "children": [
+                              {
+                                "measure": {
+                                  "device": "od_meter_1",
+                                  "verb": "measure",
+                                  "into": "od_1"
+                                },
+                                "label": "tube 1 OD"
+                              },
+                              {
+                                "measure": {
+                                  "device": "od_meter_2",
+                                  "verb": "measure",
+                                  "into": "od_2"
+                                },
+                                "label": "tube 2 OD"
+                              },
+                              {
+                                "measure": {
+                                  "device": "od_meter_3",
+                                  "verb": "measure",
+                                  "into": "od_3"
+                                },
+                                "label": "tube 3 OD"
+                              }
+                            ]
+                          },
+                          "label": "read all three tubes at once (independent densitometers)"
+                        }
+                      ]
+                    },
+                    "label": "growth phase: 10 evenly spaced OD samples -> the slope the decision uses"
+                  },
+                  {
+                    "branch": {
+                      "if": "last(od_1) >= od_min",
+                      "then": [
+                        {
+                          "branch": {
+                            "if": "last(od_1) > od_thr and 24 * (mean(od_1, last=5) - mean(od_1, last=10)) / last(od_1) > r_dil",
+                            "then": [
+                              {
+                                "command": {
+                                  "device": "drug_valve",
+                                  "verb": "set_position",
+                                  "params": {
+                                    "position": 1,
+                                    "rotation": "direct"
+                                  }
+                                },
+                                "label": "drug line -> tube 1"
+                              },
+                              {
+                                "command": {
+                                  "device": "drug_pump",
+                                  "verb": "dispense",
+                                  "params": {
+                                    "volume_ml": "dose_ml",
+                                    "speed_ml_min": 6.0,
+                                    "direction": "forward"
+                                  }
+                                },
+                                "label": "INJECT DRUG into tube 1"
+                              }
+                            ],
+                            "else": [
+                              {
+                                "command": {
+                                  "device": "medium_valve",
+                                  "verb": "set_position",
+                                  "params": {
+                                    "position": 1,
+                                    "rotation": "direct"
+                                  }
+                                },
+                                "label": "medium line -> tube 1"
+                              },
+                              {
+                                "command": {
+                                  "device": "medium_pump",
+                                  "verb": "dispense",
+                                  "params": {
+                                    "volume_ml": "dose_ml",
+                                    "speed_ml_min": 6.0,
+                                    "direction": "forward"
+                                  }
+                                },
+                                "label": "INJECT MEDIUM into tube 1"
+                              }
+                            ]
+                          },
+                          "label": "tube 1: growing above threshold -> drug, else medium"
+                        },
+                        {
+                          "command": {
+                            "device": "waste_valve",
+                            "verb": "set_position",
+                            "params": {
+                              "position": 1,
+                              "rotation": "direct"
+                            }
+                          },
+                          "label": "waste line -> tube 1"
+                        },
+                        {
+                          "command": {
+                            "device": "waste_pump",
+                            "verb": "dispense",
+                            "params": {
+                              "volume_ml": "dose_ml * 1.5",
+                              "speed_ml_min": 6.0,
+                              "direction": "forward"
+                            }
+                          },
+                          "label": "restore tube 1 to V (over-draw; needle is at the V line)"
+                        }
+                      ]
+                    },
+                    "label": "tube 1: service (skipped entirely while too dilute to read)"
+                  },
+                  {
+                    "branch": {
+                      "if": "last(od_2) >= od_min",
+                      "then": [
+                        {
+                          "branch": {
+                            "if": "last(od_2) > od_thr and 24 * (mean(od_2, last=5) - mean(od_2, last=10)) / last(od_2) > r_dil",
+                            "then": [
+                              {
+                                "command": {
+                                  "device": "drug_valve",
+                                  "verb": "set_position",
+                                  "params": {
+                                    "position": 2,
+                                    "rotation": "direct"
+                                  }
+                                },
+                                "label": "drug line -> tube 2"
+                              },
+                              {
+                                "command": {
+                                  "device": "drug_pump",
+                                  "verb": "dispense",
+                                  "params": {
+                                    "volume_ml": "dose_ml",
+                                    "speed_ml_min": 6.0,
+                                    "direction": "forward"
+                                  }
+                                },
+                                "label": "INJECT DRUG into tube 2"
+                              }
+                            ],
+                            "else": [
+                              {
+                                "command": {
+                                  "device": "medium_valve",
+                                  "verb": "set_position",
+                                  "params": {
+                                    "position": 2,
+                                    "rotation": "direct"
+                                  }
+                                },
+                                "label": "medium line -> tube 2"
+                              },
+                              {
+                                "command": {
+                                  "device": "medium_pump",
+                                  "verb": "dispense",
+                                  "params": {
+                                    "volume_ml": "dose_ml",
+                                    "speed_ml_min": 6.0,
+                                    "direction": "forward"
+                                  }
+                                },
+                                "label": "INJECT MEDIUM into tube 2"
+                              }
+                            ]
+                          },
+                          "label": "tube 2: growing above threshold -> drug, else medium"
+                        },
+                        {
+                          "command": {
+                            "device": "waste_valve",
+                            "verb": "set_position",
+                            "params": {
+                              "position": 2,
+                              "rotation": "direct"
+                            }
+                          },
+                          "label": "waste line -> tube 2"
+                        },
+                        {
+                          "command": {
+                            "device": "waste_pump",
+                            "verb": "dispense",
+                            "params": {
+                              "volume_ml": "dose_ml * 1.5",
+                              "speed_ml_min": 6.0,
+                              "direction": "forward"
+                            }
+                          },
+                          "label": "restore tube 2 to V (over-draw; needle is at the V line)"
+                        }
+                      ]
+                    },
+                    "label": "tube 2: service (skipped entirely while too dilute to read)"
+                  },
+                  {
+                    "branch": {
+                      "if": "last(od_3) >= od_min",
+                      "then": [
+                        {
+                          "branch": {
+                            "if": "last(od_3) > od_thr and 24 * (mean(od_3, last=5) - mean(od_3, last=10)) / last(od_3) > r_dil",
+                            "then": [
+                              {
+                                "command": {
+                                  "device": "drug_valve",
+                                  "verb": "set_position",
+                                  "params": {
+                                    "position": 3,
+                                    "rotation": "direct"
+                                  }
+                                },
+                                "label": "drug line -> tube 3"
+                              },
+                              {
+                                "command": {
+                                  "device": "drug_pump",
+                                  "verb": "dispense",
+                                  "params": {
+                                    "volume_ml": "dose_ml",
+                                    "speed_ml_min": 6.0,
+                                    "direction": "forward"
+                                  }
+                                },
+                                "label": "INJECT DRUG into tube 3"
+                              }
+                            ],
+                            "else": [
+                              {
+                                "command": {
+                                  "device": "medium_valve",
+                                  "verb": "set_position",
+                                  "params": {
+                                    "position": 3,
+                                    "rotation": "direct"
+                                  }
+                                },
+                                "label": "medium line -> tube 3"
+                              },
+                              {
+                                "command": {
+                                  "device": "medium_pump",
+                                  "verb": "dispense",
+                                  "params": {
+                                    "volume_ml": "dose_ml",
+                                    "speed_ml_min": 6.0,
+                                    "direction": "forward"
+                                  }
+                                },
+                                "label": "INJECT MEDIUM into tube 3"
+                              }
+                            ]
+                          },
+                          "label": "tube 3: growing above threshold -> drug, else medium"
+                        },
+                        {
+                          "command": {
+                            "device": "waste_valve",
+                            "verb": "set_position",
+                            "params": {
+                              "position": 3,
+                              "rotation": "direct"
+                            }
+                          },
+                          "label": "waste line -> tube 3"
+                        },
+                        {
+                          "command": {
+                            "device": "waste_pump",
+                            "verb": "dispense",
+                            "params": {
+                              "volume_ml": "dose_ml * 1.5",
+                              "speed_ml_min": 6.0,
+                              "direction": "forward"
+                            }
+                          },
+                          "label": "restore tube 3 to V (over-draw; needle is at the V line)"
+                        }
+                      ]
+                    },
+                    "label": "tube 3: service (skipped entirely while too dilute to read)"
+                  },
+                  {
+                    "parallel": {
+                      "children": [
+                        {
+                          "command": {
+                            "device": "medium_valve",
+                            "verb": "set_position",
+                            "params": {
+                              "position": 0,
+                              "rotation": "direct"
+                            }
+                          },
+                          "label": "medium_valve: park closed"
+                        },
+                        {
+                          "command": {
+                            "device": "drug_valve",
+                            "verb": "set_position",
+                            "params": {
+                              "position": 0,
+                              "rotation": "direct"
+                            }
+                          },
+                          "label": "drug_valve: park closed"
+                        },
+                        {
+                          "command": {
+                            "device": "waste_valve",
+                            "verb": "set_position",
+                            "params": {
+                              "position": 0,
+                              "rotation": "direct"
+                            }
+                          },
+                          "label": "waste_valve: park closed"
+                        }
+                      ]
+                    },
+                    "label": "park every valve closed for the growth phase (no siphoning)"
+                  }
+                ]
+              },
+              "label": "the ratchet: 120 growth cycles of 12min"
+            }
+          ]
+        },
+        "label": "morbidostat"
+      }
+    ]
+  }
+}
