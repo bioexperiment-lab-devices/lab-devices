@@ -48,6 +48,17 @@ class ValidationError(ExperimentError):
         super().__init__(f"{len(self.diagnostics)} validation error(s):\n{lines}")
 
 
+@dataclass(frozen=True)
+class ToleratedError:
+    """A block failure absorbed by `on_error: continue` (design 2026-07-14 §3.4).
+
+    Not an exception: the run survived it. It is the *record* that it happened, so a run
+    that silently dropped 40 samples cannot look identical to a clean one."""
+
+    block_id: str
+    error: str
+
+
 class ExperimentRunError(ExperimentError):
     """Base for errors raised while executing a workflow (design 4-exec §15)."""
 

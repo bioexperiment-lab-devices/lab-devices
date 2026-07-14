@@ -15,6 +15,7 @@ from lab_devices.experiment.errors import (
     BlockFailedError,
     EvaluationError,
     InvariantViolationError,
+    ToleratedError,
     UnknownVerbError,
 )
 from lab_devices.experiment.evaluate import Value, evaluate, resolve
@@ -373,18 +374,71 @@ async def execute_blocks(blocks: list[B.Block], ctx: RunContext) -> None:
             await ctx.clock.sleep(parse_duration(block.gap_after))
 
 
+def _tolerable(exc: BaseException) -> bool:
+    """An abort and a broken safety invariant escape every tolerance (design 2026-07-14 §3.3).
+
+    - `asyncio.CancelledError`: an operator abort is not a fault the workflow may absorb. It
+      is a BaseException, so `except Exception` never sees it — but `except BaseExceptionGroup`
+      would, which is exactly why this predicate recurses into a group.
+    - `InvariantViolationError`: a proven-impossible occupancy state. The safety model itself
+      is broken; tolerating it would hide that, and the run would carry on dispatching against
+      a proof it has just watched fail.
+    """
+    if isinstance(exc, (asyncio.CancelledError, InvariantViolationError)):
+        return False
+    if isinstance(exc, BaseExceptionGroup):
+        # A parallel lane may have been cancelled, or may have violated an invariant. Nesting
+        # is possible (a parallel inside a parallel), so recurse rather than scan one level.
+        return all(_tolerable(inner) for inner in exc.exceptions)
+    return True
+
+
+def _tolerate(block: B.Block, exc: BaseException, ctx: RunContext) -> bool:
+    """Absorb this block's failure and let the parent proceed (design 2026-07-14 §3.3-3.4).
+
+    True when the failure was absorbed. EVERY tolerance decision in `execute_block` routes
+    through this one predicate — including the `except Exception` arm, where `_tolerable` is
+    strictly redundant today (a CancelledError is a BaseException and an ExceptionGroup is
+    caught above it). That redundancy is the point: the arm order is the only thing standing
+    between an operator's abort and a tolerance, and an arm order is one edit away from being
+    wrong. This makes the guarantee independent of it."""
+    if block.on_error != "continue" or not _tolerable(exc):
+        return False
+    ctx.tolerated.append(ToleratedError(str(block.id), str(exc)))
+    ctx.emit("block_error_tolerated", block.id, error=str(exc))
+    return True
+
+
 async def execute_block(block: B.Block, ctx: RunContext) -> None:
-    """One block: pause gate, per-type execution, exactly-once failure events (§7, §10)."""
+    """One block: pause gate, per-type execution, exactly-once failure events (§7, §10).
+
+    `on_error: "continue"` absorbs the failure HERE, in this block's own frame, and returns
+    normally instead of raising (design 2026-07-14 §3.3). On a parallel CHILD that single fact
+    is per-lane fault isolation: `_run_parallel`'s TaskGroup cancels the siblings only when a
+    lane *raises*, and a tolerated lane never does — so one bad vial no longer kills the other
+    fourteen. On the `parallel` block itself it catches the TaskGroup's ExceptionGroup and
+    abandons the whole container, leaving the parent to carry on.
+
+    A tolerated block emits `block_failed` (it did fail) then `block_error_tolerated` — never
+    `block_finished`."""
     await ctx.gate.wait()
     ctx.emit("block_started", block.id)
     try:
         await _execute_inner(block, ctx)
-    except (BlockFailedError, InvariantViolationError):
-        raise  # the origin frame already emitted its event
-    except BaseExceptionGroup:
-        raise  # parallel children emitted their own events (plan 4b)
+    except (BlockFailedError, InvariantViolationError) as exc:
+        if _tolerate(block, exc, ctx):  # the origin frame already emitted its event
+            return
+        raise
+    except BaseExceptionGroup as exc:
+        if _tolerate(block, exc, ctx):  # parallel children emitted their own events (plan 4b)
+            return
+        raise
+    except asyncio.CancelledError:
+        raise  # an abort is never a block failure, and is never tolerated
     except Exception as exc:
         ctx.emit("block_failed", block.id, error=str(exc))
+        if _tolerate(block, exc, ctx):
+            return
         raise BlockFailedError(str(block.id), str(exc)) from exc
     ctx.emit("block_finished", block.id)
 

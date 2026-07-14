@@ -163,6 +163,15 @@ def _write_report(
         "persistence_errors": (
             [str(e) for e in report.persistence_errors] if report else []
         ),
+        # Failures absorbed by `on_error: continue`. A run that dropped 40 samples still
+        # reports `completed`, so without this it would look identical to a clean one.
+        # This payload is built field-by-field: a new RunReport field is silently DROPPED
+        # unless it is added here.
+        "tolerated_errors": (
+            [{"block_id": t.block_id, "error": t.error} for t in report.tolerated_errors]
+            if report
+            else []
+        ),
         "diagnostics": diagnostics or [],
         "clock_origin": clock_origin,
         "started_at": started_at,

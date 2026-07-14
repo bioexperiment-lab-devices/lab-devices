@@ -10,6 +10,7 @@ from typing import Any
 from lab_devices.client import LabClient
 from lab_devices.devices.base import Device
 from lab_devices.experiment.clock import Clock, MonotonicClock
+from lab_devices.experiment.errors import ToleratedError
 from lab_devices.experiment.inputs import OperatorInputProvider, UnattendedInputProvider
 from lab_devices.experiment.occupancy import Occupancy
 from lab_devices.experiment.persist import StreamSink
@@ -59,6 +60,7 @@ class RunContext:
     locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     touched: dict[str, None] = field(default_factory=dict)
     in_flight: dict[str, tuple[str, Job]] = field(default_factory=dict)
+    tolerated: list[ToleratedError] = field(default_factory=list)  # on_error (§3.4)
     gate: asyncio.Event = field(default_factory=_running_gate)
     abort_requested: bool = False
     log_sink: RunLogSink = field(default_factory=InMemoryRunLog)
