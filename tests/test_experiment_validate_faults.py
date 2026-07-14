@@ -4,7 +4,7 @@ from lab_devices.experiment import blocks as B
 from lab_devices.experiment.errors import ValidationError
 from lab_devices.experiment.serialize import workflow_from_dict
 from lab_devices.experiment.validate import validate
-from lab_devices.experiment.workflow import Workflow
+from lab_devices.experiment.workflow import Defaults, Workflow
 
 
 def _validate(doc):
@@ -68,8 +68,14 @@ def test_defaults_retry_may_not_set_allow_repeat():
     assert any("blanket policy" in m for m in _messages(exc))
 
 
-def test_defaults_retry_does_not_make_dispense_retryable():
-    """A workflow-wide default must never silently start retrying a relative action."""
+def test_defaults_retry_over_a_non_idempotent_verb_still_validates():
+    """The validator ACCEPTS this: a workflow-scoped default cannot be checked against a
+    per-block verb, so it diagnoses nothing here. That a blanket default never actually
+    retries `dispense` is enforced at execution time, by _effective_retry consulting
+    Trait.retry_safe -- the guarantee is held by
+    tests/test_experiment_retry.py::test_workflow_defaults_never_retry_a_non_idempotent_verb,
+    NOT by this test. Do not read this as a validator-enforced property.
+    """
     _validate({
         "schema_version": 1,
         "defaults": {"retry": {"attempts": 3}},
@@ -77,6 +83,30 @@ def test_defaults_retry_does_not_make_dispense_retryable():
             "command": {"device": "pump_1", "verb": "dispense", "params": {"volume_ml": 0.5}}
         }],
     })
+
+
+def test_retry_attempts_below_one_on_a_programmatic_ast_is_rejected():
+    """The loader enforces attempts >= 1; the Python API does not, and ExperimentRun.__init__
+    calls validate(), not the loader. attempts=0 would dispatch the block zero times and land
+    in the executor's 'unreachable' branch."""
+    w = Workflow(
+        schema_version=1,
+        blocks=[B.Command(device="pump_1", verb="stop", retry=B.Retry(attempts=0))],
+    )
+    with pytest.raises(ValidationError) as exc:
+        validate(w)
+    assert any("retry.attempts must be >= 1" in m for m in _messages(exc))
+
+
+def test_defaults_retry_attempts_below_one_on_a_programmatic_ast_is_rejected():
+    w = Workflow(
+        schema_version=1,
+        blocks=[B.Wait(duration="1s")],
+        defaults=Defaults(retry=B.Retry(attempts=0)),
+    )
+    with pytest.raises(ValidationError) as exc:
+        validate(w)
+    assert any("retry.attempts must be >= 1" in m for m in _messages(exc))
 
 
 def test_on_error_continue_is_accepted_on_every_container():

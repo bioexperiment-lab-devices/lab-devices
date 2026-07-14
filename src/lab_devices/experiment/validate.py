@@ -335,6 +335,12 @@ def _check_retry(block: B.Block, path: str, out: list[Diagnostic]) -> None:
     retry = block.retry
     if retry is None:
         return
+    # The loader enforces attempts >= 1, but a Retry built through the Python API bypasses it,
+    # and attempts=0 would run the block zero times (the executor's "unreachable" branch).
+    if retry.attempts < 1:
+        out.append(Diagnostic(
+            "block", path, f"retry.attempts must be >= 1, got {retry.attempts}",
+        ))
     if not isinstance(block, (B.Command, B.Measure)):
         out.append(Diagnostic(
             "block", path, "retry is only valid on command and measure blocks"
@@ -353,11 +359,19 @@ def _check_retry(block: B.Block, path: str, out: list[Diagnostic]) -> None:
 
 
 def _check_defaults(w: Workflow, out: list[Diagnostic]) -> None:
-    if w.defaults.retry is not None and w.defaults.retry.allow_repeat:
+    retry = w.defaults.retry
+    if retry is None:
+        return
+    if retry.allow_repeat:
         out.append(Diagnostic(
             "block", "defaults.retry",
             "defaults.retry may not set allow_repeat; a blanket policy must never retry a "
             "non-idempotent verb",
+        ))
+    if retry.attempts < 1:  # see _check_retry: the loader enforces this, the Python API does not
+        out.append(Diagnostic(
+            "block", "defaults.retry",
+            f"retry.attempts must be >= 1, got {retry.attempts}",
         ))
 
 

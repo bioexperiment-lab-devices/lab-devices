@@ -37,6 +37,11 @@ _NEVER_RETRY: tuple[type[BaseException], ...] = (
     core_errors.UnknownDeviceError,
     core_errors.NotCalibratedError,
     core_errors.NotHomedError,
+    # A job reports `cancelled` only because someone deliberately stopped the device
+    # (Job.cancel() -> device.stop(), the Console/Studio recovery seam). It is the closest
+    # sibling of asyncio.CancelledError in the taxonomy: a stop decision, not a transient
+    # fault. Re-dispatching would silently undo an operator's stop.
+    core_errors.JobCancelledError,
 )
 
 
@@ -139,11 +144,14 @@ async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
     backoff = 0.0 if policy is None else parse_duration(policy.backoff)
     for attempt in range(1, attempts + 1):
         await ctx.gate.wait()  # a pause during a retry storm quiesces at the next attempt
+        started: list[Job] = []  # the job this attempt put on the hardware, if any
         try:
-            return await _dispatch_action(block, ctx)
+            return await _dispatch_action(block, ctx, started)
         except Exception as exc:
             if attempt == attempts or not _is_retryable(exc):
                 raise
+            if not await _clear_orphaned_job(exc, started, block, ctx):
+                raise  # could not stop the abandoned job; never stack a second one on it
             ctx.emit(
                 "block_retried", block.id,
                 attempt=attempt, of=attempts, error=str(exc),
@@ -152,7 +160,37 @@ async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
     raise AssertionError("unreachable: the loop either returns or raises")  # pragma: no cover
 
 
-async def _dispatch_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
+async def _clear_orphaned_job(
+    exc: Exception, started: list[Job], block: B.Command | B.Measure, ctx: RunContext
+) -> bool:
+    """May the retry proceed? A JobTimeoutError abandons a job that is still *physically
+    running* — `_await_job` neither cancels nor untracks it (design 4-exec §7 step 6). A retry
+    would then put a SECOND concurrent job on the same device: on a real agent the second
+    command draws `busy`, which the executor reports as a false `invariant_violation` — the
+    invariant was never violated, the retry raced its own orphan. So stop the orphan first.
+
+    If the stop itself fails (often the very fault that timed the job out), refuse the retry
+    and let the original error surface: the job stays in `ctx.in_flight`, so the finalizer
+    still stops that device (§11)."""
+    if not isinstance(exc, core_errors.JobTimeoutError) or not started:
+        return True
+    job = started[-1]
+    if job.job_id not in ctx.in_flight:
+        return True  # already terminal and untracked; nothing to abandon
+    try:
+        async with ctx.lock(block.device):
+            await job.cancel()  # Job.cancel() -> device.stop()
+    except Exception as cancel_exc:
+        exc.add_note(f"orphaned job {job.job_id} could not be cancelled: {cancel_exc!r}")
+        return False
+    ctx.in_flight.pop(job.job_id, None)  # the device was stopped; the finalizer need not
+    ctx.emit("job_cancelled", block.id, device=block.device, verb=block.verb)
+    return True
+
+
+async def _dispatch_action(
+    block: B.Command | B.Measure, ctx: RunContext, started: list[Job] | None = None
+) -> Any:
     """The dispatch pipeline (design 4-exec §7): resolve -> classify -> occupy ->
     invoke -> complete. The occupancy check-and-mark is synchronous (no interleave
     window); the wire lock spans exactly one HTTP call (D2)."""
@@ -181,6 +219,8 @@ async def _dispatch_action(block: B.Command | B.Measure, ctx: RunContext) -> Any
         if trait.completion == "job":
             job: Job = result
             ctx.in_flight[job.job_id] = (block.device, job)
+            if started is not None:
+                started.append(job)  # so a retry can stop what this attempt abandoned
             result = await _await_job(job, block.device, ctx)
         if action is not None and action.kind == "open":
             assert trait.teardown is not None  # every mode entry declares its teardown

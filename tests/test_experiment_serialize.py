@@ -193,6 +193,28 @@ def test_bad_retry_attempts_rejected_at_load():
         })
 
 
+def test_retry_nested_in_a_command_body_is_rejected_at_load():
+    """`retry` is a sibling of `command`, not a member of it. Nested, it used to be silently
+    dropped -- the author believes they have a retry policy and has none."""
+    with pytest.raises(WorkflowLoadError, match="block-level key"):
+        workflow_from_dict({
+            "schema_version": 1,
+            "blocks": [{"command": {"device": "pump_1", "verb": "dispense",
+                                    "params": {"volume_ml": 0.5},
+                                    "retry": {"attempts": 3, "allow_repeat": True}}}],
+        })
+
+
+def test_on_error_nested_in_a_measure_body_is_rejected_at_load():
+    with pytest.raises(WorkflowLoadError, match="block-level key"):
+        workflow_from_dict({
+            "schema_version": 1,
+            "streams": {"od_1": {}},
+            "blocks": [{"measure": {"device": "densitometer_1", "verb": "measure",
+                                    "into": "od_1", "on_error": "continue"}}],
+        })
+
+
 def test_defaults_on_error_rejected_at_load():
     with pytest.raises(WorkflowLoadError, match="on_error"):
         workflow_from_dict({

@@ -110,6 +110,124 @@ async def test_abort_during_backoff_is_not_retried(fake_client):
     assert [c for c in fake.calls if c[1] == "measure"] == [("densitometer_1", "measure", {})]
 
 
+async def test_abort_during_the_dispatch_is_not_retried(fake_client):
+    """The other abort test lands in the back-off, which sits OUTSIDE _run_action's try. This
+    one lands inside _dispatch_action -- the only await the except clause ever sees, and so the
+    only place _is_retryable's CancelledError branch can fire. hold_job parks the run in
+    _await_job's poll loop, inside the try. wait_for turns a swallowed abort (which would park
+    forever in the 60s back-off) into a failure rather than a hang."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.hold_job("measure")
+    clock = FakeClock()
+    run = ExperimentRun(
+        client,
+        _od_workflow(retry={"attempts": 5, "backoff": "60s"}),
+        options=RunOptions(clock=clock),
+    )
+    task = asyncio.ensure_future(run.execute())
+    await clock.settle()
+    await clock.advance(1.0)  # inside the job poll loop, i.e. inside the dispatch
+    run.abort()
+    with pytest.raises(RunAbortedError):
+        await asyncio.wait_for(task, timeout=5.0)
+    assert run.report.status == "aborted"
+    kinds = [e.kind for e in run.report.log.events]
+    assert kinds.count("block_retried") == 0  # the abort was not absorbed by the retry
+    assert len([c for c in fake.calls if c[1] == "measure"]) == 1  # nor re-dispatched
+
+
+async def test_a_cancelled_job_is_never_retried(fake_client):
+    """A job reports `cancelled` only because someone deliberately stopped the device
+    (Job.cancel() -> device.stop(), the Console/Studio recovery seam). Re-dispatching would
+    silently undo an operator's stop -- and here, re-dose the culture."""
+    fake, client = fake_client
+    fake.add_device("pump_1", "pump")
+    fake.cancel_jobs.add("dispense")
+    clock = FakeClock()
+    workflow = make_workflow([{
+        "command": {"device": "pump_1", "verb": "dispense",
+                    "params": {"volume_ml": 0.5, "speed_ml_min": 3.0}},
+        "retry": {"attempts": 3, "backoff": "1s", "allow_repeat": True},
+    }])
+    run = ExperimentRun(client, workflow, options=RunOptions(clock=clock))
+    with pytest.raises(BlockFailedError):
+        await drive(clock, run.execute())
+    assert run.report.status == "failed"
+    assert [e.kind for e in run.report.log.events].count("block_retried") == 0
+    assert len([c for c in fake.calls if c[1] == "dispense"]) == 1  # the stop stayed stopped
+
+
+async def test_a_cancelled_job_is_not_retried_under_a_workflow_default(fake_client):
+    """The zero-opt-in route: a retry_safe verb under defaults.retry needs no author action,
+    so the deny-list -- not allow_repeat -- is what protects the operator's stop here."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.cancel_jobs.add("measure")
+    clock = FakeClock()
+    workflow = _od_workflow()
+    workflow.defaults.retry = Retry(attempts=3, backoff="1s")
+    run = ExperimentRun(client, workflow, options=RunOptions(clock=clock))
+    with pytest.raises(BlockFailedError):
+        await drive(clock, run.execute())
+    assert [e.kind for e in run.report.log.events].count("block_retried") == 0
+    assert len([c for c in fake.calls if c[1] == "measure"]) == 1
+
+
+def _held_dispense_workflow():
+    return make_workflow([{
+        "command": {"device": "pump_1", "verb": "dispense",
+                    "params": {"volume_ml": 0.5, "speed_ml_min": 3.0}},
+        "retry": {"attempts": 3, "backoff": "1s", "allow_repeat": True},
+    }])
+
+
+async def test_a_job_timeout_retry_cancels_the_job_it_abandoned(fake_client):
+    """_await_job raises JobTimeoutError WITHOUT cancelling the job -- it is still physically
+    running. Re-dispatching on top of it would stack a second concurrent job on the device
+    (the agent would reject it as `busy`, surfacing as a FALSE invariant_violation). Every
+    re-dispatch must be preceded by a stop that kills the orphan."""
+    fake, client = fake_client
+    fake.add_device("pump_1", "pump")
+    fake.hold_job("dispense")  # no job ever completes -> every attempt times out
+    clock = FakeClock()
+    run = ExperimentRun(
+        client, _held_dispense_workflow(),
+        options=RunOptions(clock=clock, job_timeout=5.0),
+    )
+    with pytest.raises(BlockFailedError):
+        await drive(clock, run.execute())
+    wire = [cmd for _, cmd, _ in fake.calls]
+    assert wire[:5] == ["dispense", "stop", "dispense", "stop", "dispense"]
+    assert [e.kind for e in run.report.log.events].count("block_retried") == 2
+    cancels = [e for e in run.report.log.events
+               if e.kind == "job_cancelled" and e.block_id == "blocks[0]"]
+    assert len(cancels) == 2  # one per retry; the last attempt leaves it to the finalizer
+    # no job was ever left running alongside its successor
+    assert [j.state for j in fake.jobs.values()] == ["cancelled"] * 3
+
+
+async def test_a_job_timeout_whose_orphan_cannot_be_cancelled_is_not_retried(fake_client):
+    """The device is unreachable -- often the very reason the job timed out. We cannot stop the
+    orphan, so we must not stack a second job on it: the original JobTimeoutError surfaces
+    unmasked and the job stays tracked, so the finalizer still stops that device."""
+    fake, client = fake_client
+    fake.add_device("pump_1", "pump")
+    fake.hold_job("dispense")
+    fake.inject_error("pump_1", "stop", "device_unreachable", "device is not responding")
+    clock = FakeClock()
+    run = ExperimentRun(
+        client, _held_dispense_workflow(),
+        options=RunOptions(clock=clock, job_timeout=5.0),
+    )
+    with pytest.raises(BlockFailedError) as exc:
+        await drive(clock, run.execute())
+    assert "did not finish within" in str(exc.value)  # the original error, not the stop failure
+    assert len([c for c in fake.calls if c[1] == "dispense"]) == 1  # no second, racing job
+    assert [e.kind for e in run.report.log.events].count("block_retried") == 0
+    assert len(run._ctx.in_flight) == 1  # still tracked: the finalizer must stop this device
+
+
 async def test_workflow_defaults_apply_to_a_block_without_retry(fake_client):
     fake, client = fake_client
     fake.add_device("densitometer_1", "densitometer")

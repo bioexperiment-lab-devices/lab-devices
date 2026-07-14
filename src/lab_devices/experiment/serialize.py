@@ -94,9 +94,23 @@ def _retry(value: Any, ctx: str) -> B.Retry:
     return B.Retry(attempts=attempts, backoff=backoff, allow_repeat=allow_repeat)
 
 
+def _no_misplaced_block_keys(body: Any, ctx: str) -> None:
+    """`retry` and `on_error` are siblings of the body, not members of it. Nested, they would
+    be silently dropped — the author would believe they had a retry policy and have none."""
+    if not isinstance(body, dict):
+        return
+    for key in ("retry", "on_error"):
+        if key in body:
+            raise WorkflowLoadError(
+                f"{ctx}: {key!r} is a block-level key, not a {ctx} body key. Write "
+                f'{{"{ctx}": {{...}}, "{key}": ...}}, not {{"{ctx}": {{..., "{key}": ...}}}}'
+            )
+
+
 def _command(body: Any, timing: dict[str, Any]) -> B.Block:
     device = _str(_req(body, "device", "command"), "command device")
     verb = _req(body, "verb", "command")
+    _no_misplaced_block_keys(body, "command")
     lookup(device, verb)
     return B.Command(device=device, verb=verb, params=_checked_params(body, "command"), **timing)
 
@@ -104,6 +118,7 @@ def _command(body: Any, timing: dict[str, Any]) -> B.Block:
 def _measure(body: Any, timing: dict[str, Any]) -> B.Block:
     device = _str(_req(body, "device", "measure"), "measure device")
     verb = body.get("verb", "measure")
+    _no_misplaced_block_keys(body, "measure")
     lookup(device, verb)
     return B.Measure(
         device=device, verb=verb, into=_req(body, "into", "measure"),

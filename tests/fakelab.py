@@ -32,6 +32,7 @@ class FakeJob:
     def __init__(self, job_id: str, cmd: str) -> None:
         self.job_id = job_id
         self.cmd = cmd
+        self.device = ""  # set by _command when the job is started
         self.state = "running"
         self.polls = 0
         self.result: dict[str, Any] | None = None
@@ -50,6 +51,7 @@ class FakeLab:
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
         self.record_polls = False
         self.fail_jobs: set[str] = set()
+        self.cancel_jobs: set[str] = set()  # jobs of this cmd report state "cancelled"
         self.held_jobs: set[str] = set()
         self.polls_to_complete_by_cmd: dict[str, int] = {}
         self._injected: dict[tuple[str, str], list[tuple[str, str]]] = {}
@@ -158,9 +160,15 @@ class FakeLab:
         if cmd == "status":
             return ok(self.devices[device_id].get("_canned", {}).get("status", {"state": "idle"}))
         if cmd == "stop":
+            # A real agent's stop cancels whatever job that device is running.
+            for job in self.jobs.values():
+                if job.device == device_id and job.state == "running":
+                    job.state = "cancelled"
             return ok({"state": "idle"})
         if cmd in JOB_COMMANDS:
-            return ok({"job": self._start_job(cmd)})
+            started = self._start_job(cmd)
+            self.jobs[started["job_id"]].device = device_id
+            return ok({"job": started})
         # other commands: return canned result or an empty ok.
         return ok(self.devices[device_id].get("_canned", {}).get(cmd, {}))
 
@@ -177,7 +185,9 @@ class FakeLab:
         job.polls += 1
         threshold = self.polls_to_complete_by_cmd.get(job.cmd, self.polls_to_complete)
         if job.polls >= threshold:
-            if self.fail_job or job.cmd in self.fail_jobs:
+            if job.cmd in self.cancel_jobs:  # someone stopped the device out of band
+                job.state = "cancelled"
+            elif self.fail_job or job.cmd in self.fail_jobs:
                 job.state = "failed"
                 job.error = {"code": "hardware_error", "message": "device became unreachable"}
             else:

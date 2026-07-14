@@ -97,7 +97,6 @@ class CultureLab(FakeLab):
         self.cultures = {t: Culture(od) for t, od in start_od.items()}
         self.valve_pos = {"valve_1": 0, "valve_2": 0, "valve_3": 0}
         self.noise = random.Random(20260713)
-        self._device = ""
         for i in (1, 2, 3):
             self.add_device(f"pump_{i}", "pump")
             self.add_device(f"valve_{i}", "valve")
@@ -117,18 +116,12 @@ class CultureLab(FakeLab):
             elif device_id == "pump_2":  # drug, routed by valve_2
                 self._inject("drug", "valve_2", volume, now)
             # pump_3 (waste) removes culture at the current OD -> concentration unchanged.
-        self._device = device_id
         return super()._command(device_id, env)
 
     def _inject(self, kind: str, valve: str, volume_ml: float, now: float) -> None:
         tube = self.valve_pos[valve]
         if tube in self.cultures:
             self.cultures[tube].inject(kind, volume_ml, now)
-
-    def _start_job(self, cmd: str) -> dict[str, Any]:
-        job = super()._start_job(cmd)
-        self.jobs[job["job_id"]].device = self._device  # type: ignore[attr-defined]
-        return job
 
     def _advance(self, job: Any) -> None:
         was_running = job.state == "running"
