@@ -11,6 +11,7 @@ import type {
   MeasureBody,
   OperatorInputBody,
   StreamDeclJson,
+  WorkflowJson,
 } from '../types/doc'
 import { newUid, type BlockNode, type InputType } from './tree'
 
@@ -20,6 +21,11 @@ export interface DocContent {
   roles: Record<string, { type: string }>
   streams: Record<string, { units: string | null }>
   tree: BlockNode[]
+  // Carried opaquely — the builder has no UI for either, but it must not destroy them on
+  // save (2026-07-14 review, Fix 1): a hand-authored workflow.defaults.retry is a
+  // documented, supported policy, and a custom persistence setting is a real run knob.
+  persistence?: WorkflowJson['persistence']
+  defaults?: WorkflowJson['defaults']
 }
 
 export class DocConvertError extends Error {
@@ -54,6 +60,8 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
     roles,
     streams,
     tree: (wf.blocks ?? []).map(blockToNode),
+    ...(wf.persistence !== undefined ? { persistence: wf.persistence } : {}),
+    ...(wf.defaults !== undefined ? { defaults: wf.defaults } : {}),
   }
 }
 
@@ -139,18 +147,22 @@ export function treeToDoc(content: DocContent): ExperimentDocJson {
   for (const [name, s] of Object.entries(content.streams)) streams[name] = { units: s.units }
   const roles: ExperimentDocJson['roles'] = {}
   for (const [name, role] of Object.entries(content.roles)) roles[name] = { type: role.type }
+  const workflow: WorkflowJson = {
+    schema_version: 1,
+    metadata: { name: content.name },
+    // Preserve a custom persistence setting if the doc carried one in; only fall back to
+    // the builder's historical default when none was present (2026-07-14 review, Fix 1).
+    persistence: content.persistence ?? { default: 'in_memory', format: 'jsonl' },
+    streams,
+    blocks: content.tree.map(nodeToBlock),
+  }
+  if (content.defaults !== undefined) workflow.defaults = content.defaults
   return {
     doc_version: 1,
     name: content.name,
     description: content.description,
     roles,
-    workflow: {
-      schema_version: 1,
-      metadata: { name: content.name },
-      persistence: { default: 'in_memory', format: 'jsonl' },
-      streams,
-      blocks: content.tree.map(nodeToBlock),
-    },
+    workflow,
   }
 }
 

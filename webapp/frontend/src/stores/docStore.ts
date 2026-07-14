@@ -4,7 +4,7 @@
 import { create } from 'zustand'
 import { useStore, type StoreApi } from 'zustand'
 import { temporal, type TemporalState } from 'zundo'
-import type { ExperimentDocJson } from '../types/doc'
+import type { ExperimentDocJson, WorkflowJson } from '../types/doc'
 import type { MappedDiagnostic } from '../builder/paths'
 import { treeToDoc, type DocContent } from '../builder/convert'
 import {
@@ -33,6 +33,12 @@ export interface DocSnapshot {
   roles: Record<string, { type: string }>
   streams: Record<string, { units: string | null }>
   tree: BlockNode[]
+  // Carried opaquely through load -> save (2026-07-14 review, Fix 1): the builder has no
+  // UI for either, but a hand-authored workflow.defaults.retry or custom persistence
+  // setting must survive a round trip through the store, not just through convert.ts's
+  // pure functions in isolation.
+  persistence?: WorkflowJson['persistence']
+  defaults?: WorkflowJson['defaults']
 }
 
 export interface EditorState extends DocSnapshot {
@@ -71,6 +77,8 @@ export const selectContent = (s: DocSnapshot): DocContent => ({
   roles: s.roles,
   streams: s.streams,
   tree: s.tree,
+  ...(s.persistence !== undefined ? { persistence: s.persistence } : {}),
+  ...(s.defaults !== undefined ? { defaults: s.defaults } : {}),
 })
 
 export const snapshotOf = (content: DocContent): string =>

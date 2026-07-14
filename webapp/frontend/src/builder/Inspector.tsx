@@ -127,7 +127,13 @@ function BlockForm({ node }: { node: BlockNode }) {
  * For a verb the catalog reports as not retry_safe (e.g. pump.dispense's relative
  * volume_ml — retrying after a partial dispense double-doses the culture), the
  * attempts/backoff controls stay hidden behind an explicit allow_repeat opt-in so the
- * hazard can't be set silently. */
+ * hazard can't be set silently.
+ *
+ * Tightened 2026-07-14 (review Fix 4): for an unsafe verb, ticking "retry on failure"
+ * must not *write* `retry` to the doc yet either — that would leave a savable doc the
+ * engine's `_check_retry` validator rejects (retry without allow_repeat on a non-safe
+ * verb). `pending` holds the checkbox visually checked and the hazard box open without
+ * materialising `node.retry` until "allow repeat" is ticked. */
 function RetrySection({ node }: { node: CommandNode | MeasureNode }) {
   const roles = useDocStore((s) => s.roles)
   const patchBlock = useDocStore((s) => s.patchBlock)
@@ -141,27 +147,44 @@ function RetrySection({ node }: { node: CommandNode | MeasureNode }) {
   const retry = node.retry
   const allowRepeat = retry?.allow_repeat ?? false
   const locked = !retrySafe && !allowRepeat
+  const [pending, setPending] = useState(false)
+  const open = retry !== undefined || pending
 
   const setRetry = (patch: Partial<RetryJson>) => {
     if (!retry) return
     patchBlock(node.uid, { retry: { ...retry, ...patch } })
   }
 
+  const toggleRetry = (checked: boolean) => {
+    if (!checked) {
+      setPending(false)
+      patchBlock(node.uid, { retry: undefined })
+    } else if (retrySafe) {
+      patchBlock(node.uid, { retry: { attempts: 2 } })
+    } else {
+      // Unsafe verb: show the hazard box but do not materialise retry until acknowledged.
+      setPending(true)
+    }
+  }
+
+  const acceptHazard = (checked: boolean) => {
+    if (checked) {
+      setPending(false)
+      patchBlock(node.uid, { retry: { attempts: 2, ...retry, allow_repeat: true } })
+    } else {
+      setRetry({ allow_repeat: undefined })
+    }
+  }
+
   return (
     <div className="mt-2">
       <FieldRow label="Retry">
         <label className="flex items-center gap-1 text-xs">
-          <input
-            type="checkbox"
-            checked={retry !== undefined}
-            onChange={(e) =>
-              patchBlock(node.uid, { retry: e.target.checked ? { attempts: 2 } : undefined })
-            }
-          />
+          <input type="checkbox" checked={open} onChange={(e) => toggleRetry(e.target.checked)} />
           retry on failure
         </label>
       </FieldRow>
-      {retry !== undefined && (
+      {open && (
         <div className="ml-1 border-l-2 border-slate-200 pl-2">
           {!retrySafe && (
             <div className="mb-1 rounded border border-amber-300 bg-amber-50 p-1.5 text-[11px] text-amber-800">
@@ -173,7 +196,7 @@ function RetrySection({ node }: { node: CommandNode | MeasureNode }) {
                 <input
                   type="checkbox"
                   checked={allowRepeat}
-                  onChange={(e) => setRetry({ allow_repeat: e.target.checked ? true : undefined })}
+                  onChange={(e) => acceptHazard(e.target.checked)}
                 />
                 allow repeat (allow_repeat)
               </label>
@@ -183,7 +206,7 @@ function RetrySection({ node }: { node: CommandNode | MeasureNode }) {
             <p className="rounded border border-dashed border-slate-300 bg-slate-100 p-1.5 text-[11px] text-slate-400">
               attempts/backoff are hidden until "allow repeat" is checked above
             </p>
-          ) : (
+          ) : retry !== undefined ? (
             <>
               <FieldRow label="Attempts (total tries, including the first)" required>
                 <NumberField
@@ -201,7 +224,7 @@ function RetrySection({ node }: { node: CommandNode | MeasureNode }) {
                 />
               </FieldRow>
             </>
-          )}
+          ) : null}
         </div>
       )}
     </div>

@@ -11,11 +11,16 @@ export function formatParams(params: Record<string, ParamValue>, max = 2): strin
 }
 
 /** Compact fault-tolerance marker so retry/on_error are not invisible in the tree:
- * `↻<attempts>` when a retry policy is set, `⤳` when on_error is 'continue'. Empty
- * (no leading space) when neither is set. */
+ * `R×<attempts>` when a retry policy is set, `⤳` when on_error is 'continue'. Empty
+ * (no leading space) when neither is set.
+ *
+ * `R×N` (not a circular-arrow glyph) is deliberate: the Loop block already renders with
+ * `↻` (see blockSummary's 'loop' case below), so a looping block with retry previously
+ * rendered as `↻ Loop ×3 ↻2` — two near-identical arrows next to each other, unreadable
+ * at a glance (2026-07-14 review, Fix 5). `R×N` cannot collide with `↻`. */
 export function faultMarker(node: BlockNode): string {
   const parts: string[] = []
-  if (node.retry) parts.push(`↻${node.retry.attempts}`)
+  if (node.retry) parts.push(`R×${node.retry.attempts}`)
   if (node.onError === 'continue') parts.push('⤳')
   return parts.length > 0 ? ` ${parts.join(' ')}` : ''
 }
