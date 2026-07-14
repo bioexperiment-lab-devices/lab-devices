@@ -302,6 +302,50 @@ def _check_loop(
         _check_condition(b.until, f"{path} loop until", w, binding_types, out)
 
 
+_ON_ERROR_VALUES = ("fail", "continue")
+
+
+def _check_on_error(block: B.Block, path: str, out: list[Diagnostic]) -> None:
+    """Legal on every block type (design 2026-07-14 §2.2)."""
+    if block.on_error not in _ON_ERROR_VALUES:
+        out.append(Diagnostic(
+            "block", path,
+            f"on_error must be one of {_ON_ERROR_VALUES}, got {block.on_error!r}",
+        ))
+
+
+def _check_retry(block: B.Block, path: str, out: list[Diagnostic]) -> None:
+    """retry is command/measure only, and a non-idempotent verb needs an explicit
+    in-document opt-in (design 2026-07-14 §4)."""
+    retry = block.retry
+    if retry is None:
+        return
+    if not isinstance(block, (B.Command, B.Measure)):
+        out.append(Diagnostic(
+            "block", path, "retry is only valid on command and measure blocks"
+        ))
+        return
+    try:
+        trait = lookup(block.device, block.verb)
+    except UnknownVerbError:
+        return  # already diagnosed by _check_action
+    if not trait.retry_safe and not retry.allow_repeat:
+        out.append(Diagnostic(
+            "block", path,
+            f"verb {block.verb!r} on {block.device!r} is not idempotent; a retry after a "
+            f"partial action may repeat it. Set retry.allow_repeat=true to accept this.",
+        ))
+
+
+def _check_defaults(w: Workflow, out: list[Diagnostic]) -> None:
+    if w.defaults.retry is not None and w.defaults.retry.allow_repeat:
+        out.append(Diagnostic(
+            "block", "defaults.retry",
+            "defaults.retry may not set allow_repeat; a blanket policy must never retry a "
+            "non-idempotent verb",
+        ))
+
+
 def _check_block(
     block: B.Block,
     path: str,
@@ -309,6 +353,10 @@ def _check_block(
     binding_types: Mapping[str, BindingType],
     out: list[Diagnostic],
 ) -> None:
+    # Unconditional: legal on every block type, including Serial/Parallel/Wait/GroupRef,
+    # which reach none of the type-specific checks below.
+    _check_on_error(block, path, out)
+    _check_retry(block, path, out)
     if isinstance(block, (B.Command, B.Measure)):
         _check_action(block, path, w, binding_types, out)
     if isinstance(block, B.Measure):
@@ -543,6 +591,7 @@ def validate(workflow: Workflow) -> None:
     """
     out: list[Diagnostic] = []
     expandable = _check_groups(workflow, out)
+    _check_defaults(workflow, out)
     binding_types = _collect_binding_types(workflow)
     for path, block in _iter_all_blocks(workflow):
         _check_block(block, path, workflow, binding_types, out)

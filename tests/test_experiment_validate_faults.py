@@ -1,0 +1,88 @@
+import pytest
+
+from lab_devices.experiment.errors import ValidationError
+from lab_devices.experiment.serialize import workflow_from_dict
+from lab_devices.experiment.validate import validate
+
+
+def _validate(doc):
+    validate(workflow_from_dict(doc))
+
+
+def _messages(exc):
+    return [d.message for d in exc.value.diagnostics]
+
+
+def test_retry_on_a_wait_block_is_rejected():
+    with pytest.raises(ValidationError) as exc:
+        _validate({
+            "schema_version": 1,
+            "blocks": [{"wait": {"duration": "1s"}, "retry": {"attempts": 3}}],
+        })
+    assert any("only valid on command and measure" in m for m in _messages(exc))
+
+
+def test_retry_on_dispense_without_allow_repeat_is_rejected():
+    with pytest.raises(ValidationError) as exc:
+        _validate({
+            "schema_version": 1,
+            "blocks": [{
+                "command": {"device": "pump_1", "verb": "dispense",
+                            "params": {"volume_ml": 0.5}},
+                "retry": {"attempts": 3},
+            }],
+        })
+    assert any("not idempotent" in m for m in _messages(exc))
+
+
+def test_retry_on_dispense_with_allow_repeat_is_accepted():
+    _validate({
+        "schema_version": 1,
+        "blocks": [{
+            "command": {"device": "pump_1", "verb": "dispense", "params": {"volume_ml": 0.5}},
+            "retry": {"attempts": 3, "allow_repeat": True},
+        }],
+    })
+
+
+def test_retry_on_a_measure_needs_no_opt_in():
+    _validate({
+        "schema_version": 1,
+        "streams": {"od_1": {}},
+        "blocks": [{
+            "measure": {"device": "densitometer_1", "verb": "measure", "into": "od_1"},
+            "retry": {"attempts": 3, "backoff": "2s"},
+        }],
+    })
+
+
+def test_defaults_retry_may_not_set_allow_repeat():
+    with pytest.raises(ValidationError) as exc:
+        _validate({
+            "schema_version": 1,
+            "defaults": {"retry": {"attempts": 2, "allow_repeat": True}},
+            "blocks": [{"wait": {"duration": "1s"}}],
+        })
+    assert any("blanket policy" in m for m in _messages(exc))
+
+
+def test_defaults_retry_does_not_make_dispense_retryable():
+    """A workflow-wide default must never silently start retrying a relative action."""
+    _validate({
+        "schema_version": 1,
+        "defaults": {"retry": {"attempts": 3}},
+        "blocks": [{
+            "command": {"device": "pump_1", "verb": "dispense", "params": {"volume_ml": 0.5}}
+        }],
+    })
+
+
+def test_on_error_continue_is_accepted_on_every_container():
+    _validate({
+        "schema_version": 1,
+        "blocks": [
+            {"serial": {"children": [{"wait": {"duration": "1s"}}]}, "on_error": "continue"},
+            {"parallel": {"children": [{"wait": {"duration": "1s"}}]}, "on_error": "continue"},
+            {"wait": {"duration": "1s"}, "on_error": "continue"},
+        ],
+    })
