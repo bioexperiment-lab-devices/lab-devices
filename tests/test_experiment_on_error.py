@@ -3,12 +3,14 @@ import asyncio
 
 import pytest
 
+from lab_devices import errors as core_errors
 from lab_devices.experiment import (
     ExperimentRun,
     InvariantViolationError,
     RunAbortedError,
     RunOptions,
 )
+from lab_devices.experiment.execute import _tolerable
 from tests.experiment_run_helpers import make_workflow, verbs
 from tests.fakeclock import FakeClock, drive
 
@@ -23,6 +25,33 @@ def _measure(i: int = 1, **extra):
 
 def _home(device: str = "valve_1"):
     return {"command": {"device": device, "verb": "home", "params": {"position": 1}}}
+
+
+def _wait(duration: str):
+    return {"wait": {"duration": duration}}
+
+
+def _serial(*children):
+    return {"serial": {"children": list(children)}}
+
+
+def _isolation_workflow(*, tolerate_lane_2: bool):
+    """Three lanes: 1 and 3 wait 30s before their own measure -- deliberately OUTLIVING
+    lane 2's near-instant dispatch failure, so this fixture actually discriminates fault
+    isolation from a mere status/count coincidence (a bare `measure` in every lane can
+    finish before lane 2's failure even propagates, and would carry zero information about
+    isolation either way)."""
+    lane2 = _measure(2)
+    if tolerate_lane_2:
+        lane2["on_error"] = "continue"
+    return make_workflow(
+        [{"parallel": {"children": [
+            _serial(_wait("30s"), _measure(1)),
+            lane2,
+            _serial(_wait("30s"), _measure(3)),
+        ]}}],
+        streams={"od_1": {}, "od_2": {}, "od_3": {}},
+    )
 
 
 def _kinds(report):
@@ -77,24 +106,31 @@ async def test_a_tolerated_block_is_failed_not_finished(fake_client):
 async def test_a_tolerated_parallel_lane_leaves_its_siblings_running(fake_client):
     """Feature #3: one bad vial must not kill the other fourteen.
 
-    `_run_parallel` is an asyncio.TaskGroup, which cancels siblings only when a lane
-    *raises*. A tolerated lane absorbs its failure inside its own task and returns normally,
-    so the TaskGroup never sees an exception and the siblings run to completion.
+    Lanes 1 and 3 wait 30s before their own measure -- outliving lane 2's near-instant
+    dispatch failure -- so this fixture actually discriminates isolation from a status/count
+    coincidence: a bare `measure` in every lane can finish before lane 2's failure even
+    propagates, in which case these same three assertions would hold with NO isolation
+    mechanism at all. `_run_parallel` is an asyncio.TaskGroup, which cancels siblings only
+    when a lane *raises*. A tolerated lane absorbs its failure inside its own task and
+    returns normally, so the TaskGroup never sees an exception and the siblings survive to
+    reach their own measure blocks 30s later.
+
+    Mutation-verified: a mutant that keeps the tolerance decision (the ToleratedError is
+    still recorded) but re-raises a sentinel that the parallel then swallows -- so the
+    TaskGroup still cancels lanes 1 and 3 -- makes this test FAIL (od_1/od_3 drop to 0
+    samples) while every other test in this file stays green.
     """
     fake, client = fake_client
     for i in (1, 2, 3):
         fake.add_device(f"densitometer_{i}", "densitometer")
     fake.inject_error("densitometer_2", "measure", *FLAKY, times=10)
     clock = FakeClock()
-    workflow = make_workflow(
-        [{"parallel": {"children": [_measure(i, on_error="continue") for i in (1, 2, 3)]}}],
-        streams={"od_1": {}, "od_2": {}, "od_3": {}},
-    )
+    workflow = _isolation_workflow(tolerate_lane_2=True)
     report = await drive(
         clock, ExperimentRun(client, workflow, options=RunOptions(clock=clock)).execute()
     )
     assert report.status == "completed"
-    assert len(report.state.streams["od_1"].samples) == 1  # the good vials are untouched
+    assert len(report.state.streams["od_1"].samples) == 1  # outlived lane 2's failure
     assert len(report.state.streams["od_2"].samples) == 0  # the bad vial dropped its sample
     assert len(report.state.streams["od_3"].samples) == 1
     assert len(report.tolerated_errors) == 1
@@ -102,28 +138,38 @@ async def test_a_tolerated_parallel_lane_leaves_its_siblings_running(fake_client
 
 
 async def test_an_untolerated_parallel_lane_still_kills_its_siblings(fake_client):
-    """The contrast that gives the test above its meaning: without `on_error: continue` the
-    lane raises, the TaskGroup cancels its siblings, and the run fails. That is the status
-    quo this feature exists to change -- and it must stay the default."""
+    """The contrast that gives the test above its meaning: without `on_error: continue` on
+    lane 2, its dispatch failure raises, the TaskGroup cancels lanes 1 and 3 while they are
+    still asleep in their 30s wait -- BEFORE either reaches its own measure -- and the run
+    fails. The siblings are genuinely killed here (never dispatched), not merely "the run
+    raised"; that is the status quo this feature exists to change, and it must stay the
+    default."""
     fake, client = fake_client
-    for i in (1, 2):
+    for i in (1, 2, 3):
         fake.add_device(f"densitometer_{i}", "densitometer")
     fake.inject_error("densitometer_2", "measure", *FLAKY, times=10)
     clock = FakeClock()
-    workflow = make_workflow(
-        [{"parallel": {"children": [_measure(1), _measure(2)]}}],
-        streams={"od_1": {}, "od_2": {}},
-    )
+    workflow = _isolation_workflow(tolerate_lane_2=False)
     run = ExperimentRun(client, workflow, options=RunOptions(clock=clock))
     with pytest.raises(BaseExceptionGroup):
         await drive(clock, run.execute())
     assert run.report.status == "failed"
     assert run.report.tolerated_errors == ()
+    assert run.report.state.streams["od_1"].samples == []  # killed mid-wait: never measured
+    assert run.report.state.streams["od_3"].samples == []
+    assert ("densitometer_1", "measure") not in verbs(fake)
+    assert ("densitometer_3", "measure") not in verbs(fake)
 
 
 async def test_tolerance_on_the_parallel_itself_abandons_the_container(fake_client):
     """`on_error` on the `parallel` block: the TaskGroup's ExceptionGroup is caught at the
-    parallel's own frame, the container is abandoned, and the PARENT carries on."""
+    parallel's own frame, the container is abandoned, and the PARENT carries on.
+
+    The lane itself has no `on_error`, so it fails with an ordinary `BlockFailedError`; the
+    parallel's tolerance must flatten the TaskGroup's ExceptionGroup down to that error's own
+    message, not report the group's boilerplate `str()` (design 2026-07-14 §3.4) -- the one
+    shape that would otherwise reach report.json and Studio with no indication of what
+    actually failed."""
     fake, client = fake_client
     for i in (1, 2):
         fake.add_device(f"densitometer_{i}", "densitometer")
@@ -144,6 +190,10 @@ async def test_tolerance_on_the_parallel_itself_abandons_the_container(fake_clie
     assert ("valve_1", "home") in verbs(fake)
     assert len(report.tolerated_errors) == 1
     assert report.tolerated_errors[0].block_id == "blocks[0]"  # the parallel, not a lane
+    error = report.tolerated_errors[0].error
+    assert "flaky" in error  # names the actual failure...
+    assert "blocks[0].children[1]" in error  # ...and which lane it came from
+    assert "TaskGroup" not in error  # ...not the group's own boilerplate str()
 
 
 async def test_tolerance_on_a_serial_abandons_the_rest_of_its_body(fake_client):
@@ -408,3 +458,56 @@ async def test_a_tolerated_timeout_still_leaves_its_orphan_to_the_finalizer(fake
     assert [j.state for j in fake.jobs.values()] == ["cancelled"]
     wire = verbs(fake)
     assert wire.index(("valve_1", "home")) < wire.index(("densitometer_1", "stop"))
+
+
+async def test_a_tolerated_mode_open_failure_leaves_no_phantom_mode_or_busy_slot(fake_client):
+    """A tolerated failure on a MODE-OPENING command (`set_thermostat`) must not leave a
+    phantom `OpenMode` in occupancy or a leaked busy slot, and the finalizer must still sweep
+    the device.
+
+    `_dispatch_action`'s own acquire/finally already rolls the occupancy slot back on ANY
+    dispatch failure -- `register_open` only runs after a successful call, and `holding`
+    stays True (so the `finally` releases) whenever it does not (see
+    `test_failed_call_rolls_back_mode_open`, tests/test_experiment_dispatch.py). The
+    tolerance mechanism sits one frame above that and must not disturb it: this pins that it
+    doesn't."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    # times=1: only the block's own attempt should fail. A larger count would also fail the
+    # finalizer's own later set_thermostat(enabled=False) sweep call, turning this into a
+    # FinalizeError instead of the clean "completed" this test means to pin.
+    fake.inject_error("densitometer_1", "set_thermostat", *FLAKY, times=1)
+    clock = FakeClock()
+    workflow = make_workflow(
+        [
+            {
+                "command": {
+                    "device": "densitometer_1", "verb": "set_thermostat",
+                    "params": {"enabled": True, "target_c": 37.0},
+                },
+                "on_error": "continue",
+            },
+        ]
+    )
+    run = ExperimentRun(client, workflow, options=RunOptions(clock=clock))
+    report = await drive(clock, run.execute())
+
+    assert report.status == "completed"
+    assert len(report.tolerated_errors) == 1
+    assert "flaky" in report.tolerated_errors[0].error
+    assert run._ctx.occupancy.open_modes() == ()  # no phantom OpenMode
+    assert run._ctx.occupancy.busy_devices() == set()  # no leaked busy slot
+    # the finalizer's unconditional sweep still ran for the (touched) device
+    assert ("densitometer_1", "stop") in verbs(fake)
+    assert ("densitometer_1", "set_thermostat") in verbs(fake)  # sweep's teardown call
+
+
+def test_tolerable_denies_run_aborted_and_busy_error_defense_in_depth():
+    """Defence in depth (Fix 3): neither of these can reach `_tolerable` through the normal
+    walk today -- `RunAbortedError`'s only raise site is `run.py`, AFTER the block walk
+    returns; `core_errors.BusyError` is converted to `InvariantViolationError` at its one
+    call site in `_dispatch_action`. The deny-list denies them anyway, for the same reason
+    it already denies `CancelledError`/`InvariantViolationError`: the guarantee must not rest
+    on every call site converting first."""
+    assert _tolerable(RunAbortedError("run aborted by operator")) is False
+    assert _tolerable(core_errors.BusyError("device busy")) is False

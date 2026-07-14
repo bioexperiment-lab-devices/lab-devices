@@ -15,6 +15,7 @@ from lab_devices.experiment.errors import (
     BlockFailedError,
     EvaluationError,
     InvariantViolationError,
+    RunAbortedError,
     ToleratedError,
     UnknownVerbError,
 )
@@ -383,14 +384,48 @@ def _tolerable(exc: BaseException) -> bool:
     - `InvariantViolationError`: a proven-impossible occupancy state. The safety model itself
       is broken; tolerating it would hide that, and the run would carry on dispatching against
       a proof it has just watched fail.
+    - `RunAbortedError`: unreachable inside a block today — its only raise site is `run.py`,
+      AFTER the block walk has already returned — but it is the abort error named by design's
+      own never-swallow table, and `_tolerate`'s whole reason to exist is defence against a
+      one-edit-away mistake. If that raise site ever moved inward, this is where the mistake
+      would otherwise become live.
+    - `core_errors.BusyError`: today converted to `InvariantViolationError` at its one call
+      site (`_dispatch_action`'s `_call_verb`) — a statically-proven-free dispatch drawing
+      `busy` IS the invariant violation. A bare `BusyError` surfacing from anywhere else (e.g.
+      a future `job.refresh()` / `job.result()` path) must not be laundered into an ordinary,
+      tolerable fault just because that one call site forgot to convert it first.
     """
-    if isinstance(exc, (asyncio.CancelledError, InvariantViolationError)):
+    if isinstance(
+        exc,
+        (
+            asyncio.CancelledError,
+            InvariantViolationError,
+            RunAbortedError,
+            core_errors.BusyError,
+        ),
+    ):
         return False
     if isinstance(exc, BaseExceptionGroup):
         # A parallel lane may have been cancelled, or may have violated an invariant. Nesting
         # is possible (a parallel inside a parallel), so recurse rather than scan one level.
         return all(_tolerable(inner) for inner in exc.exceptions)
     return True
+
+
+def _leaves(exc: BaseException) -> list[BaseException]:
+    """Flatten a `BaseExceptionGroup` down to its leaf exceptions, recursing through nested
+    groups (a parallel inside a parallel); a bare exception is its own single leaf.
+
+    Exists so a tolerated container never reports the group's own boilerplate `str()`
+    ("unhandled errors in a TaskGroup (1 sub-exception)") in place of what actually failed —
+    design §3.4's "a run that dropped 40 samples must not look identical to a clean one"
+    depends on the message naming the real fault, not the shape that carried it."""
+    if isinstance(exc, BaseExceptionGroup):
+        result: list[BaseException] = []
+        for inner in exc.exceptions:
+            result.extend(_leaves(inner))
+        return result
+    return [exc]
 
 
 def _tolerate(block: B.Block, exc: BaseException, ctx: RunContext) -> bool:
@@ -404,8 +439,14 @@ def _tolerate(block: B.Block, exc: BaseException, ctx: RunContext) -> bool:
     wrong. This makes the guarantee independent of it."""
     if block.on_error != "continue" or not _tolerable(exc):
         return False
-    ctx.tolerated.append(ToleratedError(str(block.id), str(exc)))
-    ctx.emit("block_error_tolerated", block.id, error=str(exc))
+    # `str(exc)` is fine for a bare exception, but for a BaseExceptionGroup (a tolerated
+    # `parallel` catching its TaskGroup's failure) it is the group's own boilerplate, not the
+    # fault that actually happened. _leaves flattens to what really failed, at any nesting
+    # depth, so the ONE shape that used to reach report.json and Studio with no indication of
+    # the real error no longer does (design 2026-07-14 §3.4).
+    message = "; ".join(str(leaf) for leaf in _leaves(exc))
+    ctx.tolerated.append(ToleratedError(str(block.id), message))
+    ctx.emit("block_error_tolerated", block.id, error=message)
     return True
 
 
