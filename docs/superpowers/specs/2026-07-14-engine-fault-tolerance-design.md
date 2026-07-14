@@ -207,37 +207,88 @@ is diagnosed. **This is correct and honest**: if all ten reads in a growth loop 
 *is* empty.
 
 The author's obligation is therefore to guard the read, and the validator's job is to check they
-did. Two facts make this cheap and exact:
+did. Two facts about the evaluator set the shape of that check:
 
-- **`_window_values` slices `samples[-n:]`** (`evaluate.py:162`). A *short* window is fine —
-  `mean(od_1, last=10)` over 3 samples returns the mean of 3. Only a **truly empty** window
-  raises (`evaluate.py:138`). So proving `count(S) > 0` is sufficient to make *any* windowed stat
-  on `S` safe. Nothing needs to track counts.
+- **`_window_values` slices two different ways** (`evaluate.py:161-166`). A `SampleWindow` is
+  `samples[-n:]`, so a *short* window is fine — `mean(od_1, last=10)` over 3 samples returns the
+  mean of 3, and the slice of a non-empty stream is never empty (the parser rejects `n <= 0`). A
+  `DurationWindow` is sliced by **timestamp cutoff** (`now - seconds`), so it can be empty *while
+  the stream is not*. Only a **truly empty** window raises (`evaluate.py:139`).
 - **`ExprRefs` already splits `streams_windowed` from `streams_counted`** (`analyze.py:30-31`):
-  `count()` needs declaration only, never a definite prior writer. So the guard expression itself
-  validates cleanly with no change.
+  `count()` needs declaration only, never a definite prior writer, and it returns `0` rather than
+  raising. So the guard expression itself validates cleanly with no change, whatever its window.
 
-Add one primitive to `analyze.py`:
+> **A guard is a claim about a *window*, not about a stream.** An earlier draft of this section
+> claimed that "proving `count(S) > 0` is sufficient to make *any* windowed stat on `S` safe —
+> nothing needs to track counts." **That is false, and it was the origin of a real bug.** It holds
+> for sample windows; it fails for duration windows, and it fails in exactly the scenario this
+> feature exists to serve. A sensor that stays down for six minutes is precisely what
+> `on_error: continue` lets a run survive — and precisely what ages the newest sample out of a
+> five-minute window. `count(od_1) > 0` stays true on the stale samples while
+> `mean(od_1, last=5min)` goes empty, so
+> `count(od_1) > 0 and mean(od_1, last=5min) > 0.4` would have validated clean and then killed the
+> run with `EvaluationError: empty stream window` — the very error the feature exists to prevent.
+
+**The sound lattice.** A guard `count(S, W_guard) > 0` proves that **`W_guard`** holds a sample.
+That discharges a read `stat(S, W_read)` only when non-emptiness of `W_guard` *implies*
+non-emptiness of `W_read`:
+
+| guard | discharges no-window read | discharges `last=N` (samples) | discharges `last=D_read` (duration) |
+| --- | --- | --- | --- |
+| none (`count(S) > 0`) | yes | yes | **no** |
+| `last=N` (samples) | yes | yes | **no** |
+| `last=D_guard` (duration) | yes | yes | **only if `D_read >= D_guard`** |
+
+Every guard form implies the stream holds ≥ 1 sample, which is what makes the first two columns
+free. A duration guard proves strictly more — a sample landed within `D_guard` of `now` — and a
+read over a **wider** window contains the guard's window, so it inherits that sample. One
+`evaluate` call threads a single `now` (`evaluate.py:30`), so the two windows are measured from the
+same instant. A sample-count guard proves nothing a bare `count(S) > 0` does not, so it collapses
+into the first row and the lattice stays two-level: *non-empty stream* < *sample within D*.
+
+Add two primitives to `analyze.py`:
 
 ```python
-def proven_nonempty(expr: Expr) -> frozenset[str]:
-    """Streams this expression proves non-empty when it evaluates True."""
+ProvenWindows = Mapping[str, Window]          # stream -> the window proven non-empty
+
+def proven_nonempty(expr: Expr) -> dict[str, Window]:
+    """Streams this expression proves non-empty when it evaluates True, with the window."""
+
+def proof_covers(proven: Window, read: Window) -> bool:
+    """Does "`proven` holds a sample" imply "`read` holds a sample"?  (the table above)"""
 ```
 
-- `count(S) > k` for k ≥ 0, `count(S) >= k` for k ≥ 1, `count(S) != 0`, and the mirrored forms
-  (`k < count(S)`, `k <= count(S)`, `0 != count(S)`) → `{S}`
-- `A and B` → `proven(A) | proven(B)`
-- `A or B` → `proven(A) & proven(B)`
+- `count(S, W) > k` for k ≥ 0, `count(S, W) >= k` for k ≥ 1, `count(S, W) != 0`, and the mirrored
+  forms (`k < count(S, W)`, `k <= count(S, W)`, `0 != count(S, W)`) → `{S: W}`, with a sample
+  window normalised to `AllWindow`
+- `A and B` → union, keeping the **strongest** proof per stream (a narrower duration wins)
+- `A or B` → intersection, keeping the **weakest** proof per stream (a wider duration wins)
 - anything else → `{}`
 
-Apply it in exactly two places:
+Apply them in exactly two places:
 
 1. **Inside an `and`.** `_expr_reads` currently flattens the whole tree via `references()`, with
    no short-circuit awareness. Walk `and` chains left-to-right instead, letting the left operand's
-   `proven_nonempty` set extend the writable-stream set available to the right operand.
-2. **Inside `branch.then`.** In `_visit`'s `Branch` arm, seed `then_state.streams` with
-   `proven_nonempty(b.if_)`. The `else` arm is not refined — the negation proves emptiness, which
-   is not useful.
+   `proven_nonempty` map extend the proofs available to the right operand, and discharge each read
+   through `proof_covers`. The whole expression shares one `now`, so a duration proof is valid
+   across it.
+2. **Inside `branch.then`.** In `_visit`'s `Branch` arm, seed the `then` state with the streams
+   `proven_nonempty(b.if_)` names. **Only the stream-level fact crosses the boundary**, as the
+   *durable* part of the proof: `Stream` is append-only, so "holds ≥ 1 sample" can never be
+   invalidated, whereas a duration proof **decays** — `now` advances while the body runs, and a
+   `wait: 10min` inside `then` would age the guard's sample straight back out of the read's window.
+   So a duration-windowed read inside the body needs its own guard, in its own expression. The
+   `else` arm is not refined at all — the negation proves emptiness, which is not useful.
+
+> **A pre-existing gap, deliberately left open.** A *definite* (untolerated) `measure` proves
+> `len(samples) >= 1` and nothing more — so by the table above it does not prove a duration window
+> non-empty either, yet `_PathState.streams` discharges every window including duration. A plain
+> `measure`, a `wait: 10min`, then `mean(od_1, last=5min)` therefore validates clean today and can
+> raise at runtime. This predates guard refinement, and closing it is a **separate strictness
+> change**: it would newly reject workflows that validate today. It is scoped out on purpose —
+> guard refinement's job is only to stop a *guard* from over-promising. The two are not
+> symmetric in practice: a definite measure fails the run outright when the sensor dies, so it
+> never reaches the stale-window state that `on_error: continue` is built to survive.
 
 **This is not a new concession.** `evaluate.py:85` already reads:
 
@@ -262,6 +313,18 @@ Tolerate the read, guard the decision:
 
 Scientifically this is the right shape anyway: **you must not decide on injections without a
 reading.** A tube whose sensor is dead skips its cycle; its neighbours are untouched.
+
+That bare `count(od_1) > 0` covers a decision tree built from sample windows (`last=5`, `last=10`)
+and whole-stream stats — which is what the morbidostat uses. **If the tree reads a *duration*
+window, the guard must name that window and sit in the same expression as the read:**
+
+```json
+{ "branch": {"if": "count(od_1, last=5min) > 0 and mean(od_1, last=5min) > od_thr",
+             "then": [ ... ]} }
+```
+
+A bare `count(od_1) > 0` does not prove the last five minutes hold anything (§5.2), and a duration
+guard in an enclosing `branch.if` does not survive into a body that can `wait`.
 
 ### 5.4 Sharp edge to document
 

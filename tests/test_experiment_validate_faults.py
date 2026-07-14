@@ -167,3 +167,92 @@ def test_an_untolerated_measure_still_needs_no_guard():
                         "then": [{"wait": {"duration": "1s"}}]}},
         ],
     })
+
+
+def _guarded(condition, blocks=None):
+    """A tolerated measure, then `condition` as a branch guard."""
+    return {
+        "schema_version": 1,
+        "streams": {"od_1": {}},
+        "blocks": [
+            _TOLERANT_MEASURE,
+            {"branch": {"if": condition,
+                        "then": blocks or [{"wait": {"duration": "1s"}}]}},
+        ],
+    }
+
+
+def test_a_bare_count_guard_does_not_discharge_a_duration_window_read():
+    """The soundness hole. `_window_values` slices a duration window by timestamp cutoff, so
+    a stream can be non-empty — count(od_1) > 0 true — while its last 5 minutes are empty.
+    A sustained sensor outage is exactly what on_error: continue exists to survive AND what
+    ages the newest sample out of the window, so this must not validate."""
+    with pytest.raises(ValidationError) as exc:
+        _validate(_guarded("count(od_1) > 0 and mean(od_1, last=5min) > 0.4"))
+    assert any("duration window" in m for m in _messages(exc))
+
+
+def test_a_duration_guard_matching_the_read_validates():
+    _validate(_guarded("count(od_1, last=5min) > 0 and mean(od_1, last=5min) > 0.4"))
+
+
+def test_a_guard_window_wider_than_the_read_is_rejected():
+    """A sample within the last 10 minutes says nothing about the last 5."""
+    with pytest.raises(ValidationError) as exc:
+        _validate(_guarded("count(od_1, last=10min) > 0 and mean(od_1, last=5min) > 0.4"))
+    assert any("count(od_1, last=300s) > 0" in m for m in _messages(exc))
+
+
+def test_a_guard_window_narrower_than_the_read_is_accepted():
+    """A sample within the last 5 minutes is necessarily within the last 10."""
+    _validate(_guarded("count(od_1, last=5min) > 0 and mean(od_1, last=10min) > 0.4"))
+
+
+def test_a_bare_count_guard_still_discharges_sample_and_whole_stream_reads():
+    """The morbidostat's actual idiom must keep working: `samples[-n:]` of a non-empty
+    stream is never empty, so count(od_1) > 0 discharges every non-duration read."""
+    _validate(_guarded(
+        "count(od_1) > 0 and mean(od_1, last=3) > 0.4 and mean(od_1) > last(od_1) - 1"
+    ))
+
+
+def test_the_branch_then_form_matches_the_and_form():
+    """Same guards, same reads, seeded through branch.then instead of an `and` chain."""
+    body = [{"branch": {"if": "mean(od_1, last=3) > 0.4",
+                        "then": [{"wait": {"duration": "1s"}}]}}]
+    _validate(_guarded("count(od_1) > 0", body))  # accepted, exactly as in the `and` form
+    duration_body = [{"branch": {"if": "mean(od_1, last=5min) > 0.4",
+                                 "then": [{"wait": {"duration": "1s"}}]}}]
+    with pytest.raises(ValidationError) as exc:  # rejected, exactly as in the `and` form
+        _validate(_guarded("count(od_1) > 0", duration_body))
+    assert any("duration window" in m for m in _messages(exc))
+
+
+def test_a_duration_guard_does_not_cross_into_the_branch_body():
+    """A duration proof holds for the expression that establishes it (one `now`), but not
+    for the body it guards: `now` advances while the body runs, so a `wait` inside `then`
+    ages the guard's sample straight back out of the read's window."""
+    body = [
+        {"wait": {"duration": "10min"}},
+        {"branch": {"if": "mean(od_1, last=5min) > 0.4",
+                    "then": [{"wait": {"duration": "1s"}}]}},
+    ]
+    with pytest.raises(ValidationError) as exc:
+        _validate(_guarded("count(od_1, last=5min) > 0", body))
+    assert any("duration window" in m for m in _messages(exc))
+
+
+def test_an_untolerated_measure_still_allows_a_duration_window_read():
+    """Pre-existing gap, deliberately preserved: a definite write discharges *any* window,
+    duration included, even though it does not strictly prove one non-empty. Rejecting it
+    is a separate strictness change (design 2026-07-14 §5.2 note)."""
+    _validate({
+        "schema_version": 1,
+        "streams": {"od_1": {}},
+        "blocks": [
+            {"measure": {"device": "densitometer_1", "verb": "measure", "into": "od_1"}},
+            {"wait": {"duration": "10min"}},
+            {"branch": {"if": "mean(od_1, last=5min) > 0.4",
+                        "then": [{"wait": {"duration": "1s"}}]}},
+        ],
+    })

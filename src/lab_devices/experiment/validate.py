@@ -11,9 +11,13 @@ from lab_devices.experiment import blocks as B
 from lab_devices.experiment.analyze import (
     BindingType,
     ExprType,
+    ProvenWindows,
+    conjoin_proofs,
     infer_type,
+    proof_covers,
     proven_nonempty,
     references,
+    windowed_reads,
 )
 from lab_devices.experiment.errors import (
     Diagnostic,
@@ -21,7 +25,15 @@ from lab_devices.experiment.errors import (
     UnknownVerbError,
     ValidationError,
 )
-from lab_devices.experiment.expr import BinaryOp, Expr, parse_expression
+from lab_devices.experiment.expr import (
+    AllWindow,
+    BinaryOp,
+    DurationWindow,
+    Expr,
+    SampleWindow,
+    Window,
+    parse_expression,
+)
 from lab_devices.experiment.registry import ParamSpec, lookup, mode_action
 from lab_devices.experiment.serialize import load_workflow
 from lab_devices.experiment.workflow import Workflow
@@ -378,11 +390,17 @@ class _PathState:
 
     bindings: set[str] = field(default_factory=set)  # definitely written by operator_input
     streams: set[str] = field(default_factory=set)  # definitely written by a measure
+    # Streams an enclosing `branch` guard proved to hold >= 1 sample. Strictly weaker than
+    # `streams`: it discharges whole-stream and sample-count reads, never a duration window
+    # (design 2026-07-14 §5.2). Durable, because Stream is append-only.
+    nonempty: set[str] = field(default_factory=set)
     modes: dict[tuple[str, str], str] = field(default_factory=dict)
     # modes: (device_id, mode_verb) -> "open" | "maybe"; absent = closed
 
     def copy(self) -> _PathState:
-        return _PathState(set(self.bindings), set(self.streams), dict(self.modes))
+        return _PathState(
+            set(self.bindings), set(self.streams), set(self.nonempty), dict(self.modes)
+        )
 
 
 def _merge(a: _PathState, b: _PathState) -> _PathState:
@@ -392,7 +410,9 @@ def _merge(a: _PathState, b: _PathState) -> _PathState:
     for key in a.modes.keys() | b.modes.keys():
         sa, sb = a.modes.get(key), b.modes.get(key)
         modes[key] = "open" if sa == "open" and sb == "open" else "maybe"
-    return _PathState(a.bindings & b.bindings, a.streams & b.streams, modes)
+    return _PathState(
+        a.bindings & b.bindings, a.streams & b.streams, a.nonempty & b.nonempty, modes
+    )
 
 
 @dataclass
@@ -409,6 +429,16 @@ class _Ctx:
             self.out.append(Diagnostic(category, path, message))
 
 
+def _window_text(w: Window) -> str:
+    """Render a window the way an author would have written it."""
+    if isinstance(w, SampleWindow):
+        return f"last={w.n}"
+    if isinstance(w, DurationWindow):
+        shown = int(w.seconds) if w.seconds == int(w.seconds) else w.seconds
+        return f"last={shown}s"
+    return "whole stream"
+
+
 def _expr_reads(text: object, ctx: str, state: _PathState, c: _Ctx) -> None:
     """Check one expression slot's reads against the current path state."""
     if not isinstance(text, str):
@@ -417,28 +447,66 @@ def _expr_reads(text: object, ctx: str, state: _PathState, c: _Ctx) -> None:
         expr = parse_expression(text)
     except ExpressionError:
         return  # already diagnosed globally
-    _expr_reads_ast(expr, ctx, state.bindings, state.streams, c)
+    # A guard carried in from an enclosing branch has decayed to the stream-level fact.
+    proven: dict[str, Window] = {stream: AllWindow() for stream in state.nonempty}
+    _expr_reads_ast(expr, ctx, state.bindings, state.streams, proven, c)
 
 
 def _expr_reads_ast(
-    expr: Expr, ctx: str, bindings: set[str], streams: set[str], c: _Ctx
+    expr: Expr,
+    ctx: str,
+    bindings: set[str],
+    streams: set[str],
+    proven: ProvenWindows,
+    c: _Ctx,
 ) -> None:
-    """Walk `and` chains left-to-right so a `count(S) > 0` guard extends the proven set
-    for everything to its right — mirroring the evaluator's short-circuit (design §5.2)."""
+    """Walk `and` chains left-to-right so a `count(S, W) > 0` guard extends the proof set
+    for everything to its right — mirroring the evaluator's short-circuit. One `evaluate`
+    call threads a single `now`, so a duration proof holds for the whole expression
+    (design 2026-07-14 §5.2)."""
     if isinstance(expr, BinaryOp) and expr.op == "and":
-        _expr_reads_ast(expr.left, ctx, bindings, streams, c)
-        guarded = streams | proven_nonempty(expr.left)
-        _expr_reads_ast(expr.right, ctx, bindings, guarded, c)
+        _expr_reads_ast(expr.left, ctx, bindings, streams, proven, c)
+        guarded = conjoin_proofs(proven, proven_nonempty(expr.left))
+        _expr_reads_ast(expr.right, ctx, bindings, streams, guarded, c)
         return
-    refs = references(expr)
-    for name in sorted(refs.bindings - bindings):
+    for name in sorted(references(expr).bindings - bindings):
         c.emit("data-flow", ctx, f"binding {name!r} may be read before it is written")
-    for stream in sorted(refs.streams_windowed - streams):
-        if stream in c.workflow.streams:  # undeclared streams already got a diagnostic
+    reads = sorted(windowed_reads(expr), key=lambda r: (r.stream, _window_text(r.window)))
+    for read in reads:
+        # A definite prior measure discharges any window — including a duration window it
+        # does not strictly prove non-empty. That concession predates guard refinement and
+        # is deliberately preserved; see the design's §5.2 note.
+        if read.stream in streams or read.stream not in c.workflow.streams:
+            continue  # definitely written, or undeclared (already diagnosed)
+        held = proven.get(read.stream)
+        if held is None:
             c.emit(
                 "data-flow", ctx,
-                f"stat over stream {stream!r} has no preceding measure on some path",
+                f"stat over stream {read.stream!r} has no preceding measure on some path",
             )
+        elif not proof_covers(held, read.window):
+            window = _window_text(read.window)
+            c.emit(
+                "data-flow", ctx,
+                f"stat over stream {read.stream!r} reads a duration window ({window}) that "
+                f"the guard does not prove non-empty; guard it with "
+                f"count({read.stream}, {window}) > 0",
+            )
+
+
+def _durable_guard_proof(condition: str) -> set[str]:
+    """Streams a `branch` condition proves non-empty *for the whole body it guards*.
+
+    Only the stream-level fact ">= 1 sample" survives the crossing: it is durable because
+    `Stream` is append-only, and every guard form implies it. A *duration* proof does not
+    survive — `now` advances while the body runs, so `count(S, last=5min) > 0` followed by
+    `wait: 10min` and a `mean(S, last=5min)` would read an empty window. Inside a single
+    expression the duration proof does hold, and `_expr_reads_ast` uses it there.
+    """
+    try:
+        return set(proven_nonempty(parse_expression(condition)))
+    except ExpressionError:
+        return set()  # unparseable: already diagnosed globally
 
 
 def _visit_action(b: B.Command | B.Measure, path: str, state: _PathState, c: _Ctx) -> None:
@@ -552,6 +620,7 @@ def _visit_parallel(b: B.Parallel, path: str, state: _PathState, c: _Ctx) -> _Pa
     for e in exits:  # the container completes when every lane does: union of writes
         state.bindings |= e.bindings
         state.streams |= e.streams
+        state.nonempty |= e.nonempty
         # Footprint disjointness means each lane owns the modes it touches:
         # apply every lane's delta against the shared entry.
         for key in e.modes.keys() - entry_modes.keys():
@@ -590,10 +659,7 @@ def _visit_body(b: B.Block, path: str, state: _PathState, c: _Ctx) -> _PathState
         _expr_reads(b.if_, f"{path} branch if", state, c)
         then_state = state.copy()
         if isinstance(b.if_, str):
-            try:
-                then_state.streams |= proven_nonempty(parse_expression(b.if_))
-            except ExpressionError:
-                pass  # unparseable: already diagnosed globally
+            then_state.nonempty |= _durable_guard_proof(b.if_)
         then_state = _visit_blocks(b.then, f"{path}.then", then_state, c)
         else_state = _visit_blocks(b.else_ or [], f"{path}.else", state.copy(), c)
         state = _merge(then_state, else_state)
