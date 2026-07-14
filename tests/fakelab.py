@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import Coroutine
 from typing import Any
 
 import httpx
@@ -57,6 +59,7 @@ class FakeLab:
         self.polls_to_complete_by_cmd: dict[str, int] = {}
         self._hold_next: set[str] = set()
         self._injected: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        self._get_job_gate: asyncio.Event | None = None
 
     # ---- setup helpers ----
     def add_device(
@@ -85,6 +88,16 @@ class FakeLab:
         Models the transient hang that a retry exists to survive (hold_job holds them all)."""
         self._hold_next.add(cmd)
 
+    def pause_next_get_job(self) -> asyncio.Event:
+        """The NEXT get_job call genuinely parks on the returned Event before it resolves,
+        instead of returning immediately -- lets a test suspend execution INSIDE
+        `job.refresh()`'s wire call itself (the only await `_await_job`'s `try` can ever
+        observe), with no wall-clock sleep. Cancelling the caller while parked here exercises
+        the poll loop's except clause for real; setting the event resumes it normally."""
+        event = asyncio.Event()
+        self._get_job_gate = event
+        return event
+
     def complete_job(self, job_id: str, *, error: dict[str, Any] | None = None) -> None:
         """Manually finish a (typically held) job."""
         job = self.jobs[job_id]
@@ -94,7 +107,9 @@ class FakeLab:
             job.state, job.result = "succeeded", JOB_RESULTS.get(job.cmd, {})
 
     # ---- request routing ----
-    def handler(self, request: httpx.Request) -> httpx.Response:
+    def handler(
+        self, request: httpx.Request
+    ) -> httpx.Response | Coroutine[Any, Any, httpx.Response]:
         path = request.url.path
         if path == "/api/v1/devices":
             return self._devices_list()
@@ -121,7 +136,9 @@ class FakeLab:
             200, json={"devices": devices, "discovered_at": "2026-07-06T12:00:00Z"}
         )
 
-    def _command(self, device_id: str, env: dict[str, Any]) -> httpx.Response:
+    def _command(
+        self, device_id: str, env: dict[str, Any]
+    ) -> httpx.Response | Coroutine[Any, Any, httpx.Response]:
         req_id = env.get("id", "")
         cmd = env.get("cmd")
         params = env.get("params") or {}
@@ -148,11 +165,25 @@ class FakeLab:
 
         # get_job / identify are memory-served (200 even if unreachable).
         if cmd == "get_job":
-            job = self.jobs.get(params.get("job_id", ""))
-            if job is None:
-                return err(200, "invalid_params", "unknown job_id")
-            self._advance(job)
-            return ok(self._job_object(job))
+            def _resolve_get_job() -> httpx.Response:
+                job = self.jobs.get(params.get("job_id", ""))
+                if job is None:
+                    return err(200, "invalid_params", "unknown job_id")
+                self._advance(job)
+                return ok(self._job_object(job))
+
+            gate, self._get_job_gate = self._get_job_gate, None
+            if gate is not None:
+                # A test asked to park genuinely INSIDE this wire call (pause_next_get_job).
+                # Returning a coroutine here is deliberate: httpx.MockTransport's async path
+                # awaits it, so the caller (job.refresh(), inside _await_job's try) is
+                # suspended for real -- not merely "as if" -- with no wall-clock sleep needed.
+                async def _parked_get_job() -> httpx.Response:
+                    await gate.wait()
+                    return _resolve_get_job()
+
+                return _parked_get_job()
+            return _resolve_get_job()
         if cmd == "identify":
             ident = self.devices[device_id].get("identify")
             if ident is None:

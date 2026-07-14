@@ -19,6 +19,8 @@ const KIND_COLOR: Record<string, string> = {
   measure_recorded: 'text-blue-700',
   input_requested: 'text-amber-700',
   input_bound: 'text-amber-700',
+  block_retried: 'text-amber-700',
+  job_poll_retried: 'text-amber-700',
 }
 
 export function EventLog(props: { events: ReadonlyArray<LogEvent>; origin: number | null; rev: number }) {

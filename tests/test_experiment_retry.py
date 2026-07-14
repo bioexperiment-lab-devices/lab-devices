@@ -440,6 +440,28 @@ async def test_a_poll_failure_budget_is_bounded_and_leaves_the_job_tracked(fake_
     )  # ...and it did
 
 
+async def test_job_timeout_bounds_the_poll_failure_path(fake_client):
+    """job_poll_max_failures is not the only bound on a failing poll -- job_timeout must cut
+    it off too. Moving the deadline check into the loop's success-only branch (so a failing
+    poll never sees it) survives the rest of the suite: with a large job_poll_max_failures,
+    the deadline would be the ONLY thing standing between a truly dead device and polling out
+    a run's entire wall-clock budget."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.inject_error("densitometer_1", "get_job", *UNREACHABLE, times=20)
+    clock = FakeClock()
+    run = ExperimentRun(
+        client, _od_workflow(),
+        options=RunOptions(clock=clock, job_timeout=5.0, job_poll_max_failures=10_000),
+    )
+
+    with pytest.raises(BlockFailedError) as exc:
+        await drive(clock, run.execute())
+
+    assert "did not finish within 5.0s" in str(exc.value)  # the deadline, not the poll budget
+    assert len(run._ctx.in_flight) == 1  # still tracked: the finalizer must stop this device
+
+
 async def test_the_poll_failure_budget_is_consecutive_not_cumulative(fake_client):
     """A flaky link must not accumulate its way to a false failure over a long measure:
     any successful poll proves the link is alive, so the count resets. Six failures, budget
@@ -517,6 +539,43 @@ async def test_an_abort_during_a_poll_retry_is_immediate(fake_client):
     assert len([c for c in fake.calls if c[1] == "measure"]) == 1  # nor re-dispatched
 
 
+async def test_abort_during_the_poll_wire_call_is_not_retried(fake_client):
+    """The test above lands its abort at `await ctx.clock.sleep(interval)` in _await_job --
+    OUTSIDE that function's try, so the except clause never sees the cancellation at all.
+    Identical vacuity to the one a previous round found in test_abort_during_backoff_is_not_
+    retried, fixed there by adding test_abort_during_the_dispatch_is_not_retried -- but that
+    fix was never carried across to the poll loop added afterward.
+
+    This test parks the run genuinely INSIDE job.refresh() -- the handler's only await, and
+    the only place the except clause (and _is_retryable's CancelledError branch) can ever
+    observe a cancellation -- via an Event-gated fake response (pause_next_get_job), with no
+    wall-clock sleep. wait_for turns a swallowed abort (which would otherwise hang forever,
+    since nothing ever advances the clock again) into a failure rather than a hang.
+
+    Mutation-verified: widening `except Exception` to `except BaseException` in _await_job AND
+    deleting the isinstance(exc, asyncio.CancelledError) branch from _is_retryable makes this
+    test FAIL -- the abort is absorbed by the poll loop (a job_poll_retried event fires, the
+    run task stays alive past the abort) -- while all other tests in this file still pass."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.pause_next_get_job()  # the abort itself cancels this parked wire call; no release needed
+    clock = FakeClock()
+    run = ExperimentRun(client, _od_workflow(), options=RunOptions(clock=clock))
+    task = asyncio.ensure_future(run.execute())
+    await clock.settle()  # measure dispatched; its first get_job is now parked on `gate`
+
+    run.abort()
+
+    with pytest.raises(RunAbortedError):
+        await asyncio.wait_for(task, timeout=5.0)
+
+    assert run.report.status == "aborted"
+    kinds = [e.kind for e in run.report.log.events]
+    assert kinds.count("job_poll_retried") == 0  # the poll fault never happened; abort won
+    assert kinds.count("block_retried") == 0  # not absorbed by the retry loop either
+    assert len(run._ctx.in_flight) == 1  # the job is still live: the finalizer must stop it
+
+
 async def test_an_orphan_is_cleared_whenever_a_job_is_still_tracked(fake_client):
     """The orphan-clear keys on the GENERAL predicate -- "did this attempt leave a job in
     ctx.in_flight?" -- not on isinstance(exc, JobTimeoutError). An exhausted poll budget is a
@@ -566,15 +625,17 @@ def _same_device_parallel_workflow():
 
 
 async def test_the_open_mode_guard_is_re_checked_under_the_wire_lock(fake_client):
-    """TOCTOU. _clear_orphaned_job snapshots ctx.occupancy and THEN takes ctx.lock(device).
-    asyncio.Lock.acquire() has a no-yield fast path, so when the lock is free the two are
-    contiguous -- but when it is CONTENDED the guard suspends there and its snapshot goes stale.
+    """TOCTOU under a contended lock. The open-mode check must be read no earlier than the
+    moment the guard actually HOLDS ctx.lock(device): asyncio.Lock.acquire() only yields when
+    the lock is CONTENDED, and it is exactly then that a read taken before queuing would go
+    stale before the guard is ever granted the lock.
 
     The lane ahead of it in the lock queue is a sibling whose set_thermostat is in flight:
     _dispatch_action awaits its wire call UNDER the lock and calls register_open only after
     releasing it. So the heater can be physically ON and absent from ctx.occupancy at the moment
-    the guard looks. It sees zero open modes, queues, and issues the stop once the mode has been
-    registered -- thermostat dead, run `completed`, nothing in the log.
+    the guard queues for the lock. A check read at that moment (instead of once inside the lock)
+    would see zero open modes and issue the stop once the mode has been registered --
+    thermostat dead, run `completed`, nothing in the log.
 
     ExperimentRun(...) construction is itself the reachability proof: it validates the workflow.
     """
@@ -609,7 +670,7 @@ async def test_the_open_mode_guard_is_re_checked_under_the_wire_lock(fake_client
     assert ctx.occupancy.open_modes("densitometer_1") == ()  # ...and is not yet in occupancy
 
     guard = asyncio.ensure_future(_clear_orphaned_job(exc, [job], measure_block, ctx))
-    await clock.settle()  # the guard takes its stale snapshot and queues on the lock
+    await clock.settle()  # the guard queues on the contended lock; nothing read yet
 
     thermostat_acked.set()  # the ack lands: lock released, THEN register_open
     may_retry = await guard
@@ -621,6 +682,31 @@ async def test_the_open_mode_guard_is_re_checked_under_the_wire_lock(fake_client
     assert job.job_id in ctx.in_flight  # still live on the hardware: the finalizer must stop it
     assert "set_thermostat" in str(exc)  # ...and the reason reaches the run log
     assert [e.kind for e in ctx.log_sink.events].count("job_cancelled") == 0
+
+
+async def test_the_orphan_check_confirms_job_identity_not_just_the_job_id(fake_client):
+    """ctx.in_flight is keyed by job_id alone, and membership in it is now a safety decision
+    (not just finalizer bookkeeping). If a DIFFERENT Job object were ever tracked under the
+    same id -- two devices returning the same job_id would overwrite each other's entry -- a
+    bare `job.job_id in ctx.in_flight` membership test would treat a foreign job as this
+    attempt's own orphan: it would issue a stop attributed to the wrong job and pop the OTHER
+    job's tracking entry, silently making the run believe a still-running job is untracked."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    clock = FakeClock()
+    run = ExperimentRun(client, _od_workflow(), options=RunOptions(clock=clock))
+    ctx = run._ctx
+    block = ctx.workflow.blocks[0]
+    job = Job(ctx.device("densitometer_1"), "j-1")  # this attempt's own (unabandoned) job
+    other = Job(ctx.device("densitometer_1"), "j-1")  # a DIFFERENT Job tracked under the same id
+    ctx.in_flight[other.job_id] = ("densitometer_1", other)
+    exc = core_errors.JobTimeoutError("job j-1 did not finish within 5.0s")
+
+    may_retry = await _clear_orphaned_job(exc, [job], block, ctx)
+
+    assert may_retry is True  # not OUR job in in_flight -> nothing of ours to abandon
+    assert [c[1] for c in fake.calls] == []  # no stop was issued over the identity mismatch
+    assert ctx.in_flight[other.job_id][1] is other  # the OTHER job's tracking is untouched
 
 
 def test_refuse_retry_keeps_str_and_message_in_agreement():

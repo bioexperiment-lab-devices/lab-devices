@@ -250,11 +250,14 @@ async def _clear_orphaned_job(
     false `invariant_violation` — the invariant was never violated, the retry raced its own
     orphan. So stop the orphan first.
 
-    The trigger is that general predicate — "is the job still tracked?" — and NOT
+    The trigger is that general predicate — "is THIS job still tracked?" — and NOT
     `isinstance(exc, JobTimeoutError)`. Tracking is the fact that matters (an untracked job is
     terminal and harmless); the exception type is a proxy for it that a new error class can silently
     invalidate. `_await_job` already has two exits that strand a live job: the timeout, and an
-    exhausted poll-failure budget.
+    exhausted poll-failure budget. "THIS job" is checked by identity, not just by job_id: `ctx.
+    in_flight` is keyed by job_id alone, so two devices returning the same id would overwrite
+    each other's entry, and a bare membership test could then treat a foreign job as our own
+    orphan — stopping the wrong device's job and untracking someone else's entry.
 
     But the stop is device-wide. If it would also close an open mode, we must NOT issue it: the
     mode would die on the hardware while `ctx.occupancy` still held it, and the run would carry
@@ -267,20 +270,19 @@ async def _clear_orphaned_job(
     if not started:
         return True
     job = started[-1]
-    if job.job_id not in ctx.in_flight:
-        return True  # already terminal and untracked; nothing to abandon
-    doomed = _modes_a_stop_would_close(block.device, ctx)
-    if doomed:
-        return _refuse_retry(exc, _doomed_mode_reason(job, block, doomed))  # fast refusal
+    entry = ctx.in_flight.get(job.job_id)
+    if entry is None or entry[1] is not job:
+        return True  # not tracked (already terminal), or the id belongs to a DIFFERENT job
     try:
         async with ctx.lock(block.device):
-            # Re-check UNDER the lock. The snapshot above was taken before we queued for it,
-            # and `Lock.acquire()` only yields when the lock is contended — precisely when the
-            # snapshot goes stale. The task ahead of us in the queue is a sibling lane whose
-            # own wire call is in flight: `_dispatch_action` awaits it *under this lock* and
-            # calls `register_open` only after releasing. So a `set_thermostat` that has
-            # physically switched the heater on can still be absent from `ctx.occupancy` when
-            # the pre-check reads it — and by the time we get the lock, it is there. Reading it
+            # The open-mode check happens HERE, under the lock, and only here: a read taken
+            # before queuing for a contended lock can go stale before we actually hold it. The
+            # task ahead of us in the queue may be a sibling lane whose own wire call is in
+            # flight — `_dispatch_action` awaits it *under this same lock* and calls
+            # `register_open` only after releasing it (see the comment there, and
+            # test_mode_opening_traits_complete_immediately) — so a `set_thermostat` that has
+            # physically switched the heater on can still be absent from `ctx.occupancy` at the
+            # moment we'd queue, and present by the moment we're granted the lock. Reading it
             # here, with the wire to this device ours alone, is the only sound moment.
             doomed = _modes_a_stop_would_close(block.device, ctx)
             if doomed:
@@ -332,6 +334,16 @@ async def _dispatch_action(
             result = await _await_job(job, block, ctx)
         if action is not None and action.kind == "open":
             assert trait.teardown is not None  # every mode entry declares its teardown
+            # No `await` may land between the wire lock's release (above) and this call.
+            # _clear_orphaned_job's open-mode guard reads ctx.occupancy WHILE HOLDING that same
+            # lock, and that check is sound only because register_open always runs
+            # synchronously right after the lock is released here -- true today only because
+            # every mode-opening trait is completion == "immediate" (pinned by
+            # test_mode_opening_traits_complete_immediately, tests/test_experiment_registry.py).
+            # If a mode-opening verb ever became completion == "job", the `await
+            # _await_job(...)` above would land in this exact gap -- and _await_job takes and
+            # releases this same wire lock on every poll -- reopening the Critical bug that
+            # guard exists to prevent.
             ctx.occupancy.register_open(
                 OpenMode(
                     device=block.device,

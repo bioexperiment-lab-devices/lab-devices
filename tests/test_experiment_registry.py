@@ -183,6 +183,28 @@ def test_stop_channels_cover_every_mode_on_the_device_type():
         assert trait.channels & stop.channels, (dtype, verb)
 
 
+def test_mode_opening_traits_complete_immediately():
+    """execute._dispatch_action calls register_open with NO await between releasing the wire
+    lock and that call -- true today only because every mode-opening trait (state_effect ==
+    "mode") has completion == "immediate", so the `if trait.completion == "job": ... await
+    _await_job(...)` branch never executes on a mode-opening dispatch. That absence of an
+    await is exactly what makes _clear_orphaned_job's in-lock open-mode check sound (see the
+    comment above register_open in execute.py): the guard takes ctx.lock(device) and reads
+    ctx.occupancy, trusting that any sibling's register_open has already run by the time it
+    could ever be granted that same lock.
+
+    If a mode-opening verb ever became completion == "job", _dispatch_action would await
+    _await_job(...) in that exact gap -- and _await_job itself takes and releases the wire
+    lock on every poll. The guard could then acquire the lock DURING that job wait, see zero
+    open modes (registration hasn't happened yet), and issue a stop that silently kills the
+    mode being opened: the identical Critical bug design 2026-07-14 §3.3 fixed, reopened by a
+    change in a completely different function. Pin the invariant so that change trips a test
+    here instead of a live thermostat."""
+    for (dtype, verb), trait in _REGISTRY.items():
+        if trait.state_effect == "mode":
+            assert trait.completion == "immediate", (dtype, verb)
+
+
 def test_measurement_verbs_declare_result_field():
     assert lookup("densitometer_1", "measure").result_field == "absorbance"
     assert lookup("densitometer_1", "measure_blank").result_field == "slope"
