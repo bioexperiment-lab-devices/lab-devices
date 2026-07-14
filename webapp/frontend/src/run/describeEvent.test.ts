@@ -22,6 +22,15 @@ describe('describeEvent', () => {
     expect(d('input_requested', { name: 'target' })).toBe("operator input requested: 'target'")
     expect(d('input_bound', { name: 'target', value: 5 })).toBe('target = 5')
   })
+  it('covers fault tolerance', () => {
+    expect(d('block_retried', { attempt: 1, of: 3, error: 'flaky' }))
+      .toBe('retrying (attempt 1/3): flaky')
+    // A failed poll is not a failed job: the operator must be able to see that the job kept
+    // running and was never re-dispatched.
+    expect(d('job_poll_retried', {
+      device: 'densitometer_1', job_id: 'j-1', failure: 1, of: 5, error: 'unreachable',
+    })).toBe('densitometer_1: poll of job j-1 failed (1/5), still running: unreachable')
+  })
   it('covers the finalizer', () => {
     expect(d('finalize_started')).toBe('finalize started')
     expect(d('finalize_finished', { errors: 0 })).toBe('finalize finished (0 errors)')

@@ -163,6 +163,26 @@ def test_mode_channels_pairwise_disjoint_per_device_type():
                 assert not (channel_sets[i] & channel_sets[j]), dtype
 
 
+def test_stop_channels_cover_every_mode_on_the_device_type():
+    """The retry's orphan-cancel is a device.stop() (Job.cancel() IS device.stop()), and its
+    guard -- execute._modes_a_stop_would_close -- only refuses the retry for open modes whose
+    channels INTERSECT the device's `stop` channels. That channel filter is safe only while a
+    stop cannot close a mode it does not name: today every densitometer stop covers optics |
+    thermal, so it does. Narrow densitometer.stop to optics and the guard would happily stop the
+    device to clear an orphaned measure, silently killing the thermostat -- exactly the failure
+    the guard exists to prevent. Pin the invariant so a future narrow stop trips a test here.
+
+    A device type with NO stop verb is fine: the guard assumes the worst (every open mode on the
+    device) rather than the best."""
+    for (dtype, verb), trait in _REGISTRY.items():
+        if trait.state_effect != "mode":
+            continue
+        stop = _REGISTRY.get((dtype, "stop"))
+        if stop is None:
+            continue
+        assert trait.channels & stop.channels, (dtype, verb)
+
+
 def test_measurement_verbs_declare_result_field():
     assert lookup("densitometer_1", "measure").result_field == "absorbance"
     assert lookup("densitometer_1", "measure_blank").result_field == "slope"

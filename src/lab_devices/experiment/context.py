@@ -31,6 +31,13 @@ class RunOptions:
     job_poll_interval: float = 0.25
     job_poll_max: float = 2.0
     job_timeout: float | None = None
+    job_poll_max_failures: int = 5
+    # Consecutive `get_job` failures tolerated before the fault propagates. A failed poll is
+    # NOT a failed job: the job is still running on the hardware, so the answer to a transient
+    # blip is to poll again, never to re-dispatch (design 2026-07-14 §3.2). This lives here and
+    # not on the block's `Retry` because polling is a pure read of job state — always safe to
+    # repeat, even for a non-idempotent verb with no retry policy at all, so it must not be
+    # gated by one. It tunes the same loop as job_poll_interval / job_poll_max / job_timeout.
 
 
 def _running_gate() -> asyncio.Event:

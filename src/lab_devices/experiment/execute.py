@@ -114,17 +114,48 @@ async def _call_verb(device: Any, verb: str, params: dict[str, Any]) -> Any:
     return await method(**params)
 
 
-async def _await_job(job: Job, device_id: str, ctx: RunContext) -> Any:
+async def _await_job(job: Job, block: B.Command | B.Measure, ctx: RunContext) -> Any:
     """Clock-driven poll to terminal, then delegate interpretation to job.result()
-    (terminal-state result() neither polls nor sleeps). Design 4-exec §6."""
+    (terminal-state result() neither polls nor sleeps). Design 4-exec §6.
+
+    A failed poll is NOT a failed job. `job.refresh()` is a `get_job` over the wire, and a
+    transient fault on ONE poll (device_unreachable, internal_error, a protocol blip) says
+    nothing about the job: it is still running on the hardware. Letting that fault out of here
+    would abandon a live job and let `_run_action` re-dispatch ON TOP of it — a second
+    concurrent job on the same device, from a single dropped packet, with no author opt-in
+    (`densitometer.measure` is retry_safe, so a plain `defaults.retry` reaches this). The right
+    answer to a failed poll is to poll again: back off on the clock and ask the job again.
+
+    Bounded by `options.job_poll_max_failures` CONSECUTIVE failures (any successful poll resets
+    the count, so a flaky link never accumulates its way to a false failure). Exhausting the
+    bound propagates as before, with the job still in `ctx.in_flight` so the finalizer stops the
+    device. A deny-listed poll error (e.g. an unknown job_id -> InvalidParamsError) is not
+    retried: it will fail identically forever.
+
+    An abort is never swallowed or delayed: `asyncio.CancelledError` is a BaseException, so it
+    passes straight through `except Exception` and tears the poll down at once.
+    """
     opts = ctx.options
     deadline = None if opts.job_timeout is None else ctx.clock.now() + opts.job_timeout
     interval = opts.job_poll_interval
+    failures = 0
     while job.state not in _TERMINAL:
-        async with ctx.lock(device_id):
-            await job.refresh()
-        if job.state in _TERMINAL:
-            break
+        try:
+            async with ctx.lock(block.device):
+                await job.refresh()
+        except Exception as exc:
+            failures += 1
+            if failures > opts.job_poll_max_failures or not _is_retryable(exc):
+                raise  # NOT untracked: the job may still be running (design §7 step 6)
+            ctx.emit(
+                "job_poll_retried", block.id,
+                device=block.device, job_id=job.job_id,
+                failure=failures, of=opts.job_poll_max_failures, error=str(exc),
+            )
+        else:
+            failures = 0  # the link is alive again; a later blip starts from zero
+            if job.state in _TERMINAL:
+                break
         if deadline is not None and ctx.clock.now() >= deadline:
             # NOT untracked: the finalizer must stop this device (design §7 step 6).
             raise core_errors.JobTimeoutError(
@@ -168,7 +199,13 @@ def _refuse_retry(exc: Exception, reason: str) -> bool:
     the operator, or Studio. Same object, same type, original text preserved as a prefix —
     the error is annotated, never masked (so the deny-list and `on_error` still see a
     JobTimeoutError)."""
-    exc.args = (f"{exc}; {reason}",)
+    folded = f"{exc}; {reason}"
+    exc.args = (folded,)
+    if isinstance(exc, core_errors.LabError):
+        # LabError.__init__ stores the message a SECOND time. Rewriting only `args` would
+        # leave `str(exc)` and `exc.message` disagreeing — the reason visible in the run log
+        # and absent from the attribute a reader would reach for first.
+        exc.message = folded
     return False
 
 
@@ -191,14 +228,33 @@ def _modes_a_stop_would_close(device: str, ctx: RunContext) -> tuple[OpenMode, .
     return tuple(mode for mode in modes if mode.channels & stop_channels)
 
 
+def _doomed_mode_reason(
+    job: Job, block: B.Command | B.Measure, doomed: tuple[OpenMode, ...]
+) -> str:
+    names = ", ".join(sorted(mode.mode_verb for mode in doomed))
+    return (
+        f"retry refused: clearing the orphaned job {job.job_id} means stopping "
+        f"{block.device}, and that stop is device-wide (Job.cancel() is device.stop()) — "
+        f"it would have silently closed the open mode(s) {names}, leaving the hardware "
+        f"uncontrolled while the run believed the mode was still held"
+    )
+
+
 async def _clear_orphaned_job(
     exc: Exception, started: list[Job], block: B.Command | B.Measure, ctx: RunContext
 ) -> bool:
-    """May the retry proceed? A JobTimeoutError abandons a job that is still *physically
-    running* — `_await_job` neither cancels nor untracks it (design 4-exec §7 step 6). A retry
-    would then put a SECOND concurrent job on the same device: on a real agent the second
-    command draws `busy`, which the executor reports as a false `invariant_violation` — the
-    invariant was never violated, the retry raced its own orphan. So stop the orphan first.
+    """May the retry proceed? An attempt that failed with its job still in `ctx.in_flight`
+    abandoned a job that is still *physically running* — `_await_job` neither cancels nor
+    untracks it (design 4-exec §7 step 6). A retry would then put a SECOND concurrent job on the
+    same device: on a real agent the second command draws `busy`, which the executor reports as a
+    false `invariant_violation` — the invariant was never violated, the retry raced its own
+    orphan. So stop the orphan first.
+
+    The trigger is that general predicate — "is the job still tracked?" — and NOT
+    `isinstance(exc, JobTimeoutError)`. Tracking is the fact that matters (an untracked job is
+    terminal and harmless); the exception type is a proxy for it that a new error class can silently
+    invalidate. `_await_job` already has two exits that strand a live job: the timeout, and an
+    exhausted poll-failure budget.
 
     But the stop is device-wide. If it would also close an open mode, we must NOT issue it: the
     mode would die on the hardware while `ctx.occupancy` still held it, and the run would carry
@@ -208,23 +264,27 @@ async def _clear_orphaned_job(
     Either refusal leaves the original error to surface and the job in `ctx.in_flight`, so the
     finalizer still stops that device (§11) — the abandoned job is never untracked while it may
     still be running on the hardware."""
-    if not isinstance(exc, core_errors.JobTimeoutError) or not started:
+    if not started:
         return True
     job = started[-1]
     if job.job_id not in ctx.in_flight:
         return True  # already terminal and untracked; nothing to abandon
     doomed = _modes_a_stop_would_close(block.device, ctx)
     if doomed:
-        names = ", ".join(sorted(mode.mode_verb for mode in doomed))
-        return _refuse_retry(
-            exc,
-            f"retry refused: clearing the orphaned job {job.job_id} means stopping "
-            f"{block.device}, and that stop is device-wide (Job.cancel() is device.stop()) — "
-            f"it would have silently closed the open mode(s) {names}, leaving the hardware "
-            f"uncontrolled while the run believed the mode was still held",
-        )
+        return _refuse_retry(exc, _doomed_mode_reason(job, block, doomed))  # fast refusal
     try:
         async with ctx.lock(block.device):
+            # Re-check UNDER the lock. The snapshot above was taken before we queued for it,
+            # and `Lock.acquire()` only yields when the lock is contended — precisely when the
+            # snapshot goes stale. The task ahead of us in the queue is a sibling lane whose
+            # own wire call is in flight: `_dispatch_action` awaits it *under this lock* and
+            # calls `register_open` only after releasing. So a `set_thermostat` that has
+            # physically switched the heater on can still be absent from `ctx.occupancy` when
+            # the pre-check reads it — and by the time we get the lock, it is there. Reading it
+            # here, with the wire to this device ours alone, is the only sound moment.
+            doomed = _modes_a_stop_would_close(block.device, ctx)
+            if doomed:
+                return _refuse_retry(exc, _doomed_mode_reason(job, block, doomed))
             await job.cancel()  # Job.cancel() -> device.stop()
     except Exception as cancel_exc:
         return _refuse_retry(
@@ -269,7 +329,7 @@ async def _dispatch_action(
             job: Job = result
             ctx.in_flight[job.job_id] = (block.device, job)
             started.append(job)  # so a retry can stop what this attempt abandoned
-            result = await _await_job(job, block.device, ctx)
+            result = await _await_job(job, block, ctx)
         if action is not None and action.kind == "open":
             assert trait.teardown is not None  # every mode entry declares its teardown
             ctx.occupancy.register_open(

@@ -3,8 +3,12 @@ import asyncio
 
 import pytest
 
+from lab_devices import errors as core_errors
 from lab_devices.experiment import BlockFailedError, ExperimentRun, RunAbortedError, RunOptions
 from lab_devices.experiment.blocks import Retry
+from lab_devices.experiment.execute import _await_job, _clear_orphaned_job, _refuse_retry
+from lab_devices.experiment.occupancy import OpenMode
+from lab_devices.jobs import Job
 from tests.experiment_run_helpers import make_workflow
 from tests.fakeclock import FakeClock, drive
 
@@ -344,6 +348,291 @@ async def test_an_open_mode_on_another_device_does_not_refuse_the_retry(fake_cli
                if e.kind == "job_cancelled" and e.block_id is not None]
     assert [e.data["device"] for e in cancels] == ["densitometer_2"]  # d_1 was never stopped
     assert len(report.state.streams["od_2"].samples) == 1
+
+
+# --------------------------------------------------------------------------- #
+# A failed POLL is not a failed job (design 2026-07-14 §3.2)                    #
+# --------------------------------------------------------------------------- #
+UNREACHABLE = ("device_unreachable", "device is not responding")
+
+
+async def test_a_transient_poll_failure_is_polled_again_not_re_dispatched(fake_client):
+    """_await_job's job.refresh() is a `get_job` over the wire. A fault on ONE poll says
+    nothing about the job -- it is still RUNNING on the hardware. Letting it out of _await_job
+    abandons a live job and lets _run_action re-dispatch on top of it: two concurrent measures
+    on one densitometer, from a single dropped packet.
+
+    The morbidostat shape, and it needs ZERO author opt-in to reach: job_timeout is None (the
+    default), densitometer.measure is retry_safe, so a plain defaults.retry is enough. Under the
+    old code this produced two jobs (j-1 'cancelled' only at finalize, j-2 'succeeded') and
+    still reported `completed`. The right answer to a failed poll is to poll again."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.inject_error("densitometer_1", "get_job", *UNREACHABLE, times=1)
+    clock = FakeClock()
+    workflow = _thermostat_then_measure_workflow(measures=1)
+    workflow.defaults.retry = Retry(attempts=3, backoff="1s")  # no allow_repeat, no block policy
+    run = ExperimentRun(client, workflow, options=RunOptions(clock=clock))  # job_timeout=None
+
+    report = await drive(clock, run.execute())
+
+    assert report.status == "completed"
+    # ONE job was ever started, and it succeeded -- not [j-1 cancelled, j-2 succeeded].
+    assert [(j.cmd, j.state) for j in fake.jobs.values()] == [("measure", "succeeded")]
+    assert len([c for c in fake.calls if c[1] == "measure"]) == 1  # never re-dispatched
+    kinds = [e.kind for e in report.log.events]
+    assert kinds.count("job_poll_retried") == 1  # ...and the operator can see the blip
+    assert kinds.count("block_retried") == 0  # the block was never re-dispatched
+    assert len(report.state.streams["od_1"].samples) == 1  # the reading was not lost
+    assert run._ctx.in_flight == {}
+    # No device-wide stop was needed, so the thermostat was never at risk: nothing but the
+    # thermostat and the measure reached the wire before the finalizer opened its sweep.
+    wire = [c[1] for c in fake.calls]
+    teardown_at = wire.index("set_thermostat", 1)  # the finalizer's teardown of the mode
+    assert wire[:teardown_at] == ["set_thermostat", "measure"]  # no device-wide stop in between
+    assert kinds.index("finalize_started") < kinds.index("teardown_issued")
+    assert [e for e in report.log.events
+            if e.kind == "job_cancelled" and e.block_id is not None] == []
+
+
+async def test_a_poll_retry_event_carries_the_job_and_the_fault(fake_client):
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.inject_error("densitometer_1", "get_job", "internal_error", "transport blip", times=2)
+    clock = FakeClock()
+    run = ExperimentRun(client, _od_workflow(), options=RunOptions(clock=clock))
+
+    report = await drive(clock, run.execute())
+
+    assert report.status == "completed"  # no retry policy at all: the poll loop stands alone
+    events = [e for e in report.log.events if e.kind == "job_poll_retried"]
+    assert [e.data["failure"] for e in events] == [1, 2]
+    assert events[0].block_id == "blocks[0]"
+    assert events[0].data["device"] == "densitometer_1"
+    assert events[0].data["job_id"] == "j-1"
+    assert events[0].data["of"] == 5  # RunOptions.job_poll_max_failures
+    assert "transport blip" in events[0].data["error"]
+
+
+async def test_a_poll_failure_budget_is_bounded_and_leaves_the_job_tracked(fake_client):
+    """The bound is not optional: a device that is really gone must not be polled forever.
+    On exhaustion the fault propagates as before -- and the job stays in ctx.in_flight,
+    because it may still be running: the finalizer must stop that device."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.inject_error("densitometer_1", "get_job", *UNREACHABLE, times=50)
+    clock = FakeClock()
+    run = ExperimentRun(
+        client, _od_workflow(),
+        options=RunOptions(clock=clock, job_poll_max_failures=3),
+    )
+
+    with pytest.raises(BlockFailedError) as exc:
+        await drive(clock, run.execute())
+
+    assert "device is not responding" in str(exc.value)  # the poll fault, unmasked
+    kinds = [e.kind for e in run.report.log.events]
+    assert kinds.count("job_poll_retried") == 3  # 3 tolerated; the 4th propagates
+    assert len([c for c in fake.calls if c[1] == "measure"]) == 1  # never re-dispatched
+    assert len(run._ctx.in_flight) == 1  # still live on the hardware -> finalizer stops it
+    assert any(
+        e.kind == "job_cancelled" and e.block_id is None for e in run.report.log.events
+    )  # ...and it did
+
+
+async def test_the_poll_failure_budget_is_consecutive_not_cumulative(fake_client):
+    """A flaky link must not accumulate its way to a false failure over a long measure:
+    any successful poll proves the link is alive, so the count resets. Six failures, budget
+    of three, never more than three in a row -- the job still runs to completion."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    clock = FakeClock()
+    run = ExperimentRun(
+        client, _od_workflow(),
+        options=RunOptions(clock=clock, job_poll_max_failures=3),
+    )
+    ctx = run._ctx
+    block = ctx.workflow.blocks[0]
+    job = Job(ctx.device("densitometer_1"), "j-1")
+    ctx.in_flight[job.job_id] = ("densitometer_1", job)
+    script = ["fail", "fail", "fail", "ok", "fail", "fail", "fail", "done"]
+
+    async def scripted_refresh():
+        step = script.pop(0)
+        if step == "fail":
+            raise core_errors.DeviceUnreachableError("device is not responding")
+        if step == "done":
+            job.state = "succeeded"
+        return job
+
+    job.refresh = scripted_refresh
+
+    await drive(clock, _await_job(job, block, ctx))
+
+    assert script == []  # every scripted poll was made: no failure escaped the loop
+    assert [e.kind for e in ctx.log_sink.events].count("job_poll_retried") == 6
+    assert ctx.in_flight == {}  # terminal: untracked
+
+
+async def test_a_deny_listed_poll_failure_is_not_polled_again(fake_client):
+    """The poll loop reuses the dispatch deny-list. An unknown job_id will read the same
+    forever -- polling it again is a waste and the fault must surface at once."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.inject_error("densitometer_1", "get_job", "invalid_params", "unknown job_id", times=50)
+    clock = FakeClock()
+    run = ExperimentRun(client, _od_workflow(), options=RunOptions(clock=clock))
+
+    with pytest.raises(BlockFailedError):
+        await drive(clock, run.execute())
+
+    kinds = [e.kind for e in run.report.log.events]
+    assert kinds.count("job_poll_retried") == 0  # fails on the FIRST failed poll
+    assert kinds.count("block_retried") == 0
+
+
+async def test_an_abort_during_a_poll_retry_is_immediate(fake_client):
+    """A poll retry must never swallow or delay an abort: CancelledError is a BaseException,
+    so it passes straight through the poll loop's `except Exception`. wait_for turns a
+    swallowed abort into a failure rather than a hang."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.inject_error("densitometer_1", "get_job", *UNREACHABLE, times=50)
+    clock = FakeClock()
+    run = ExperimentRun(
+        client, _od_workflow(),
+        options=RunOptions(clock=clock, job_poll_max_failures=1000),  # would poll ~forever
+    )
+    task = asyncio.ensure_future(run.execute())
+    await clock.settle()
+    await clock.advance(1.0)  # inside the poll-retry loop, backing off on the clock
+    run.abort()
+
+    with pytest.raises(RunAbortedError):
+        await asyncio.wait_for(task, timeout=5.0)
+
+    assert run.report.status == "aborted"
+    before = [e.kind for e in run.report.log.events]
+    assert before.count("job_poll_retried") < 1000  # the loop was torn down, not run out
+    assert len([c for c in fake.calls if c[1] == "measure"]) == 1  # nor re-dispatched
+
+
+async def test_an_orphan_is_cleared_whenever_a_job_is_still_tracked(fake_client):
+    """The orphan-clear keys on the GENERAL predicate -- "did this attempt leave a job in
+    ctx.in_flight?" -- not on isinstance(exc, JobTimeoutError). An exhausted poll budget is a
+    second way to abandon a live job, and it is not a JobTimeoutError: keying on the exception
+    type would quietly reopen the job-stacking bug for it (wire: measure, measure; j-1 left
+    running under j-2). Keying on the fact that matters closes it for every future error class
+    too."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.inject_error("densitometer_1", "get_job", *UNREACHABLE, times=6)  # budget 5 -> exhausted
+    clock = FakeClock()
+    workflow = _od_workflow()
+    workflow.defaults.retry = Retry(attempts=2, backoff="1s")
+    run = ExperimentRun(client, workflow, options=RunOptions(clock=clock))
+
+    report = await drive(clock, run.execute())
+
+    assert report.status == "completed"
+    wire = [(device, cmd) for device, cmd, _ in fake.calls]
+    assert wire[:3] == [
+        ("densitometer_1", "measure"), ("densitometer_1", "stop"), ("densitometer_1", "measure"),
+    ]  # the re-dispatch was preceded by a stop that killed the orphan
+    assert [(j.cmd, j.state) for j in fake.jobs.values()] == [
+        ("measure", "cancelled"), ("measure", "succeeded"),
+    ]  # j-1 was never left running alongside j-2
+    kinds = [e.kind for e in report.log.events]
+    assert kinds.count("job_poll_retried") == 5
+    assert kinds.count("block_retried") == 1
+    assert run._ctx.in_flight == {}
+
+
+# --------------------------------------------------------------------------- #
+# The open-mode guard is a check-and-act under a contended lock                 #
+# --------------------------------------------------------------------------- #
+def _same_device_parallel_workflow():
+    """Two children on the SAME densitometer, on disjoint channels (thermal vs optics). The
+    affinity check is per-(device, channel), so this validates clean -- which is what makes the
+    guard's TOCTOU window reachable from a workflow, not just from a unit test."""
+    return make_workflow(
+        [{"parallel": {"children": [
+            {"command": {"device": "densitometer_1", "verb": "set_thermostat",
+                         "params": {"enabled": True, "target_c": 37.0}}},
+            {"measure": {"device": "densitometer_1", "verb": "measure", "into": "od_1"}},
+        ]}}],
+        streams={"od_1": {"units": "AU"}},
+    )
+
+
+async def test_the_open_mode_guard_is_re_checked_under_the_wire_lock(fake_client):
+    """TOCTOU. _clear_orphaned_job snapshots ctx.occupancy and THEN takes ctx.lock(device).
+    asyncio.Lock.acquire() has a no-yield fast path, so when the lock is free the two are
+    contiguous -- but when it is CONTENDED the guard suspends there and its snapshot goes stale.
+
+    The lane ahead of it in the lock queue is a sibling whose set_thermostat is in flight:
+    _dispatch_action awaits its wire call UNDER the lock and calls register_open only after
+    releasing it. So the heater can be physically ON and absent from ctx.occupancy at the moment
+    the guard looks. It sees zero open modes, queues, and issues the stop once the mode has been
+    registered -- thermostat dead, run `completed`, nothing in the log.
+
+    ExperimentRun(...) construction is itself the reachability proof: it validates the workflow.
+    """
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    clock = FakeClock()
+    run = ExperimentRun(
+        client, _same_device_parallel_workflow(),
+        options=RunOptions(clock=clock, job_timeout=5.0),
+    )
+    ctx = run._ctx
+    measure_block = ctx.workflow.blocks[0].children[1]
+    job = Job(ctx.device("densitometer_1"), "j-1")  # the abandoned measure, still running
+    ctx.in_flight[job.job_id] = ("densitometer_1", job)
+    exc = core_errors.JobTimeoutError("job j-1 did not finish within 5.0s")
+    thermostat_acked = asyncio.Event()
+
+    async def thermostat_lane():
+        # Exactly _dispatch_action's shape: the wire call under the lock, register_open only
+        # after releasing it.
+        async with ctx.lock("densitometer_1"):
+            await thermostat_acked.wait()
+        ctx.occupancy.register_open(OpenMode(
+            device="densitometer_1", mode_verb="set_thermostat",
+            teardown_verb="set_thermostat", teardown_params={"enabled": False},
+            channels=frozenset({"thermal"}), block_id="blocks[0].children[0]",
+        ))
+
+    lane = asyncio.ensure_future(thermostat_lane())
+    await clock.settle()
+    assert ctx.lock("densitometer_1").locked()  # the heater is switching on...
+    assert ctx.occupancy.open_modes("densitometer_1") == ()  # ...and is not yet in occupancy
+
+    guard = asyncio.ensure_future(_clear_orphaned_job(exc, [job], measure_block, ctx))
+    await clock.settle()  # the guard takes its stale snapshot and queues on the lock
+
+    thermostat_acked.set()  # the ack lands: lock released, THEN register_open
+    may_retry = await guard
+    await lane
+
+    assert may_retry is False  # refused, on the mode it could only see from inside the lock
+    assert [c[1] for c in fake.calls] == []  # no stop ever reached the wire
+    assert len(ctx.occupancy.open_modes("densitometer_1")) == 1  # thermostat still held
+    assert job.job_id in ctx.in_flight  # still live on the hardware: the finalizer must stop it
+    assert "set_thermostat" in str(exc)  # ...and the reason reaches the run log
+    assert [e.kind for e in ctx.log_sink.events].count("job_cancelled") == 0
+
+
+def test_refuse_retry_keeps_str_and_message_in_agreement():
+    """LabError.__init__ stores the message twice (args + .message). Folding the reason into
+    only one of them leaves str(exc) and exc.message disagreeing -- a latent trap."""
+    exc = core_errors.JobTimeoutError("job j-1 did not finish within 5.0s")
+
+    assert _refuse_retry(exc, "retry refused: it would have killed set_thermostat") is False
+
+    assert str(exc) == exc.message
+    assert "did not finish within" in exc.message  # the original error, preserved as a prefix
+    assert "retry refused" in exc.message
 
 
 async def test_workflow_defaults_apply_to_a_block_without_retry(fake_client):

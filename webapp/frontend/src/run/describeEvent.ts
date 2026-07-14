@@ -28,6 +28,10 @@ export function describeEvent(e: EventLike): string {
     case 'input_bound': return `${s(d.name)} = ${s(d.value)}`
     case 'finalize_started': return 'finalize started'
     case 'finalize_finished': return `finalize finished (${s(d.errors)} errors)`
+    case 'block_retried': return `retrying (attempt ${s(d.attempt)}/${s(d.of)}): ${s(d.error)}`
+    case 'job_poll_retried':
+      return `${s(d.device)}: poll of job ${s(d.job_id)} failed ` +
+        `(${s(d.failure)}/${s(d.of)}), still running: ${s(d.error)}`
     case 'job_cancelled': return `${s(d.device)}: job ${s(d.verb)} cancelled`
     case 'teardown_issued': return `${s(d.device)}: teardown ${s(d.verb)} issued`
     case 'sweep_command': return `${s(d.device)}: sweep ${s(d.verb)}`
