@@ -133,6 +133,28 @@ arrives with the executor in Increment 4, not in the serialized AST.)
 | `Branch` | `if: <condition>`, `then`, optional `else` |
 | `Group` | `name`, `body` — reusable; invoked by `GroupRef` |
 
+### 5.2a Block-level modifiers (amendment 2026-07-14)
+
+Added by [`2026-07-14-engine-fault-tolerance-design.md`](2026-07-14-engine-fault-tolerance-design.md).
+Both are **top-level block keys**, siblings of `label` / `gap_after` / `start_offset` — not
+fields of any one block type.
+
+| Key | Legal on | Meaning |
+|---|---|---|
+| `retry` | `Command`, `Measure` only | `{attempts, backoff?, allow_repeat?}`. **`attempts` is the TOTAL number of tries** (not retries-after-the-first); `backoff` is a **constant** delay, default `"1s"`, **no jitter**. Retries only transient device/transport faults — an author error, an operator abort and an `InvariantViolationError` are never retried. |
+| `on_error` | **any** block | `"fail"` (default) \| `"continue"`. `"continue"` absorbs a failure *at this block*: the rest of this subtree is skipped and the parent proceeds to the next sibling. On a **child of a `Parallel`** it isolates that lane — the siblings keep running (per-device fault isolation). On the `Parallel` itself the container is abandoned and the surviving lanes cancelled. |
+
+`retry` on a verb the registry does not mark `retry_safe` is a **validation error**;
+`allow_repeat: true` is the opt-in. It does not make the verb idempotent — `pump.dispense` takes
+a *relative* `volume_ml`, so a retry can **double-dose a culture**. `allow_repeat` is an explicit
+acceptance of that, recorded in the document where a reviewer can see it.
+
+A tolerated `Measure` only *maybe* writes its stream, so the path analyzer (§12) will reject a
+later windowed read of it unless it is **guarded** — and the guard must use a **duration** window
+(`count(S, last=D) > 0`) if the stream can go stale, because `count(S) > 0` is a whole-stream
+predicate over an append-only stream and stays true forever once written. See §5.2/§5.3 of the
+fault-tolerance design.
+
 ### 5.3 Data plane (declarations + expressions, not flow)
 
 - **`Stream`** declarations at top level: `{name, units?, persistence-override?}`.
@@ -356,7 +378,30 @@ Workflow-level default with per-stream override:
 - A per-stream `persistence` key overrides the default for that stream.
 - Applies to both measurement streams and the run log.
 
+### 15.1a Workflow defaults (amendment 2026-07-14)
+
+A top-level `defaults` section, sibling of `persistence`, resolved at load:
+
+```json
+"defaults": { "retry": { "attempts": 3, "backoff": "2s" } }
+```
+
+- Applies to every `command` / `measure` that does **not** carry its own `retry`. A block's own
+  `retry` wins outright; there is no merging.
+- It carries **`retry` only, never `on_error`.** A blanket "tolerate everything" would silently
+  make a missed *injection* survivable, and where tolerance belongs is a semantic choice per
+  subtree.
+- **A default never retries a non-idempotent verb.** It cannot carry `allow_repeat` (validation
+  error), and it silently does not apply to a verb the registry does not mark `retry_safe`. A
+  blanket policy must never start retrying `pump.dispense`.
+
+Without this, a 15-vial workflow would need ~60 hand-copied `retry` clauses while parametrized
+groups (§16, deferred) remain unbuilt.
+
 ### 15.2 Full example
+
+*(Amended 2026-07-14: the document below now shows `defaults`, `retry` and `on_error`, and the
+guarded read they oblige.)*
 
 ```json
 {
@@ -367,6 +412,7 @@ Workflow-level default with per-stream override:
     "description": "Feed pump_1 by live OD until target, stirring throughout."
   },
   "persistence": { "default": "disk", "format": "jsonl" },
+  "defaults": { "retry": { "attempts": 3, "backoff": "2s" } },
   "streams": {
     "OD":   { "units": "AU" },
     "temp": { "units": "C", "persistence": "in_memory" }
@@ -390,20 +436,26 @@ Workflow-level default with per-stream override:
 
       { "loop": {
           "check": "after",
-          "until": "mean(OD, last=5min) >= target_OD",
+          "until": "count(OD, last=5min) > 0 and mean(OD, last=5min) >= target_OD",
           "body": [
-            { "measure": { "device": "densitometer_1", "verb": "measure", "into": "OD" } },
-            { "command": { "device": "pump_1", "verb": "dispense",
-                           "params": { "volume_ml": "2.0 * (target_OD - mean(OD, last=100))",
-                                       "speed_ml_min": 3.0 } },
-              "gap_after": "30s" }
+            { "measure": { "device": "densitometer_1", "verb": "measure", "into": "OD" },
+              "on_error": "continue" },
+            { "branch": {
+                "if": "count(OD) > 0",
+                "then": [
+                  { "command": { "device": "pump_1", "verb": "dispense",
+                                 "params": { "volume_ml": "2.0 * (target_OD - mean(OD, last=100))",
+                                             "speed_ml_min": 3.0 } },
+                    "gap_after": "30s" }
+                ]
+            } }
           ]
       } },
 
       { "command": { "device": "pump_2", "verb": "stop" } },
 
       { "branch": {
-          "if": "last(OD) > target_OD",
+          "if": "count(OD) > 0 and last(OD) > target_OD",
           "then": [ { "command": { "device": "densitometer_1", "verb": "set_led",
                                    "params": { "level": 0 } } } ]
       } }
@@ -415,6 +467,26 @@ Workflow-level default with per-stream override:
 The `pump_2` rotate opens a continuous mode (free start/stop) closed by the later
 `pump_2 stop`, with no `pump_2` command in between — valid under §12. The dispense
 volume is a feedback expression over a binding and a stream stat.
+
+Reading the 2026-07-14 keys in it (amendment):
+
+- **`defaults.retry`** covers every `command`/`measure` here that is `retry_safe` — the
+  `measure` and `set_led`. It **does not** reach either `dispense`: `volume_ml` is relative, so a
+  retry could double-dose. Feeding twice is a worse outcome than feeding late, and the default
+  is built so that you cannot ask for it by accident. (To retry a dispense you must write
+  `retry: {..., "allow_repeat": true}` on the block itself, and mean it.)
+- **`on_error: "continue"` on the `measure`** buys the loop the right to survive a flaky
+  densitometer — at the price of a stream that is now only *maybe* written.
+- **So both reads of `OD` are guarded**, and note the two guards are not interchangeable. The
+  `until` reads a **duration** window, so its guard must be a duration `count` in the **same
+  expression** (short-circuit `and`) — a whole-stream `count(OD) > 0` would not prove the last
+  five minutes hold anything, and the loop would die on an empty window. The `dispense` param
+  reads a **sample** window (`last=100`) and cannot carry its own guard, so it moves inside a
+  `branch` whose `if` proves the stream non-empty; a whole-stream `count` suffices there, and its
+  proof survives into `then` because a stream is append-only.
+- Nothing here defends against a *stale* stream, only an empty one. If the loop's decision must
+  not run on a frozen trace, the guard has to be a duration window sized to the loop — see the
+  fault-tolerance design §5.3.
 
 ## 16. Package structure, testing, deferred work
 

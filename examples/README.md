@@ -27,6 +27,7 @@ Every cycle, each tube gets **1 ml of liquid — always the same volume**. The o
 *what is in it*:
 
 ```
+no reading this cycle           → nothing at all      (never decide without a reading)
 OD below OD_MIN (0.03)          → nothing at all      (too dilute to trust the reading)
 OD above OD_THR (0.15)  and  r > r_dil   → 1 ml of drug
 otherwise                       → 1 ml of plain medium
@@ -46,7 +47,10 @@ reports the quantity it is regulating.
 
 In the doc this is two nested `branch` blocks. The outer one has no `else` — **that missing
 `else` is the "do nothing" row of the table.** A tube too dilute to read is skipped entirely:
-no injection, and no drain either, so its volume is untouched.
+no injection, and no drain either, so its volume is untouched. The outer `if` carries the
+freshness guard as well, which is what folds the first row into the same missing `else`: a tube
+that produced no reading *this cycle* takes the same no-op path. That guard is load-bearing —
+see [Surviving a flaky device](#surviving-a-flaky-device).
 
 ## Growth rate without a regression
 
@@ -75,9 +79,15 @@ r = m / OD
 
 Two things make this faithful rather than merely convenient:
 
-- **The sign is exact.** `ln` is monotone, so `sign(d(ln OD)/dt) = sign(d OD/dt)`. The decision
-  is fundamentally a sign test, and it is preserved perfectly.
+- **The direction is exact.** `ln` is monotone, so `sign(d(ln OD)/dt) = sign(d OD/dt)`: this
+  estimator can never disagree with the paper's about whether a culture is growing or shrinking.
 - **The magnitude is the right variable.** `r = (dOD/dt)/OD` *is* the specific growth rate.
+
+Note what that does *not* say. **The decision is not a sign test.** `r > r_dil` is a
+**threshold** test at a positive setpoint, and the controller's whole purpose is to pin `r` at
+that threshold — so in steady state the comparison is habitually marginal, and the magnitude
+carries the decision, not the sign. That matters when the trace loses a sample; see
+[Surviving a flaky device](#surviving-a-flaky-device).
 
 The growth phase samples every tube 10 times (`dt = 1 min`, so `n = 5`), which collapses the
 whole thing to one line the engine evaluates natively:
@@ -125,14 +135,14 @@ does not move it — which is why an operator confirmation comes first.
 serial
 ├─ operator_input   od_min, od_thr, r_dil, dose_ml, drug_stock_x_mic
 ├─ operator_input   blanks_ready?
-├─ serial           thermostats → 30 °C          ← serial on purpose, see below
+├─ parallel         thermostats → 30 °C          ← retry ×6 rides out a device-store race
 ├─ serial           measure_blank → blank_1..3   ← every later OD is relative to this
 ├─ operator_input   cultures_ready?  (valves physically parked at 0?)
 ├─ serial           home + configure the 3 valves
 └─ loop ×120, pace 12min                          ← one 24 h "day"
    ├─ loop ×10, pace 1min                         ← growth phase
-   │  └─ parallel   read tube 1 | tube 2 | tube 3
-   ├─ tube 1 service ─┐
+   │  └─ parallel   read tube 1 | tube 2 | tube 3   ← each read tolerated; lanes are isolated
+   ├─ tube 1 service ─┐  each guarded by count(od_N, last=11min) > 0
    ├─ tube 2 service  ├─ serial — see below
    ├─ tube 3 service ─┘
    └─ parallel        park all 3 valves closed
@@ -146,32 +156,182 @@ to service them in parallel is not a style mistake; the engine's occupancy check
 the workflow, because two lanes would be reaching for the same pump. The hardware topology
 dictates the block structure, and the validator enforces it.
 
-**Why the setup is `serial` even though it looks parallelisable** — a subtler lesson, and one
-the validator will *not* teach you. `set_thermostat`, `home`, and `configure` persist device
-state to a file on the agent host, keyed by the device's *serial number*. On a test rig whose
-simulated devices are clones (all three densitometers reporting the same serial), those three
-files are **one** file — so setting three thermostats at once means three writers racing on it,
-which fails ~92% of the time and kills the run. The first live run of this example died exactly
-that way, 26 s in. Serialising costs about two seconds. The monitor loop stays parallel because
-`measure` is a pure read — verified over 90 concurrent calls. On real hardware with unique
-serials this should not arise; details and the fix in
+**Why the setup blocks look the way they do** — a subtler lesson, and one the validator will
+*not* teach you. `set_thermostat`, `home`, and `configure` persist device state to a file on the
+agent host, keyed by the device's *serial number*. On a test rig whose simulated devices are
+clones (all three densitometers reporting the same serial), those three files are **one** file —
+so setting three thermostats at once means three writers racing on it, which fails ~92% of the
+time and kills the run. The first live run of this example died exactly that way, 26 s in.
+
+The example originally serialised the whole setup to dodge it. It no longer has to: the
+thermostat block is `parallel` again, with `retry: {attempts: 6, backoff: "1s"}` on each lane.
+The race is transient and `set_thermostat` is an absolute setter, so re-issuing it lands the
+same state. **Six attempts, not three** — the three lanes fail *together*, the back-off has no
+jitter so they retry together, and the contenders only thin out as each round's winner drops out
+(3 → 2 → 1). Three attempts is zero headroom. The blanks and the valve `home`/`configure` stay
+serial: also one-time, and there was nothing to buy back. The monitor loop was always parallel,
+because `measure` is a pure read — verified over 90 concurrent calls. On real hardware with
+unique serials none of this arises; details and the real fix in
 [`../docs/experiment-engine-limitations.md`](../docs/experiment-engine-limitations.md).
 
 `pace` is a floor, not a deadline: the 10 min growth phase plus a ~1.4 min dilution pass fits
 inside the 12 min cycle, so cycles start exactly 12 min apart.
 
-## Before you trust this with a real experiment
+## Surviving a flaky device
 
-> **A single flaky sensor read will destroy your run.** The engine has no retry and no error
-> tolerance: any device error fails the whole experiment. A live run of the demo-speed doc got
-> to cycle 17 of 25 and was killed by one transient `measure` fault on one densitometer — a
-> block that had already succeeded ~170 times.
+A live run of the demo-speed doc once got to **cycle 17 of 25, 23 minutes in**, and was killed
+by one transient `measure` fault on one densitometer — a block that had already succeeded ~170
+times. The faithful doc takes **3,600 measurements** in 24 h and the published experiment runs
+for **three weeks**, so a per-read fault probability of 1-in-1000 gives a 24 h run a ~97% chance
+of dying.
+
+That is fixed. The engine has `retry` and `on_error`, and this example uses both — it now runs
+to completion *through* that class of fault. What follows is how to author them without hurting
+a culture, because the features are small and the ways to misuse them are not.
+
+### `retry` — ride out a transient fault
+
+```json
+"defaults": { "retry": { "attempts": 3, "backoff": "2s" } }
+```
+
+A workflow-level default, applied to every `command`/`measure` that does not carry its own
+policy. (You can put `retry` on a single block too; the thermostats do.)
+
+- **`attempts` is the TOTAL number of tries**, not retries-after-the-first. `attempts: 3` means
+  the block is dispatched at most three times.
+- **`backoff` is a constant delay** between attempts (default `"1s"`). There is **no jitter**,
+  so retry does not de-synchronize a thundering herd: lanes that fail together retry together.
+  That is why the thermostat block asks for 6 attempts and not 3.
+- Only *transient* errors are retried — a device or transport fault. An author error (unknown
+  device, bad params, an empty stream window) fails immediately, because it would fail
+  identically forever. An operator abort is never delayed.
+
+### `allow_repeat` is **not** a safety feature
+
+`retry` is a validation error on a verb the registry does not mark `retry_safe`, and
+`allow_repeat: true` is the escape hatch. **It does not make the verb safe to retry.**
+
+`pump.dispense` takes a **relative** `volume_ml`. If the job fails part-way through and the
+engine retries it, the culture gets a **second dose on top of what already went in**.
+`allow_repeat` says, in the document where a reviewer can see it: *I accept that a retry may
+repeat this action* — which on a drug pump means *I accept that this culture may be
+double-dosed.*
+
+This example never writes it. Its four injection blocks are therefore **not retried at all**,
+and that is deliberate: a workflow-wide `defaults.retry` **can never reach a non-idempotent
+verb**, so the pumps are excluded from the default automatically. A missed injection costs one
+cycle. A doubled one corrupts the experiment silently, which is worse.
+
+### `on_error: "continue"` — where to put the catch
+
+```json
+{ "measure": { "device": "od_meter_1", "verb": "measure", "into": "od_1" },
+  "on_error": "continue" }
+```
+
+`on_error` is legal on **any** block, and it absorbs a failure *at that block*: the rest of that
+subtree is skipped and the parent moves on. Put it on the subtree that should absorb the fault,
+which is rarely the block that fails.
+
+Here it sits on each OD read, which are the three children of a `parallel` — and **`on_error` on
+a parallel child isolates that lane.** The fault is absorbed inside that lane's task, so the
+other two densitometers keep reading. One dead tube does not cost you the other two.
+
+Tolerance is a scientific claim, not a robustness setting, so it is not applied uniformly:
+
+| Block | Tolerated? | Why |
+|---|---|---|
+| OD reads | **yes** | A dropped sample costs one of ten in a cycle. |
+| `measure_blank` | **no** | A failed blank is a setup failure. Stop before any culture is committed. |
+| `set_thermostat` | **no** | A silently-unset thermostat is a scientific defect, not a lost sample. |
+| the injections | **no** | A failure here means the tube's state is unknown. Do not carry on. |
+
+### The guard idiom — and the thing that will actually hurt you
+
+A tolerated `measure` only *maybe* writes its stream, so the validator will no longer let a
+later windowed read of it through unguarded. That is honest: if every read in a growth phase
+failed, the stream is empty, and `mean()` over an empty window is a run-killing error — the very
+failure we just removed. So you must guard the decision:
+
+```json
+{ "branch": { "if": "count(od_1, last=11min) > 0 and last(od_1) >= od_min",
+              "then": [ ... the whole decision tree ... ] } }
+```
+
+**The rule: if you tolerate a `measure`, guard the read with a DURATION window —
+`count(S, last=D) > 0` — sized to your control loop. Never a bare `count(S) > 0`.**
+
+A bare `count(S) > 0` fails you twice. First, it does not prove a *duration*-windowed read is
+safe (a stream can be non-empty while its last 30 minutes hold nothing) — the validator catches
+that one. Second, and this is the one no validator can catch, because the workflow is perfectly
+well-formed:
+
+> **A bare `count(S) > 0` cannot see a sensor that has *newly* died.** A stream is
+> **append-only**, so once a tube has read even once, `count(od_1) > 0` is true **forever**. A
+> densitometer that dies at cycle 40 leaves the guard standing while `last(od_1)` and both
+> trailing means freeze on the last successful trace. The condition becomes a **constant**, the
+> same arm fires every remaining cycle with no feedback at all — and since a healthy vial is
+> above `OD_THR` and out-growing its dilution *by construction*, the arm that latches is
+> frequently **drug**. Every latched cycle walks `c_k = c_{k-1}·V/(V+ΔV) + C·ΔV/(V+ΔV)` toward
+> its fixed point, which is `C`: the undiluted stock. **That is an open-loop drug injector
+> running on a dead sensor. It sterilizes the vial, and the run reports `status: completed`.**
 >
-> The faithful doc takes **3,600 measurements** in 24 h, and the published experiment runs for
-> **three weeks**. Until the engine gains a retry policy, treat a long unattended run as a
-> lottery, and watch it. This is limitation #0 in
-> [`../docs/experiment-engine-limitations.md`](../docs/experiment-engine-limitations.md) — it
-> is not a flaw in the algorithm or in this document, and there is no workflow-level fix.
+> Measured, tube 3's sensor killed after cycle 1: **120/120 injections were drug**, drug → 9.999
+> (Stock A, 10× MIC), OD → 0.0003 — a **1,600× collapse**. It is pinned by
+> `test_a_dead_sensor_does_not_latch_an_open_loop_injector`.
+
+A duration window is what proves a sample landed **this cycle**, which no whole-stream predicate
+can. Size it long enough to span one cycle's sampling and short enough to expire within one
+cycle:
+
+```
+growth phase   10 samples × 1 min  =  10 min   ← age of this cycle's OLDEST sample at decision time
+guard window                          11 min   ←  10 min  <  11 min  <  12 min
+cycle pace                            12 min   ← a sample from the PREVIOUS cycle must not qualify
+```
+
+Too wide and you re-open the latch. Too narrow and you skip a tube that did read. The
+demo-speed doc scales the same rule to `last=45s` (30 s < 45 s < 60 s). **This constant is
+coupled to the pace, and nothing in the engine checks it** — it is the second of the two
+hand-computed constants in these docs, and the more dangerous one.
+
+Read the guard for exactly what it says: **a tube that produced no reading this cycle is skipped
+entirely** — no injection of either kind — until it reads again. Skipping withholds the dilution
+along with the drug, which does perturb the culture. It is far less bad than dosing a vial
+nobody is watching.
+
+### A dropped sample biases the growth rate — downward, and that is fine
+
+The slope estimator assumes evenly spaced samples. Be precise about how a drop perturbs it,
+because it is not what you would guess. `mean(od_1, last=10)` is a **sample** window —
+`samples[-10:]` — so it always returns ten values. On a lossy cycle it therefore reaches back
+**across the cycle boundary** and pulls in the previous cycle's final samples: taken *before*
+that cycle's injection, ~6–8% higher in OD, and a full cycle older. The window is *wider* than
+it looks, not narrower, and it straddles a dilution discontinuity.
+
+Simulated against a true `r` of 0.8/h: one dropped sample biases `r_est` by −11.5% to +3.9%
+depending where in the trace it falls (worst case **−15.5%**); three drops in one cycle, −12.6%.
+Bounded, and biased **downward** — toward *withholding* drug, the conservative direction.
+
+Why that is tolerable, honestly: **not** because the decision is a sign test — as noted above,
+it is a *threshold* test at `r_dil`, and the controller pins the culture at that threshold, so
+its decisions are habitually marginal and a 15% bias really can flip one. What makes it safe is
+the **cost** of a flip, not its rarity. A flipped decision costs one wrong 1 ml injection; **ΔV
+is identical in both arms**, so the dilution rate is untouched either way; and the bang-bang
+loop self-corrects on the next clean cycle. (Simulated: a tube riding out ~40 transient faults
+still lands at drug ≈ 1.24 ≈ IC₅₀ — the same place as the fault-free control.)
+
+### Read the log before you trust a cycle
+
+Retry and tolerance are recorded, never silent: `block_retried`, `block_error_tolerated` and
+`job_poll_retried` events in the run log, and `tolerated_errors` in the run report. A run that
+dropped 40 samples must not look like a clean one. It won't — but only if you look.
+
+What is still *not* solved is catalogued as limitations #1–#8 in
+[`../docs/experiment-engine-limitations.md`](../docs/experiment-engine-limitations.md). The one
+that bites hardest here: the engine can survive a dead sensor, but it cannot **flag** one and
+stop. Nothing wakes you up.
 
 ## Running it
 
@@ -189,8 +349,11 @@ Before your first real run, do the pre-flight of the algorithm doc §3: measure 
 `r_dil ≈ r₀/2`, and determine the MIC. **`r_dil` must be less than `r₀`** or the culture washes
 out no matter what you do.
 
-To change the cycle time, edit `pace` and `count` — they are literals, not expressions, so
-they cannot be operator inputs — **and remember to update the slope constant.**
+To change the cycle time, edit `pace` and `count` — they are literals, not expressions, so they
+cannot be operator inputs — **and recompute BOTH pace-coupled constants: the slope constant
+(`24`) and the guard's freshness window (`last=11min`).** Nothing checks either one. Getting the
+slope constant wrong biases the decision; getting the freshness window wrong can latch a drug
+pump open on a dead sensor.
 
 ## What the example deliberately does not do
 
@@ -201,6 +364,10 @@ they cannot be operator inputs — **and remember to update the slope constant.*
   so a single reusable `service(tube)` macro is not yet expressible.
 - **There is no Stock A → Stock B escalation.** It needs a second drug line, and the
   escalation predicate is cross-cycle state the engine cannot hold.
+- **It cannot raise the alarm.** The guard means a tube whose sensor has died is *skipped*
+  safely rather than dosed blindly — but nothing stops the run, and nothing tells you. A tube
+  can sit skipped for hours while the run reports healthy. Check `tolerated_errors`. There is no
+  `abort`/`alarm` block yet (limitation #7).
 
 These are engine limitations, not modelling choices, and they are catalogued in
 [`../docs/experiment-engine-limitations.md`](../docs/experiment-engine-limitations.md).
@@ -218,6 +385,9 @@ TURBIDOSTAT   OD > OD_TARGET             → medium, else nothing  (invert the o
 ## Verifying changes
 
 `tests/test_examples_morbidostat.py` runs these docs against simulated cultures — exponential
-growth, dilution on injection, drug inhibition — and asserts the loop actually closes: that
-the controller pins each culture near its IC₅₀ instead of letting it run away. If you edit an
-example, run that test.
+growth, dilution on injection, drug inhibition — and asserts the loop actually closes: that the
+controller pins each culture near its IC₅₀ instead of letting it run away. It also pins the
+fault tolerance described above: that a run survives the transient fault that killed the live
+one, that a lane failure does not take its siblings down, and — most importantly — that **a dead
+sensor does not latch the drug pump open**. If you edit an example, run that test. If you widen
+or delete a guard's freshness window, that last test is the one that will catch you.

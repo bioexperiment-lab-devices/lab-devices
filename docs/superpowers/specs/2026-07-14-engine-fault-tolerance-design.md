@@ -1,7 +1,11 @@
 # Experiment engine — fault tolerance (retry + `on_error`)
 
 - **Date:** 2026-07-14
-- **Status:** Approved at brainstorm; not yet implemented
+- **Status:** **Implemented** (2026-07-14). Two sections carry post-implementation amendments
+  where the draft was wrong: **§5.3** (a bare `count(S) > 0` guard does *not* skip a dead
+  tube's cycle — it latches an open-loop drug injector) and **§5.4** (the decision is *not* a
+  sign test). Both are marked in place. §1 below is the problem statement as it stood before
+  the feature; it is history, not current behaviour.
 - **Implements:** `docs/experiment-engine-limitations.md` §0 — "No retry, and no tolerance for a
   transient device fault", all three suggested features.
 - **Depends on:** Increments 1–5 (`lab_devices.experiment`), Experiment Studio W1–W6. All on main.
@@ -301,22 +305,54 @@ loosening of the no-runtime-`EvaluationError` proof.
 
 ### 5.3 What this means for an author
 
-Tolerate the read, guard the decision:
+> **Amendment, 2026-07-14 (post-implementation).** As drafted, this section said *"a tube whose
+> sensor is dead skips its cycle"* of a bare `count(od_1) > 0` guard. **That is false, and it is
+> the most dangerous sentence in this document.** `count(S) > 0` with no window is a predicate
+> over the **whole** stream, and `Stream` is **append-only** — so once a tube has read even once
+> it is true *forever*. A sensor that dies mid-run leaves the guard **standing**, while
+> `last(od)` and both trailing means freeze on the last successful trace. The condition becomes
+> a **constant**: the same arm fires every remaining cycle with no feedback at all, and since a
+> healthy vial is above `OD_THR` and out-growing its dilution by construction, the arm that
+> latches is frequently **drug**. Each latched cycle walks the §1 concentration recursion toward
+> its fixed point, `C` — the undiluted stock. That is an open-loop drug injector on a dead
+> sensor: it **sterilizes the vial while the run reports `status: "completed"`.** Measured (tube
+> 3's sensor killed after cycle 1 of 120): 120/120 injections were drug, `c` → 9.999 = Stock A,
+> OD → 0.0003, a **1,600× collapse**.
+>
+> A bare `count(S) > 0` detects a sensor that **never worked**. It cannot detect one that has
+> **newly died**, which is the only failure this feature is exposed to. Only a **duration**
+> window can — it proves a sample landed *recently*, which no whole-stream predicate can.
+>
+> **The corrected rule: if you tolerate a `measure`, guard the read with a duration window,
+> `count(S, last=D) > 0`, sized to the control loop** — long enough to span one cycle's
+> sampling, short enough to expire within one cycle. The shipped example uses `last=11min`
+> (growth phase 10 × 1 min = 10 min < **11 min** < 12 min cycle pace); the demo-speed doc scales
+> it to `last=45s` (30 s < 45 s < 60 s). Note that this constant is coupled to the loop's pace
+> and **the engine cannot check it** — there is no freshness primitive and no way to derive one
+> from a loop's own `pace`. It is a sharp edge, and it is the price of tolerance.
+>
+> The lattice in §5.2 is unaffected and was right: it is this section's *application* of it that
+> was wrong. Regression test: `test_a_dead_sensor_does_not_latch_an_open_loop_injector`.
+
+Tolerate the read, guard the decision — with a **freshness** guard:
 
 ```json
 { "measure": {"device": "od_meter_1", "into": "od_1"},
   "retry": {"attempts": 3, "backoff": "2s"},
   "on_error": "continue" },
 ...
-{ "branch": {"if": "count(od_1) > 0", "then": [ ...the whole decision tree... ]} }
+{ "branch": {"if": "count(od_1, last=11min) > 0", "then": [ ...the whole decision tree... ]} }
 ```
 
 Scientifically this is the right shape anyway: **you must not decide on injections without a
-reading.** A tube whose sensor is dead skips its cycle; its neighbours are untouched.
+reading.** A tube that produced no reading *this cycle* skips its cycle entirely — no injection
+of either kind — and its neighbours are untouched.
 
-That bare `count(od_1) > 0` covers a decision tree built from sample windows (`last=5`, `last=10`)
-and whole-stream stats — which is what the morbidostat uses. **If the tree reads a *duration*
-window, the guard must name that window and sit in the same expression as the read:**
+~~That bare `count(od_1) > 0` covers a decision tree built from sample windows (`last=5`,
+`last=10`) and whole-stream stats — which is what the morbidostat uses.~~ *(Struck by the
+amendment above: it is sound as a static proof and unsound as a freshness check.)*
+**If the tree reads a *duration* window, the guard must name that window and sit in the same
+expression as the read:**
 
 ```json
 { "branch": {"if": "count(od_1, last=5min) > 0 and mean(od_1, last=5min) > od_thr",
@@ -329,9 +365,34 @@ guard in an enclosing `branch.if` does not survive into a body that can `wait`.
 ### 5.4 Sharp edge to document
 
 The morbidostat's slope estimator `m = 2·(mean(last=n) − mean(last=2n)) / (n·dt)` assumes evenly
-spaced samples. A dropped sample perturbs it slightly. Retry makes drops rare; a single drop in
-ten biases the slope marginally and the decision is a sign test, so it is tolerable — but it is
-a real caveat and belongs in the example's prose, not buried here.
+spaced samples. A dropped sample perturbs it. Retry makes drops rare, and it is tolerable — but
+it is a real caveat and belongs in the example's prose, not buried here.
+
+> **Amendment, 2026-07-14 (post-implementation).** As drafted, this section justified that with
+> *"the decision is a sign test"*. **That is false.** The *published* rule (ΔOD > 0) is a sign
+> test; the example does not implement that rule. It re-expresses the decision as
+> `24 * (mean(last=5) - mean(last=10)) / last(od) > r_dil` — a **threshold test at `r_dil`**, a
+> positive setpoint. Worse, by the controller's own design invariant (`r_dil = r₀/2`) the
+> culture is **pinned at that threshold in steady state**, so its decisions are *habitually
+> marginal* — precisely the regime in which a small bias flips one. "Sign test" was exactly the
+> wrong reassurance.
+>
+> Two things the drafted section also got quantitatively wrong. The perturbation is not small,
+> and it is not what you would guess: `mean(od, last=10)` is a **sample** window
+> (`samples[-10:]` over an append-only stream), so on a lossy cycle it always still returns ten
+> values and therefore reaches **back across the cycle boundary**, pulling in the previous
+> cycle's pre-injection samples — ~6–8% higher in OD, and a full cycle older. The window is
+> *wider* than intended, not narrower, and it straddles a dilution discontinuity. Simulated on
+> the faithful doc against a true `r` of 0.8/h: one dropped sample biases `r_est` by −11.5% to
+> +3.9% (worst case **−15.5%**); three drops in one cycle, −12.6%.
+>
+> **The correct justification is the cost of a flip, not its rarity.** The bias is bounded and
+> **downward** — toward *withholding* drug, the conservative direction. A flipped decision costs
+> **one wrong 1 ml injection**; **ΔV is identical in both arms**, so the dilution rate — the
+> quantity the whole controller rests on — is untouched either way; and the bang-bang loop
+> self-corrects on the next clean cycle. (Simulated: a tube riding out ~40 transient faults
+> still lands at drug ≈ 1.24 ≈ IC₅₀, the same place as the fault-free control.) The conclusion
+> ("tolerable") stands; the reasoning that produced it did not.
 
 ### 5.5 The same join applies to modes, not just streams
 
