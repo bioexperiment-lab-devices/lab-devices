@@ -104,6 +104,13 @@ def test_proven_nonempty_rejects_non_guards():
     assert proven_nonempty(parse_expression("count(od_1) >= 0")) == {}
     assert proven_nonempty(parse_expression("count(od_1) < 3")) == {}
     assert proven_nonempty(parse_expression("mean(od_1, last=3) > 0.4")) == {}
+    # A guard under `not` is deliberately not recognised: `not (count(od_1) > 0)` proves
+    # the stream is EMPTY when the whole expression is true, not the reverse.
+    assert proven_nonempty(parse_expression("not (count(od_1) > 0)")) == {}
+    # A guard nested in an `or` alongside a non-guard operand is deliberately not
+    # recognised either: the expression can be true via the other disjunct without the
+    # guard ever holding.
+    assert proven_nonempty(parse_expression("count(od_1) > 0 or true")) == {}
 
 
 def test_proven_nonempty_combines_over_and_or():

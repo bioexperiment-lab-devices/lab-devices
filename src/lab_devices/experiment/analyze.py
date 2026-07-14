@@ -175,7 +175,7 @@ def conjoin_proofs(a: ProvenWindows, b: ProvenWindows) -> dict[str, Window]:
     return joined
 
 
-def _disjoin_proofs(a: ProvenWindows, b: ProvenWindows) -> dict[str, Window]:
+def disjoin_proofs(a: ProvenWindows, b: ProvenWindows) -> dict[str, Window]:
     """Only one proof holds (`or`): keep streams proven by both, at the *weakest* proof."""
     return {stream: _weaker(a[stream], b[stream]) for stream in a.keys() & b.keys()}
 
@@ -205,7 +205,7 @@ def proven_nonempty(expr: Expr) -> dict[str, Window]:
         if expr.op == "and":
             return conjoin_proofs(proven_nonempty(expr.left), proven_nonempty(expr.right))
         if expr.op == "or":
-            return _disjoin_proofs(proven_nonempty(expr.left), proven_nonempty(expr.right))
+            return disjoin_proofs(proven_nonempty(expr.left), proven_nonempty(expr.right))
         return _proven_by_comparison(expr)
     return {}
 

@@ -620,6 +620,13 @@ def _visit_parallel(b: B.Parallel, path: str, state: _PathState, c: _Ctx) -> _Pa
     for e in exits:  # the container completes when every lane does: union of writes
         state.bindings |= e.bindings
         state.streams |= e.streams
+        # No-op, by induction: `Branch` is the only place `nonempty` ever grows, and
+        # `_merge` immediately intersects it back out at that same branch's exit, so a
+        # lane's exit `nonempty` always equals its entry `nonempty` (the shared `state`
+        # copied into every lane, per the comment above). Kept, and spelled out, so a
+        # future reader does not "fix" this into cross-lane proof sharing — that would be
+        # unsound: sibling lanes are unordered, so one lane's guard proves nothing about
+        # whether another lane's measure ran.
         state.nonempty |= e.nonempty
         # Footprint disjointness means each lane owns the modes it touches:
         # apply every lane's delta against the shared entry.

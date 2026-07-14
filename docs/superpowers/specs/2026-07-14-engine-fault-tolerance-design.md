@@ -333,6 +333,19 @@ spaced samples. A dropped sample perturbs it slightly. Retry makes drops rare; a
 ten biases the slope marginally and the decision is a sign test, so it is tolerable — but it is
 a real caveat and belongs in the example's prose, not buried here.
 
+### 5.5 The same join applies to modes, not just streams
+
+`_merge(entry, exit)` (§5.2) is the whole `_PathState` join, not a streams-only special case — it
+also intersects `modes` (`validate.py`'s `_merge`, used by every tolerant block via `_visit`). So a
+tolerated **mode-closing** command (its `close` dispatch is on the `on_error: "continue"` block)
+leaves that mode `"maybe"` open rather than closed: the entry state still has it `"open"`, the exit
+state has it popped/closed, and the join of `"open"` with absent is `"maybe"`, exactly as an
+unresolved tolerated *open* is today. A later command on the same channel then draws the existing
+"possibly open interval" diagnostic. This is honest — the close may genuinely not have happened —
+and nothing spuriously breaks, because there is no end-of-workflow unclosed-mode check to trip. It
+is a behaviour change beyond streams that the rest of §5 does not otherwise scope to, recorded here
+for completeness.
+
 ## 6. Schema and the three mirrors
 
 Both fields are **top-level block keys**, siblings of `label`/`gap_after`/`start_offset` —

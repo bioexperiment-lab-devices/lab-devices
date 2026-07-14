@@ -216,6 +216,16 @@ def test_a_bare_count_guard_still_discharges_sample_and_whole_stream_reads():
     ))
 
 
+def test_a_guard_to_the_right_of_an_and_does_not_protect_reads_to_its_left():
+    """The evaluator short-circuits left-to-right (evaluate.py:85): `mean` is evaluated
+    before `count(od_1) > 0` ever runs, so a guard to the right of the read is no guard at
+    all — if every attempt of the tolerated measure fails, `mean` raises on an empty
+    window regardless of what the untaken right operand would have proved."""
+    with pytest.raises(ValidationError) as exc:
+        _validate(_guarded("mean(od_1, last=3) > 0.4 and count(od_1) > 0"))
+    assert any("no preceding measure" in d.message for d in exc.value.diagnostics)
+
+
 def test_the_branch_then_form_matches_the_and_form():
     """Same guards, same reads, seeded through branch.then instead of an `and` chain."""
     body = [{"branch": {"if": "mean(od_1, last=3) > 0.4",
@@ -230,16 +240,63 @@ def test_the_branch_then_form_matches_the_and_form():
 
 def test_a_duration_guard_does_not_cross_into_the_branch_body():
     """A duration proof holds for the expression that establishes it (one `now`), but not
-    for the body it guards: `now` advances while the body runs, so a `wait` inside `then`
-    ages the guard's sample straight back out of the read's window."""
-    body = [
+    for the body it guards: `now` advances as soon as the body runs, so a duration-windowed
+    read anywhere inside `then` needs its own guard — whether or not a `wait` sits before it.
+    (A `wait` is not what breaks the proof; merely running the body does.)"""
+    with_wait = [
         {"wait": {"duration": "10min"}},
         {"branch": {"if": "mean(od_1, last=5min) > 0.4",
                     "then": [{"wait": {"duration": "1s"}}]}},
     ]
+    without_wait = [
+        {"branch": {"if": "mean(od_1, last=5min) > 0.4",
+                    "then": [{"wait": {"duration": "1s"}}]}},
+    ]
+    for body in (with_wait, without_wait):
+        with pytest.raises(ValidationError) as exc:
+            _validate(_guarded("count(od_1, last=5min) > 0", body))
+        assert any("duration window" in m for m in _messages(exc))
+
+
+def test_a_branch_guard_does_not_seed_the_else_arm():
+    """The guard proves od_1 non-empty on the `then` side, where `count(od_1) > 0` is TRUE.
+    On the `else` side it is FALSE — od_1 may be empty there — so seeding else_state with
+    the same proof would be unsound. A windowed read nested in the else arm must still be
+    rejected for want of a guard."""
     with pytest.raises(ValidationError) as exc:
-        _validate(_guarded("count(od_1, last=5min) > 0", body))
-    assert any("duration window" in m for m in _messages(exc))
+        _validate({
+            "schema_version": 1,
+            "streams": {"od_1": {}},
+            "blocks": [
+                _TOLERANT_MEASURE,
+                {"branch": {
+                    "if": "count(od_1) > 0",
+                    "then": [{"wait": {"duration": "1s"}}],
+                    "else": [{"branch": {"if": "mean(od_1, last=3) > 0.4",
+                                         "then": [{"wait": {"duration": "1s"}}]}}],
+                }},
+            ],
+        })
+    assert any("no preceding measure" in d.message for d in exc.value.diagnostics)
+
+
+def test_a_branch_guard_does_not_leak_past_the_branch():
+    """_merge intersects `nonempty` back out at the branch's exit (the `then` side has the
+    proof, the untaken `else` side does not), so a read after the branch closes must not
+    inherit the `then` arm's proof."""
+    with pytest.raises(ValidationError) as exc:
+        _validate({
+            "schema_version": 1,
+            "streams": {"od_1": {}},
+            "blocks": [
+                _TOLERANT_MEASURE,
+                {"branch": {"if": "count(od_1) > 0",
+                            "then": [{"wait": {"duration": "1s"}}]}},
+                {"branch": {"if": "mean(od_1, last=3) > 0.4",
+                            "then": [{"wait": {"duration": "1s"}}]}},
+            ],
+        })
+    assert any("no preceding measure" in d.message for d in exc.value.diagnostics)
 
 
 def test_an_untolerated_measure_still_allows_a_duration_window_read():
