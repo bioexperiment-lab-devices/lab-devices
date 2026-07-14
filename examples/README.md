@@ -270,6 +270,53 @@ Tolerance is a scientific claim, not a robustness setting, so it is not applied 
 | `set_thermostat` | **no** | A silently-unset thermostat is a scientific defect, not a lost sample. |
 | the injections | **no** | A failure here means the tube's state is unknown. Do not carry on. |
 
+That table is a **read/write split**, not a guess about which failures are likely. Which brings us
+to the half of `on_error` that the rest of this document, and the design docs, and the engine
+itself, will not warn you about.
+
+### Tolerance is for READS. Never tolerate an actuation and then build on it.
+
+Every piece of guidance above is about tolerating a **measurement**. A dropped sample costs you
+*information*, and the guard idiom below is how you refuse to decide without it.
+
+**A dropped actuation costs you the state of the world** — and the engine does not know that, the
+validator cannot see it, and the very next block will run as though nothing happened.
+
+The sharpest case, on exactly this hardware, and it is not hypothetical:
+
+```json
+{ "command": { "device": "drug_valve", "verb": "set_position", "params": { "position": 1 } },
+  "on_error": "continue" },
+{ "command": { "device": "drug_pump", "verb": "dispense", "params": { "volume_ml": 1.0 } } }
+```
+
+The `set_position` fails. `on_error` absorbs it. The run **carries straight on to the dispense** —
+with the valve still on the **previous tube's port**. Tube 1 receives the dose meant for tube 2.
+Silently: both blocks are accounted for, the run reports `completed`, and `tolerated_errors` holds
+one valve error and not one word about a vial that got the wrong liquid.
+
+> **The rule: tolerance is for reads. Tolerating a command that moves the world leaves the world
+> in an unknown state, and every block after it inherits that state.**
+
+If you tolerate an actuation anyway, **you** own the recovery — the engine will not do it for you:
+
+- **Re-establish the state before anything depends on it.** Re-`home`, re-issue the
+  `set_position`, re-`set_thermostat` — in the same subtree, *before* the block that assumes it.
+- **The finalizer will not save you.** It sweeps every touched device to a safe state at **end of
+  run**, not between blocks. In the twelve minutes between a tolerated valve fault and the
+  finalizer, every dispense on that channel goes wherever the rotor happens to be sitting.
+- **Usually the right move is to put the catch HIGHER instead** — on the whole tube-service
+  subtree, not on the valve inside it. Then a failed valve skips the dispense *with* it, and the
+  tube loses one cycle instead of receiving the wrong liquid. This is what "put `on_error` on the
+  subtree that should absorb the fault" means in practice: **a fault inside a sequence of
+  actuations is absorbed by abandoning the sequence, never by continuing it.** (It recovers
+  cleanly here because `set_position` is *absolute*: the next cycle's service subtree re-issues it
+  before its own dispense.)
+
+This example therefore tolerates the three OD reads and **nothing else**. The four injection
+blocks are not tolerated at all — a failure there means the tube's physical state is unknown, and
+stopping beats guessing.
+
 ### The guard idiom — and the thing that will actually hurt you
 
 A tolerated `measure` only *maybe* writes its stream, so the validator will no longer let a

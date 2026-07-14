@@ -181,6 +181,13 @@ no shared file) **0/25**; `measure` (pure read) survived **90 concurrent calls**
 is *not* aliased — writing `pump_1`'s calibration left `pump_2/3` untouched — so there is no
 silent cross-talk, only a loud failure on the persist path.
 
+> **Correction, 2026-07-14.** That **23/25 (92%)** is the rate this doc measured with raw parallel
+> client calls, and it is roughly three times too high. Re-measured the same day on the same
+> roster, through the engine's executor: **8/25 (32%)** in a dedicated no-retry baseline, and
+> **29/75 (38.7%)** across all thermostat trials that day. Same fault, same file, same two
+> sharing-violation variants — just less frequent than first recorded. **Take 32% as the current
+> number**; see `docs/experiment-engine-limitations.md`, final section.
+
 So: every state-persisting setup command is now serial (~2 s, one time), and the monitor loop's
 three simultaneous `measure` calls — the parallelism the science actually needs — stay parallel.
 This is an **agent** bug, not an engine one; it is catalogued in

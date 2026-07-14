@@ -403,6 +403,15 @@ groups (§16, deferred) remain unbuilt.
 *(Amended 2026-07-14: the document below now shows `defaults`, `retry` and `on_error`, and the
 guarded read they oblige.)*
 
+> **Amendment 2, 2026-07-14 (post-review).** The first amendment guarded the `dispense` with a
+> bare `count(OD) > 0` and blessed it in prose. **That was wrong, and this is the canonical
+> authoring reference, so it was teaching the worst bug on the branch.** Run as it stood, with the
+> densitometer dying after one read, this workflow validated clean and then issued **106 dispenses
+> — 101 ml — in one simulated hour**, on a frozen `mean`, and never terminated. Every guard below
+> is now a **duration** window, and the loop declares the `pace` those windows are sized from. The
+> rule, in one line: **a guard in front of an actuator must prove the reading is FRESH, and only
+> `count(S, last=D) > 0` does that.**
+
 ```json
 {
   "schema_version": 1,
@@ -436,12 +445,13 @@ guarded read they oblige.)*
 
       { "loop": {
           "check": "after",
+          "pace": "1min",
           "until": "count(OD, last=5min) > 0 and mean(OD, last=5min) >= target_OD",
           "body": [
             { "measure": { "device": "densitometer_1", "verb": "measure", "into": "OD" },
               "on_error": "continue" },
             { "branch": {
-                "if": "count(OD) > 0",
+                "if": "count(OD, last=30s) > 0",
                 "then": [
                   { "command": { "device": "pump_1", "verb": "dispense",
                                  "params": { "volume_ml": "2.0 * (target_OD - mean(OD, last=100))",
@@ -455,7 +465,7 @@ guarded read they oblige.)*
       { "command": { "device": "pump_2", "verb": "stop" } },
 
       { "branch": {
-          "if": "count(OD) > 0 and last(OD) > target_OD",
+          "if": "count(OD, last=5min) > 0 and last(OD) > target_OD",
           "then": [ { "command": { "device": "densitometer_1", "verb": "set_led",
                                    "params": { "level": 0 } } } ]
       } }
@@ -477,16 +487,46 @@ Reading the 2026-07-14 keys in it (amendment):
   `retry: {..., "allow_repeat": true}` on the block itself, and mean it.)
 - **`on_error: "continue"` on the `measure`** buys the loop the right to survive a flaky
   densitometer — at the price of a stream that is now only *maybe* written.
-- **So both reads of `OD` are guarded**, and note the two guards are not interchangeable. The
-  `until` reads a **duration** window, so its guard must be a duration `count` in the **same
-  expression** (short-circuit `and`) — a whole-stream `count(OD) > 0` would not prove the last
-  five minutes hold anything, and the loop would die on an empty window. The `dispense` param
-  reads a **sample** window (`last=100`) and cannot carry its own guard, so it moves inside a
-  `branch` whose `if` proves the stream non-empty; a whole-stream `count` suffices there, and its
-  proof survives into `then` because a stream is append-only.
-- Nothing here defends against a *stale* stream, only an empty one. If the loop's decision must
-  not run on a frozen trace, the guard has to be a duration window sized to the loop — see the
-  fault-tolerance design §5.3.
+- **Every read of `OD` is therefore guarded, and every guard is a DURATION window.** This is the
+  rule, and it has no exceptions: **never write a bare, whole-stream `count(OD) > 0`.** It is a
+  sound *static* proof (the stream holds a sample) and a worthless *freshness* check, and a guard
+  in front of an actuator is a freshness check. `Stream` is append-only, so `count(OD) > 0` is
+  true **forever** after the first successful read: a densitometer that dies mid-run leaves the
+  guard standing while `mean` and `last` freeze on the final trace, the condition becomes a
+  **constant**, and the pump fires every remaining turn on a value nobody is measuring. That is
+  an **open-loop actuator on a dead sensor**, and the validator cannot catch it, because the
+  workflow is perfectly well-formed. See the fault-tolerance design §5.3 — on the morbidostat the
+  same mistake ran a drug pump to the undiluted stock and sterilized the vial while the run
+  reported `completed`.
+- **Sizing the two windows.** Both come from the loop's `pace`, which is why the loop now declares
+  one (`1min`) instead of leaving its turn length implicit:
+  - The `dispense` guard, `count(OD, last=30s) > 0`, must be **wider than the age of this turn's
+    sample when the branch is evaluated** (the `measure` is the block immediately before it, so
+    that age is one read's latency) and **narrower than the loop's `pace`**, so that the *previous*
+    turn's sample — one full pace old — can never satisfy it. `read latency ≪ 30s < 1min`. A body
+    that overruns its pace only makes the previous sample *older*, so the guard fails safe under
+    overrun.
+  - The `until` guard must be a duration `count` **no wider than the read it guards** (here
+    `last=5min` guarding a `last=5min` mean), and in the **same expression** (short-circuit
+    `and`), because a `wait` between guard and read would let the proof go stale. A *wider*
+    window proves nothing about the read's narrower one; a whole-stream `count` proves nothing
+    about any duration window at all. Either way the loop dies on an empty window. (The lattice
+    runs the other way: a *narrower* duration proof is the stronger one — §5.2 of the
+    fault-tolerance design.)
+  - The trailing `set_led` branch reads `last(OD)` — a value that can be **stale** even while the
+    stream is non-empty — so it carries the same 5-minute freshness guard. The loop's own exit
+    condition all but discharges it on a normal exit: exiting *proves* a sample landed within the
+    last five minutes, and only the `pump_2 stop` sits in between.
+- **What a dead sensor does now.** Measured against the fake lab (densitometer dark after its
+  first read): the loop dispenses on the one turn that had a reading and **never again** — 1
+  dispense, then nothing, versus **106 dispenses and 101 ml in one simulated hour** under the bare
+  `count(OD) > 0` this section used to show. What it does **not** do is stop: the `until` reads the
+  same dead stream, so the loop cannot reach its exit condition and spins — paced, with the pump
+  idle — until an operator aborts. There is no way to say "exit if the stream went stale" (no
+  `elapsed()`, and no `abort` block — limitations #7 and #8 of the limitations doc). **A feedback
+  loop cannot outlive the sensor it feeds back from.** The guard's job is not to make it survive;
+  it is to make the failure *inert* — the difference between a run you have to kill and a run that
+  kills the culture.
 
 ## 16. Package structure, testing, deferred work
 

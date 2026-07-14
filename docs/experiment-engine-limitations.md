@@ -152,6 +152,45 @@ detail. And tolerance is a scientific statement: in the example the OD reads are
 is committed) and the **thermostat is not** (a silently-unset thermostat is a scientific
 defect).
 
+### Tolerance is for reads. I did not write this down, and it is the sharper hazard.
+
+Everything above — and everything in the design doc, and everything in the example's prose — is
+about tolerating a **measurement**. Not one line of it warns about the other half, so here it is,
+because it is the more dangerous of the two and I only saw it on the way out:
+
+> **`on_error: "continue"` on a command that moves the world leaves the world in an unknown
+> state, and every block after it inherits that state.**
+
+The case that makes it concrete, on exactly the hardware this document is about:
+
+```json
+{ "command": {"device": "valve_2", "verb": "set_position", "params": {"position": 1}},
+  "on_error": "continue" },
+{ "command": {"device": "pump_2", "verb": "dispense", "params": {"volume_ml": 1.0}} }
+```
+
+The `set_position` fails, the tolerance absorbs it, and the run **proceeds to the dispense** —
+with the valve still on the **previous tube's port**. The drug goes into the wrong vial. Nothing
+in the run says so: both blocks are accounted for, the status is `"completed"`, and
+`tolerated_errors` holds one valve error and no hint whatsoever that a dose landed in a tube that
+was not supposed to receive it. A tolerated *read* costs a sample, and the guard idiom below is
+how you refuse to decide without one. A tolerated *actuation* costs the integrity of the
+experiment, and it costs it silently — there is no guard idiom for it, because the damage is done
+before any expression is evaluated.
+
+The engine will not repair this. There is no automatic re-home, no state reconciliation between
+blocks, and the finalizer — the one mechanism that *does* sweep every touched device back to a
+safe state — runs at **end of run**, not between blocks. Between a tolerated valve fault and the
+finalizer sits every dispense of every remaining cycle, each one going wherever the rotor happens
+to be.
+
+So if you tolerate an actuation, you own re-establishing the state — re-`home`, re-`set_position`,
+re-`set_thermostat` — *before* anything depends on it. Better still, do not tolerate the actuation
+at all: put the catch **higher**, on the whole subtree the actuation serves, so the fault skips
+the dependent blocks along with it. That is what the example does. Its OD reads are tolerated and
+nothing else is; its four injection blocks fail the run outright, because a failure there means
+the tube's physical state is unknown and I would rather stop the run than guess at it.
+
 ### The guard idiom, and its sharpest edge
 
 A tolerated `measure` only *maybe* writes its stream, so the path analyzer stops being able to
@@ -249,8 +288,12 @@ is in the run log.
   mattered. But the coverage is not uniform, and the reason is invisible in the document.
 - **Back-off has no jitter**, so it cannot de-synchronize contending lanes (above).
 - **A tolerated block may leave a device mid-operation** — a pump that failed part-way through
-  a dispense. The finalizer sweeps every touched device at run end, but *within* the run the
-  next cycle simply proceeds. Writing `on_error: "continue"` is accepting that.
+  a dispense, or a valve that never reached the port the *next* block is about to pump into
+  ("Tolerance is for reads", above). The finalizer sweeps every touched device at run end, but
+  *within* the run the next block simply proceeds, on whatever physical state the failure left
+  behind. Nothing re-establishes it and nothing warns. Writing `on_error: "continue"` on an
+  actuation is accepting that, and there is no validator check and no guard idiom that can make
+  it safe for you.
 - **There is still no way to stop.** A run can now survive a dead sensor; it cannot *flag* one
   and halt. `tolerated_errors` is a post-hoc record — nothing wakes the operator. That is #7
   (no abort/alarm block), and this feature makes it *more* wanted, not less: the failure mode

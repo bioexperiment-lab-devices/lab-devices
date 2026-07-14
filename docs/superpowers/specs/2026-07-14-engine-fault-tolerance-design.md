@@ -477,8 +477,13 @@ chosen error class, then succeed.
 reproducible transient fault* to test against, which is rare and valuable: the duplicate-serial
 store race documented at the end of `experiment-engine-limitations.md`. A `parallel` block of
 `set_thermostat` across the three simulated densitometers (which all alias onto
-`densitometer-25-006.json`) fails **23 times in 25**. It is a real, transient, retry-curable
-fault — exactly the class §0 is about.
+`densitometer-25-006.json`) fails **8 times in 25 (32%)** — re-measured through the engine's
+executor on 2026-07-14, and **29/75 (38.7%)** across all thermostat trials that day. (This
+section was drafted against an earlier figure of 23/25 = 92%, taken with raw parallel client
+calls; the fault is the same fault — same file, same two sharing-violation variants — but it is
+roughly a third as frequent as first recorded. **32% is the current number.**) It is a real,
+transient, retry-curable fault — exactly the class §0 is about, and frequent enough to test
+against.
 
 1. Baseline: parallel `set_thermostat` × 3, no retry → reproduce the failure.
 2. Same block with `retry: {attempts: 3, backoff: "1s"}` → expect it to pass. `set_thermostat`
@@ -491,9 +496,18 @@ fault — exactly the class §0 is about.
 
 `examples/morbidostat.json` and `morbidostat-demo-speed.json` gain `retry` on the six
 densitometer reads (three `measure_blank`, three `measure`) and `on_error: "continue"` on the
-three OD reads, with each tube's decision tree guarded by `count(od_N) > 0` per §5.3. The
-one-time thermostat setup can go back to being `parallel` (retry now covers the duplicate-serial
-race), which reverses a workaround the example was forced into.
+three OD reads, with each tube's decision tree guarded by a **duration-windowed freshness guard**
+per §5.3's amendment: `count(od_N, last=11min) > 0` in the faithful doc (growth phase 10 × 1 min
+= 10 min < **11 min** < 12 min cycle pace) and `count(od_N, last=45s) > 0` in the demo-speed doc
+(30 s < **45 s** < 60 s).
+
+*(As drafted, this section said `count(od_N) > 0` — the whole-stream form. **That is the bug
+§5.3's amendment exists to retract**, and it is not what shipped: a bare `count` is true forever
+on an append-only stream, so it cannot see a newly dead sensor, and it latches the drug arm open.
+The shipped examples use the duration windows above.)*
+
+The one-time thermostat setup can go back to being `parallel` (retry now covers the
+duplicate-serial race), which reverses a workaround the example was forced into.
 
 That makes the example the proof: the workflow §0 says "cannot actually be run to completion on
 this stack today" becomes one that can.
