@@ -1,6 +1,6 @@
 /** Hand-written TS mirrors of doc v1 + engine workflow schema v1 (webapp design §4.1).
  * The block grammar mirrors the engine serializer: one type key per block plus optional
- * timing keys label/gap_after/start_offset. */
+ * block-level keys label/gap_after/start_offset/retry/on_error (2026-07-14 design). */
 
 export type ParamValue = number | string | boolean
 
@@ -56,10 +56,20 @@ export interface GroupRefBody {
   name: string
 }
 
+/** command/measure only (2026-07-14 §2.1). attempts is TOTAL tries, not retries-after-the-
+ * first. allow_repeat is the explicit opt-in required to retry a non-idempotent verb. */
+export interface RetryJson {
+  attempts: number
+  backoff?: string
+  allow_repeat?: boolean
+}
+
 export interface BlockJson {
   label?: string
   gap_after?: string
   start_offset?: string
+  retry?: RetryJson
+  on_error?: 'fail' | 'continue'
   command?: CommandBody
   measure?: MeasureBody
   operator_input?: OperatorInputBody
@@ -82,6 +92,7 @@ export interface WorkflowJson {
   persistence?: Record<string, unknown>
   streams?: Record<string, StreamDeclJson>
   groups?: Record<string, unknown>
+  defaults?: { retry?: RetryJson }
   blocks: BlockJson[]
 }
 

@@ -1,7 +1,7 @@
 /** Editor tree model: the canvas tree IS the engine AST (settled decision S1), with
  * stable uids for React keys, selection, and diagnostics mapping. All ops are pure and
  * return new trees (zustand/zundo snapshot immutability). */
-import type { ParamValue } from '../types/doc'
+import type { ParamValue, RetryJson } from '../types/doc'
 import type { VerbSpec } from '../types/catalog'
 
 export type InputType = 'int' | 'float' | 'bool' | 'enum'
@@ -12,6 +12,10 @@ interface NodeBase {
   label: string | null
   gapAfter: string | null
   startOffset: string | null
+  // retry is command/measure only in the engine (2026-07-14 §2.1); on_error is legal on every
+  // block type (§2.2). Both live on NodeBase since it is the one shape every BlockNode extends.
+  retry?: RetryJson
+  onError?: 'fail' | 'continue'
 }
 
 export interface CommandNode extends NodeBase {

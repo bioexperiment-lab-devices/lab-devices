@@ -30,6 +30,10 @@ describe('describeEvent', () => {
     expect(d('job_poll_retried', {
       device: 'densitometer_1', job_id: 'j-1', failure: 1, of: 5, error: 'unreachable',
     })).toBe('densitometer_1: poll of job j-1 failed (1/5), still running: unreachable')
+    // A run that dropped 40 samples must not look identical to a clean one: this is the
+    // event-log side of that guarantee (RunReport.tolerated_errors is the record-level side).
+    expect(d('block_error_tolerated', { error: 'no response' }))
+      .toBe('tolerated failure: no response')
   })
   it('covers the finalizer', () => {
     expect(d('finalize_started')).toBe('finalize started')

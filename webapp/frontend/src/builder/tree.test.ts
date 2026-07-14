@@ -140,9 +140,13 @@ describe('tree ops', () => {
   })
 
   it('builds command vs measure nodes from the verb spec kind', () => {
-    const cmd = newVerbNode('feed_pump', 'dispense', { kind: 'command', params: [], result_field: null })
+    const cmd = newVerbNode('feed_pump', 'dispense', {
+      kind: 'command', params: [], result_field: null, retry_safe: false,
+    })
     expect(cmd).toMatchObject({ kind: 'command', device: 'feed_pump', verb: 'dispense', params: {} })
-    const meas = newVerbNode('od_meter', 'measure', { kind: 'measure', params: [], result_field: 'absorbance' })
+    const meas = newVerbNode('od_meter', 'measure', {
+      kind: 'measure', params: [], result_field: 'absorbance', retry_safe: true,
+    })
     expect(meas).toMatchObject({ kind: 'measure', device: 'od_meter', into: '' })
   })
 

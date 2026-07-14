@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
 import type { ParamSpec } from '../types/catalog'
-import type { ParamValue } from '../types/doc'
+import type { ParamValue, RetryJson } from '../types/doc'
 import { coerceParamInput, paramInputText } from './params'
 import {
   DurationField,
@@ -106,6 +106,103 @@ function BlockForm({ node }: { node: BlockNode }) {
             onCommit={(v) => patchBlock(node.uid, { startOffset: v })}
           />
         </FieldRow>
+      )}
+      <FieldRow label="On error">
+        <select
+          value={node.onError ?? 'fail'}
+          onChange={(e) => patchBlock(node.uid, { onError: e.target.value as 'fail' | 'continue' })}
+          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+        >
+          <option value="fail">fail (stop the run)</option>
+          <option value="continue">continue (tolerate the failure)</option>
+        </select>
+      </FieldRow>
+      {(node.kind === 'command' || node.kind === 'measure') && <RetrySection node={node} />}
+    </div>
+  )
+}
+
+/** retry is command/measure only (design 2026-07-14 §2.1); `attempts` is TOTAL tries,
+ * including the first, and the UI labels it that way to avoid an off-by-one surprise.
+ * For a verb the catalog reports as not retry_safe (e.g. pump.dispense's relative
+ * volume_ml — retrying after a partial dispense double-doses the culture), the
+ * attempts/backoff controls stay hidden behind an explicit allow_repeat opt-in so the
+ * hazard can't be set silently. */
+function RetrySection({ node }: { node: CommandNode | MeasureNode }) {
+  const roles = useDocStore((s) => s.roles)
+  const patchBlock = useDocStore((s) => s.patchBlock)
+  const catalog = useCatalogStore((s) => s.catalog)
+  const roleType = roles[node.device]?.type
+  const verbs = roleType ? (catalog?.device_types[roleType] ?? {}) : {}
+  const spec = verbs[node.verb]
+  // Conservative default mirrors the engine registry's Trait.retry_safe = False default:
+  // an unrecognized verb is treated as unsafe until the catalog says otherwise.
+  const retrySafe = spec?.retry_safe ?? false
+  const retry = node.retry
+  const allowRepeat = retry?.allow_repeat ?? false
+  const locked = !retrySafe && !allowRepeat
+
+  const setRetry = (patch: Partial<RetryJson>) => {
+    if (!retry) return
+    patchBlock(node.uid, { retry: { ...retry, ...patch } })
+  }
+
+  return (
+    <div className="mt-2">
+      <FieldRow label="Retry">
+        <label className="flex items-center gap-1 text-xs">
+          <input
+            type="checkbox"
+            checked={retry !== undefined}
+            onChange={(e) =>
+              patchBlock(node.uid, { retry: e.target.checked ? { attempts: 2 } : undefined })
+            }
+          />
+          retry on failure
+        </label>
+      </FieldRow>
+      {retry !== undefined && (
+        <div className="ml-1 border-l-2 border-slate-200 pl-2">
+          {!retrySafe && (
+            <div className="mb-1 rounded border border-amber-300 bg-amber-50 p-1.5 text-[11px] text-amber-800">
+              <p>
+                '{node.verb}' is not idempotent — a retry may repeat it. Check "allow repeat" to
+                accept that risk before setting attempts/backoff.
+              </p>
+              <label className="mt-1 flex items-center gap-1 font-semibold">
+                <input
+                  type="checkbox"
+                  checked={allowRepeat}
+                  onChange={(e) => setRetry({ allow_repeat: e.target.checked ? true : undefined })}
+                />
+                allow repeat (allow_repeat)
+              </label>
+            </div>
+          )}
+          {locked ? (
+            <p className="rounded border border-dashed border-slate-300 bg-slate-100 p-1.5 text-[11px] text-slate-400">
+              attempts/backoff are hidden until "allow repeat" is checked above
+            </p>
+          ) : (
+            <>
+              <FieldRow label="Attempts (total tries, including the first)" required>
+                <NumberField
+                  value={retry.attempts}
+                  integer
+                  min={1}
+                  onCommit={(v) => setRetry({ attempts: v ?? 1 })}
+                />
+              </FieldRow>
+              <FieldRow label="Backoff (pause before each retry)">
+                <DurationField
+                  value={retry.backoff ?? null}
+                  allowEmpty
+                  onCommit={(v) => setRetry({ backoff: v ?? undefined })}
+                />
+              </FieldRow>
+            </>
+          )}
+        </div>
       )}
     </div>
   )

@@ -21,6 +21,10 @@ const KIND_COLOR: Record<string, string> = {
   input_bound: 'text-amber-700',
   block_retried: 'text-amber-700',
   job_poll_retried: 'text-amber-700',
+  // A tolerated error is a real failure the run survived — darker than a plain retry-in-
+  // progress, matching the amber-800 the record's warning panel already uses for the same
+  // "surfaced, non-fatal" category (finalize/persistence errors).
+  block_error_tolerated: 'text-amber-800',
 }
 
 export function EventLog(props: { events: ReadonlyArray<LogEvent>; origin: number | null; rev: number }) {

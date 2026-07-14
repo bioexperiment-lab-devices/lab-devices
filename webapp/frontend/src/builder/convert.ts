@@ -1,7 +1,7 @@
 /** Doc v1 JSON <-> editor tree. treeToDoc(docToTree(doc)) must round-trip the golden
  * fixture byte-for-byte (deep equality); emission rules mirror the engine serializer:
  * omit empty params, omit null timing keys, `check` only alongside `until`, `else`
- * omitted (not null) when absent. */
+ * omitted (not null) when absent, `on_error` omitted unless it is 'continue'. */
 import type {
   BlockJson,
   BranchBody,
@@ -29,7 +29,7 @@ export class DocConvertError extends Error {
   }
 }
 
-const TIMING_KEYS = new Set(['label', 'gap_after', 'start_offset'])
+const BLOCK_KEYS = new Set(['label', 'gap_after', 'start_offset', 'retry', 'on_error'])
 
 export function docToTree(doc: ExperimentDocJson): DocContent {
   if (doc.doc_version !== 1) {
@@ -58,7 +58,7 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
 }
 
 function blockToNode(block: BlockJson): BlockNode {
-  const keys = Object.keys(block).filter((k) => !TIMING_KEYS.has(k))
+  const keys = Object.keys(block).filter((k) => !BLOCK_KEYS.has(k))
   if (keys.length !== 1) {
     throw new DocConvertError(`block must have exactly one type key, got [${keys.join(', ')}]`)
   }
@@ -68,6 +68,8 @@ function blockToNode(block: BlockJson): BlockNode {
     label: block.label ?? null,
     gapAfter: block.gap_after ?? null,
     startOffset: block.start_offset ?? null,
+    ...(block.retry !== undefined ? { retry: block.retry } : {}),
+    ...(block.on_error !== undefined ? { onError: block.on_error } : {}),
   }
   switch (kind) {
     case 'command': {
@@ -207,5 +209,9 @@ export function nodeToBlock(node: BlockNode): BlockJson {
   if (node.label !== null) out.label = node.label
   if (node.gapAfter !== null) out.gap_after = node.gapAfter
   if (node.startOffset !== null) out.start_offset = node.startOffset
+  if (node.retry !== undefined) out.retry = node.retry
+  // Mirrors block_to_dict: on_error is only emitted when it is 'continue' — a default-'fail'
+  // block round-trips to a dict with no on_error key at all.
+  if (node.onError === 'continue') out.on_error = node.onError
   return out
 }

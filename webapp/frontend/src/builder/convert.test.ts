@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import type { ExperimentDocJson } from '../types/doc'
+import type { BlockJson, ExperimentDocJson } from '../types/doc'
 import { DocConvertError, docToTree, nodeToBlock, treeToDoc } from './convert'
 import type { LoopNode, MeasureNode, SerialNode } from './tree'
 
@@ -111,5 +111,32 @@ describe('treeToDoc', () => {
     expect(doc.workflow.persistence).toEqual({ default: 'in_memory', format: 'jsonl' })
     expect(doc.workflow.blocks).toEqual([])
     expect(doc.doc_version).toBe(1)
+  })
+
+  it('round-trips retry and on_error through the builder tree', () => {
+    // docToTree/treeToDoc operate on a full ExperimentDocJson, not a bare BlockJson[] —
+    // the brief's snippet was written before the engine landed and guessed wrong here.
+    const blocks: BlockJson[] = [
+      {
+        measure: { device: 'od_meter', verb: 'measure', into: 'od_1' },
+        label: 'read OD',
+        retry: { attempts: 3, backoff: '2s' },
+        on_error: 'continue',
+      },
+    ]
+    const doc: ExperimentDocJson = {
+      doc_version: 1,
+      name: 'Retry test',
+      description: null,
+      roles: { od_meter: { type: 'densitometer' } },
+      workflow: {
+        schema_version: 1,
+        metadata: { name: 'Retry test' },
+        persistence: { default: 'in_memory', format: 'jsonl' },
+        streams: {},
+        blocks,
+      },
+    }
+    expect(treeToDoc(docToTree(doc)).workflow.blocks).toEqual(blocks)
   })
 })

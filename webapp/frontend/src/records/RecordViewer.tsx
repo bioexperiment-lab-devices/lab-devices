@@ -100,6 +100,21 @@ export function RecordViewer(props: { id: string }) {
         </div>
       )}
 
+      {/* A run that dropped 40 samples via on_error: 'continue' must not look identical to a
+          clean one — this panel is the point of RunReport.tolerated_errors. */}
+      {detail.report !== null && (detail.report.tolerated_errors?.length ?? 0) > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+          <p className="mb-1 font-semibold">
+            {detail.report.tolerated_errors?.length} block failure(s) tolerated
+          </p>
+          {detail.report.tolerated_errors?.map((t, i) => (
+            <p key={`t${i}`}>
+              <span className="font-mono">{t.block_id}</span>: {t.error}
+            </p>
+          ))}
+        </div>
+      )}
+
       <StreamChart series={series} />
       <EventLog events={events} origin={events.length > 0 ? events[0].timestamp : null} rev={0} />
 
