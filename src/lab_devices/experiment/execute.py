@@ -26,6 +26,40 @@ from lab_devices.jobs import Job
 
 _TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
 
+# Errors a retry can never fix: they will fail identically, or they mean the safety
+# model itself is broken (design 2026-07-14 §3.1).
+_NEVER_RETRY: tuple[type[BaseException], ...] = (
+    InvariantViolationError,
+    EvaluationError,
+    core_errors.InvalidParamsError,
+    core_errors.InvalidRequestError,
+    core_errors.UnknownCommandError,
+    core_errors.UnknownDeviceError,
+    core_errors.NotCalibratedError,
+    core_errors.NotHomedError,
+)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Allow-by-default over device/transport faults, with a deny-list. CancelledError is
+    a BaseException and never reaches here, but the isinstance guard is explicit anyway."""
+    if isinstance(exc, asyncio.CancelledError):
+        return False
+    return not isinstance(exc, _NEVER_RETRY)
+
+
+def _effective_retry(
+    block: B.Command | B.Measure, trait: Trait, ctx: RunContext
+) -> B.Retry | None:
+    """Block policy wins; otherwise the workflow default — but a blanket default never
+    retries a non-idempotent verb (design 2026-07-14 §2.4)."""
+    if block.retry is not None:
+        return block.retry
+    default = ctx.workflow.defaults.retry
+    if default is not None and trait.retry_safe:
+        return default
+    return None
+
 
 def _condition(text: str, ctx: RunContext) -> bool:
     """Evaluate a boolean condition at this instant (fail-safe, design §6)."""
@@ -97,6 +131,28 @@ async def _await_job(job: Job, device_id: str, ctx: RunContext) -> Any:
 
 
 async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
+    """Retry envelope around the dispatch pipeline (design 2026-07-14 §3.2). Each attempt
+    re-resolves params against fresh state and re-acquires occupancy — a retry is a fresh
+    dispatch, and this is what a fresh dispatch does."""
+    policy = _effective_retry(block, lookup(block.device, block.verb), ctx)
+    attempts = 1 if policy is None else policy.attempts
+    backoff = 0.0 if policy is None else parse_duration(policy.backoff)
+    for attempt in range(1, attempts + 1):
+        await ctx.gate.wait()  # a pause during a retry storm quiesces at the next attempt
+        try:
+            return await _dispatch_action(block, ctx)
+        except Exception as exc:
+            if attempt == attempts or not _is_retryable(exc):
+                raise
+            ctx.emit(
+                "block_retried", block.id,
+                attempt=attempt, of=attempts, error=str(exc),
+            )
+            await ctx.clock.sleep(backoff)
+    raise AssertionError("unreachable: the loop either returns or raises")  # pragma: no cover
+
+
+async def _dispatch_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
     """The dispatch pipeline (design 4-exec §7): resolve -> classify -> occupy ->
     invoke -> complete. The occupancy check-and-mark is synchronous (no interleave
     window); the wire lock spans exactly one HTTP call (D2)."""
