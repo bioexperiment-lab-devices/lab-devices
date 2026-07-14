@@ -1,4 +1,10 @@
-from lab_devices.experiment.analyze import ExprRefs, TypeReport, infer_type, references
+from lab_devices.experiment.analyze import (
+    ExprRefs,
+    TypeReport,
+    infer_type,
+    proven_nonempty,
+    references,
+)
 from lab_devices.experiment.expr import parse_expression
 
 
@@ -78,3 +84,26 @@ def test_unknown_propagates_without_problems():
 def test_multiple_problems_collected():
     rep = report("(true + 1) * (not 2)")
     assert len(rep.problems) >= 2
+
+
+def test_proven_nonempty_recognises_count_guards():
+    assert proven_nonempty(parse_expression("count(od_1) > 0")) == {"od_1"}
+    assert proven_nonempty(parse_expression("count(od_1) >= 1")) == {"od_1"}
+    assert proven_nonempty(parse_expression("count(od_1) != 0")) == {"od_1"}
+    assert proven_nonempty(parse_expression("0 < count(od_1)")) == {"od_1"}
+    assert proven_nonempty(parse_expression("count(od_1) > 5")) == {"od_1"}
+
+
+def test_proven_nonempty_rejects_non_guards():
+    assert proven_nonempty(parse_expression("count(od_1) >= 0")) == frozenset()
+    assert proven_nonempty(parse_expression("count(od_1) < 3")) == frozenset()
+    assert proven_nonempty(parse_expression("mean(od_1, last=3) > 0.4")) == frozenset()
+
+
+def test_proven_nonempty_combines_over_and_or():
+    both = proven_nonempty(parse_expression("count(od_1) > 0 and count(od_2) > 0"))
+    assert both == {"od_1", "od_2"}
+    either = proven_nonempty(parse_expression("count(od_1) > 0 or count(od_2) > 0"))
+    assert either == frozenset()
+    same = proven_nonempty(parse_expression("count(od_1) > 0 or count(od_1) > 3"))
+    assert same == {"od_1"}

@@ -8,14 +8,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from lab_devices.experiment import blocks as B
-from lab_devices.experiment.analyze import BindingType, ExprType, infer_type, references
+from lab_devices.experiment.analyze import (
+    BindingType,
+    ExprType,
+    infer_type,
+    proven_nonempty,
+    references,
+)
 from lab_devices.experiment.errors import (
     Diagnostic,
     ExpressionError,
     UnknownVerbError,
     ValidationError,
 )
-from lab_devices.experiment.expr import parse_expression
+from lab_devices.experiment.expr import BinaryOp, Expr, parse_expression
 from lab_devices.experiment.registry import ParamSpec, lookup, mode_action
 from lab_devices.experiment.serialize import load_workflow
 from lab_devices.experiment.workflow import Workflow
@@ -411,10 +417,23 @@ def _expr_reads(text: object, ctx: str, state: _PathState, c: _Ctx) -> None:
         expr = parse_expression(text)
     except ExpressionError:
         return  # already diagnosed globally
+    _expr_reads_ast(expr, ctx, state.bindings, state.streams, c)
+
+
+def _expr_reads_ast(
+    expr: Expr, ctx: str, bindings: set[str], streams: set[str], c: _Ctx
+) -> None:
+    """Walk `and` chains left-to-right so a `count(S) > 0` guard extends the proven set
+    for everything to its right — mirroring the evaluator's short-circuit (design §5.2)."""
+    if isinstance(expr, BinaryOp) and expr.op == "and":
+        _expr_reads_ast(expr.left, ctx, bindings, streams, c)
+        guarded = streams | proven_nonempty(expr.left)
+        _expr_reads_ast(expr.right, ctx, bindings, guarded, c)
+        return
     refs = references(expr)
-    for name in sorted(refs.bindings - state.bindings):
+    for name in sorted(refs.bindings - bindings):
         c.emit("data-flow", ctx, f"binding {name!r} may be read before it is written")
-    for stream in sorted(refs.streams_windowed - state.streams):
+    for stream in sorted(refs.streams_windowed - streams):
         if stream in c.workflow.streams:  # undeclared streams already got a diagnostic
             c.emit(
                 "data-flow", ctx,
@@ -546,6 +565,16 @@ def _visit_parallel(b: B.Parallel, path: str, state: _PathState, c: _Ctx) -> _Pa
 
 
 def _visit(b: B.Block, path: str, state: _PathState, c: _Ctx) -> _PathState:
+    entry = state.copy() if b.on_error == "continue" else None
+    state = _visit_body(b, path, state, c)
+    if entry is not None:
+        # A tolerated failure can skip this block's writes entirely: join like a branch
+        # with an empty else (design 2026-07-14 §5.2).
+        state = _merge(entry, state)
+    return state
+
+
+def _visit_body(b: B.Block, path: str, state: _PathState, c: _Ctx) -> _PathState:
     if isinstance(b, (B.Command, B.Measure)):
         _visit_action(b, path, state, c)
     elif isinstance(b, B.OperatorInput):
@@ -559,7 +588,13 @@ def _visit(b: B.Block, path: str, state: _PathState, c: _Ctx) -> _PathState:
         state = _visit_loop(b, path, state, c)
     elif isinstance(b, B.Branch):
         _expr_reads(b.if_, f"{path} branch if", state, c)
-        then_state = _visit_blocks(b.then, f"{path}.then", state.copy(), c)
+        then_state = state.copy()
+        if isinstance(b.if_, str):
+            try:
+                then_state.streams |= proven_nonempty(parse_expression(b.if_))
+            except ExpressionError:
+                pass  # unparseable: already diagnosed globally
+        then_state = _visit_blocks(b.then, f"{path}.then", then_state, c)
         else_state = _visit_blocks(b.else_ or [], f"{path}.else", state.copy(), c)
         state = _merge(then_state, else_state)
     elif isinstance(b, B.GroupRef):

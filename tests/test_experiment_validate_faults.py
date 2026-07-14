@@ -105,3 +105,65 @@ def test_bad_on_error_on_a_programmatic_ast_is_rejected():
     with pytest.raises(ValidationError) as exc:
         validate(w)
     assert any("on_error must be one of" in m for m in _messages(exc))
+
+
+_TOLERANT_MEASURE = {
+    "measure": {"device": "densitometer_1", "verb": "measure", "into": "od_1"},
+    "retry": {"attempts": 3, "backoff": "2s"},
+    "on_error": "continue",
+}
+
+
+def test_tolerated_measure_then_unguarded_windowed_read_is_rejected():
+    with pytest.raises(ValidationError) as exc:
+        _validate({
+            "schema_version": 1,
+            "streams": {"od_1": {}},
+            "blocks": [
+                _TOLERANT_MEASURE,
+                {"branch": {"if": "mean(od_1, last=3) > 0.4",
+                            "then": [{"wait": {"duration": "1s"}}]}},
+            ],
+        })
+    assert any("no preceding measure" in d.message for d in exc.value.diagnostics)
+
+
+def test_tolerated_measure_guarded_by_a_count_branch_validates():
+    _validate({
+        "schema_version": 1,
+        "streams": {"od_1": {}},
+        "blocks": [
+            _TOLERANT_MEASURE,
+            {"branch": {
+                "if": "count(od_1) > 0",
+                "then": [{"branch": {"if": "mean(od_1, last=3) > 0.4",
+                                     "then": [{"wait": {"duration": "1s"}}]}}],
+            }},
+        ],
+    })
+
+
+def test_tolerated_measure_guarded_by_a_short_circuit_and_validates():
+    """evaluate.py:85 documents this idiom; the analyzer now recognises it."""
+    _validate({
+        "schema_version": 1,
+        "streams": {"od_1": {}},
+        "blocks": [
+            _TOLERANT_MEASURE,
+            {"branch": {"if": "count(od_1) > 0 and mean(od_1, last=3) > 0.4",
+                        "then": [{"wait": {"duration": "1s"}}]}},
+        ],
+    })
+
+
+def test_an_untolerated_measure_still_needs_no_guard():
+    """Regression: the existing definitely-written proof must not weaken."""
+    _validate({
+        "schema_version": 1,
+        "streams": {"od_1": {}},
+        "blocks": [
+            {"measure": {"device": "densitometer_1", "verb": "measure", "into": "od_1"}},
+            {"branch": {"if": "mean(od_1, last=3) > 0.4",
+                        "then": [{"wait": {"duration": "1s"}}]}},
+        ],
+    })

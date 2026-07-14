@@ -111,3 +111,45 @@ def infer_type(expr: Expr, binding_types: Mapping[str, BindingType]) -> TypeRepo
 
     top = infer(expr)
     return TypeReport(top, tuple(problems))
+
+
+def proven_nonempty(expr: Expr) -> frozenset[str]:
+    """Streams this expression proves non-empty whenever it evaluates True.
+
+    A windowed stat only raises on a *truly empty* window (evaluate.py `_stat`); a short
+    window is fine. So `count(S) > 0` is enough to make any windowed stat on S safe
+    (design 2026-07-14 §5.2).
+    """
+    if isinstance(expr, BinaryOp):
+        if expr.op == "and":
+            return proven_nonempty(expr.left) | proven_nonempty(expr.right)
+        if expr.op == "or":
+            return proven_nonempty(expr.left) & proven_nonempty(expr.right)
+        return _proven_by_comparison(expr)
+    return frozenset()
+
+
+def _count_stream(e: Expr) -> str | None:
+    return e.stream if isinstance(e, StatCall) and e.fn == "count" else None
+
+
+def _int_const(e: Expr) -> int | None:
+    if isinstance(e, Const) and isinstance(e.value, int) and not isinstance(e.value, bool):
+        return e.value
+    return None
+
+
+def _proven_by_comparison(e: BinaryOp) -> frozenset[str]:
+    """`count(S) > k` (k>=0), `count(S) >= k` (k>=1), `count(S) != 0`, and mirrors."""
+    stream, bound, op = _count_stream(e.left), _int_const(e.right), e.op
+    if stream is None or bound is None:  # try the mirrored form: k <op> count(S)
+        stream, bound = _count_stream(e.right), _int_const(e.left)
+        op = {"<": ">", "<=": ">=", ">": "<", ">=": "<="}.get(e.op, e.op)
+    if stream is None or bound is None:
+        return frozenset()
+    proves = (
+        (op == ">" and bound >= 0)
+        or (op == ">=" and bound >= 1)
+        or (op == "!=" and bound == 0)
+    )
+    return frozenset({stream}) if proves else frozenset()
