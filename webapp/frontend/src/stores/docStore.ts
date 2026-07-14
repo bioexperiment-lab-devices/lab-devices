@@ -83,6 +83,12 @@ export const selectContent = (s: DocSnapshot): DocContent => ({
   ...(s.defaults !== undefined ? { defaults: s.defaults } : {}),
 })
 
+/** The dirty-check, and the value `markSaved`/`loadDoc` compare against. It must cover EVERY
+ * field the store round-trips into the saved document — `persistence` and `defaults` included.
+ * No UI mutates those two today, so omitting them was inert; the moment one does, a change to
+ * either would leave the doc reading clean and be silently dropped on navigate-away. (An absent
+ * key and an `undefined` one stringify identically, so adding them does not perturb any existing
+ * snapshot: a doc with no `defaults` produces the same string as before.) */
 export const snapshotOf = (content: DocContent): string =>
   JSON.stringify({
     name: content.name,
@@ -90,6 +96,8 @@ export const snapshotOf = (content: DocContent): string =>
     roles: content.roles,
     streams: content.streams,
     tree: content.tree,
+    persistence: content.persistence,
+    defaults: content.defaults,
   })
 
 export const selectDoc = (s: DocSnapshot): ExperimentDocJson => treeToDoc(selectContent(s))

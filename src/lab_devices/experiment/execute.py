@@ -54,6 +54,30 @@ _NEVER_RETRY: tuple[type[BaseException], ...] = (
 )
 
 
+def _emit(ctx: RunContext, kind: str, block_id: str | None = None, **data: Any) -> None:
+    """Best-effort emit for every site that runs WHILE AN EXCEPTION IS IN FLIGHT — inside an
+    `except` arm or a `finally`. Mirrors `finalize._emit` (and `run.py`'s three wrapped emits):
+    the sink protocol says `emit()` must never raise (design 5 §8), and here a sink that breaks
+    that contract does not merely lose an event, it REPLACES the exception the engine is already
+    carrying:
+
+    - Displace an `asyncio.CancelledError` and the operator's abort is gone. `_dispatch_action`'s
+      `finally` is on the abort path: the sink's error would surface there instead, `_run_action`'s
+      `except Exception` would catch it, `_is_retryable` would say yes, and the retry would
+      RE-DISPATCH hardware after `abort()` had already returned. (`_run_action`'s
+      `abort_requested` re-check is the second, independent net under that.)
+    - Displace an `InvariantViolationError` (the two `invariant_violation` emits) and a broken
+      safety invariant becomes an ordinary error — retryable, and tolerable by `on_error`.
+
+    Happy-path emits (`block_started`, `mode_opened`, `measure_recorded`, ...) are deliberately
+    NOT wrapped: nothing is in flight there, so a sink that raises is a real fault and should fail
+    the run (pinned by test_raising_log_sink_still_finalizes_and_sets_report)."""
+    try:
+        ctx.emit(kind, block_id, **data)
+    except BaseException:  # noqa: BLE001 - deliberate, mirrors finalize._emit
+        pass
+
+
 def _is_retryable(exc: BaseException) -> bool:
     """Allow-by-default over device/transport faults, with a deny-list. CancelledError is
     a BaseException and never reaches here, but the isinstance guard is explicit anyway."""
@@ -155,8 +179,8 @@ async def _await_job(job: Job, block: B.Command | B.Measure, ctx: RunContext) ->
             failures += 1
             if failures > opts.job_poll_max_failures or not _is_retryable(exc):
                 raise  # NOT untracked: the job may still be running (design §7 step 6)
-            ctx.emit(
-                "job_poll_retried", block.id,
+            _emit(
+                ctx, "job_poll_retried", block.id,
                 device=block.device, job_id=job.job_id,
                 failure=failures, of=opts.job_poll_max_failures, error=str(exc),
             )
@@ -184,6 +208,16 @@ async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
     backoff = 0.0 if policy is None else parse_duration(policy.backoff)
     for attempt in range(1, attempts + 1):
         await ctx.gate.wait()  # a pause during a retry storm quiesces at the next attempt
+        if ctx.abort_requested:
+            # Defence in depth: NO attempt is ever dispatched after an abort, however the
+            # exception that got us here arrived. A `CancelledError` is a *message* that can be
+            # displaced — a log sink that raises inside `_dispatch_action`'s `finally` replaces
+            # it outright, and `except Exception` below would then treat the operator's abort as
+            # a retryable device fault and re-dispatch on the hardware. `ctx.abort_requested` is
+            # a *fact* that cannot be displaced. Same reasoning, and the same wire-level
+            # guarantee, as `execute_block`'s guard: after `abort()` returns, nothing more
+            # reaches the wire.
+            raise asyncio.CancelledError
         started: list[Job] = []  # the job this attempt put on the hardware, if any
         try:
             return await _dispatch_action(block, ctx, started)
@@ -192,8 +226,8 @@ async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
                 raise
             if not await _clear_orphaned_job(exc, started, block, ctx):
                 raise  # could not stop the abandoned job; never stack a second one on it
-            ctx.emit(
-                "block_retried", block.id,
+            _emit(
+                ctx, "block_retried", block.id,
                 attempt=attempt, of=attempts, error=str(exc),
             )
             await ctx.clock.sleep(backoff)
@@ -318,7 +352,7 @@ async def _clear_orphaned_job(
     # the one exit that legitimately clears the occupancy `_dispatch_action` stranded, and the
     # retry about to re-dispatch this very block needs them free.
     ctx.occupancy.release_stranded(block.device, job.job_id)
-    ctx.emit("job_cancelled", block.id, device=block.device, verb=block.verb)
+    _emit(ctx, "job_cancelled", block.id, device=block.device, verb=block.verb)
     return True
 
 
@@ -337,7 +371,7 @@ async def _dispatch_action(
     try:
         ctx.occupancy.acquire(block.device, trait.channels, block_id, closes=closes)
     except InvariantViolationError as exc:
-        ctx.emit("invariant_violation", block.id, error=str(exc))
+        _emit(ctx, "invariant_violation", block.id, error=str(exc))
         raise
     holding = True
     try:
@@ -346,7 +380,7 @@ async def _dispatch_action(
             async with ctx.lock(block.device):
                 result = await _call_verb(device, block.verb, params)
         except core_errors.BusyError as exc:
-            ctx.emit("invariant_violation", block.id, error=str(exc))
+            _emit(ctx, "invariant_violation", block.id, error=str(exc))
             raise InvariantViolationError(
                 f"hardware reported busy for a statically-proven-free dispatch: {exc}"
             ) from exc
@@ -402,8 +436,10 @@ async def _dispatch_action(
                 ctx.occupancy.release(block.device, trait.channels, block_id)
             else:
                 ctx.occupancy.strand(block.device, trait.channels, block_id, orphan.job_id)
-                ctx.emit(
-                    "job_stranded", block.id,
+                # `_emit`, not `ctx.emit`: this `finally` runs with the abort's CancelledError in
+                # flight, and a raising sink here would REPLACE it — see `_emit`'s docstring.
+                _emit(
+                    ctx, "job_stranded", block.id,
                     device=block.device, job_id=orphan.job_id,
                     channels=sorted(trait.channels),
                 )
@@ -500,7 +536,7 @@ def _tolerate(block: B.Block, exc: BaseException, ctx: RunContext) -> bool:
     # the real error no longer does (design 2026-07-14 §3.4).
     message = "; ".join(str(leaf) for leaf in _leaves(exc))
     ctx.tolerated.append(ToleratedError(str(block.id), message))
-    ctx.emit("block_error_tolerated", block.id, error=message)
+    _emit(ctx, "block_error_tolerated", block.id, error=message)
     return True
 
 
@@ -540,7 +576,7 @@ async def execute_block(block: B.Block, ctx: RunContext) -> None:
     except asyncio.CancelledError:
         raise  # an abort is never a block failure, and is never tolerated
     except Exception as exc:
-        ctx.emit("block_failed", block.id, error=str(exc))
+        _emit(ctx, "block_failed", block.id, error=str(exc))
         if _tolerate(block, exc, ctx):
             return
         raise BlockFailedError(str(block.id), str(exc)) from exc

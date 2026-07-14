@@ -286,6 +286,29 @@ is in the run log.
   costs its sample rather than being retried. The incident's actual fault (the job reports
   `failed`, which untracks it before the error surfaces) *is* retried, which is the case that
   mattered. But the coverage is not uniform, and the reason is invisible in the document.
+- **A stranded channel is never reclaimed mid-run.** When a job is abandoned while still
+  *physically running* — a job timeout, an exhausted poll budget, or a cancellation landing on a
+  live job — the engine keeps that job's `(device, channel)` slots held. That is deliberate:
+  nothing may dispatch on top of a job that is still on the hardware. But the engine has also
+  stopped polling that job, so if it later finishes on its own **the engine never notices**, and
+  every later block on those channels is refused (`OrphanedJobError`) **for the rest of the run**.
+  Only a device-wide `stop` that actually succeeds hands the channels back — the retry's
+  orphan-clear, or the finalizer at end of run — and a workflow's *own* `stop` block on that
+  device would itself be refused by the strand. It fails safe (a refusal before the wire, never a
+  second job stacked on a live one), but it is permanent, and one stranded channel means that
+  device is dark until the run ends.
+
+  **The sharp edge is `on_error` on a `parallel` *container*.** Put the tolerance on the
+  container rather than on its lanes and a *failing* lane cancels its *innocent* siblings (that
+  is what a `TaskGroup` does with a raising child); the cancellation lands inside a sibling's
+  live job, that job is stranded, and the container's tolerance then absorbs the whole group. A
+  perfectly healthy device goes dark for the remainder of the run — every later block on it
+  refused — while the run still reports `"completed"`. **If you want per-device isolation, put
+  `on_error` on the lanes, not on the container.** A tolerated lane absorbs its own fault inside
+  its own task, so the `TaskGroup` never sees an exception at all and no sibling is ever
+  cancelled. The shipped `morbidostat.json` does exactly that — all three of its `on_error`s sit
+  on the `measure` lanes of the OD `parallel`, never on the `parallel` itself — which is why it
+  is not affected.
 - **Back-off has no jitter**, so it cannot de-synchronize contending lanes (above).
 - **A tolerated block may leave a device mid-operation** — a pump that failed part-way through
   a dispense, or a valve that never reached the port the *next* block is about to pump into

@@ -6,10 +6,16 @@ import pytest
 from lab_devices import errors as core_errors
 from lab_devices.experiment import BlockFailedError, ExperimentRun, RunAbortedError, RunOptions
 from lab_devices.experiment.blocks import Retry
-from lab_devices.experiment.execute import _await_job, _clear_orphaned_job, _refuse_retry
+from lab_devices.experiment.execute import (
+    _await_job,
+    _clear_orphaned_job,
+    _refuse_retry,
+    _run_action,
+)
 from lab_devices.experiment.occupancy import OpenMode
+from lab_devices.experiment.runlog import InMemoryRunLog
 from lab_devices.jobs import Job
-from tests.experiment_run_helpers import make_workflow
+from tests.experiment_run_helpers import make_workflow, verbs
 from tests.fakeclock import FakeClock, drive
 
 
@@ -809,3 +815,100 @@ async def test_no_retry_policy_dispatches_exactly_once(fake_client):
     kinds = [e.kind for e in run.report.log.events]
     assert kinds.count("block_retried") == 0
     assert len([c for c in fake.calls if c[1] == "measure"]) == 1
+
+
+class _StrandEventRaisingSink:
+    """Passes every event through to an inner log, then raises on `job_stranded` — the one emit
+    that runs inside a `finally`, i.e. with the abort's CancelledError already in flight. A sink
+    that raises breaks the protocol (emit() must never raise, design 5 §8), but the engine must
+    survive one: no shipped sink raises, and a run must not become un-abortable because a custom
+    one does."""
+
+    def __init__(self) -> None:
+        self.inner = InMemoryRunLog()
+        self.raised = 0
+
+    def emit(self, event) -> None:
+        self.inner.emit(event)
+        if event.kind == "job_stranded":
+            self.raised += 1
+            raise RuntimeError("sink boom on job_stranded")
+
+    @property
+    def events(self):
+        return self.inner.events
+
+
+_FINALIZER_SWEEP = {
+    ("densitometer_1", verb)
+    for verb in ("stop", "stop_monitoring", "set_led", "set_thermostat")
+}
+
+
+async def test_a_raising_sink_on_the_abort_path_never_resurrects_the_retry(fake_client):
+    """A raising log sink in `_dispatch_action`'s `finally` must not displace the operator's
+    abort. If it does, the CancelledError is REPLACED by the sink's error, `_run_action`'s
+    `except Exception` catches it, `_is_retryable` says yes, `_clear_orphaned_job` stops the
+    device and the retry loop RE-DISPATCHES — hardware moving after `abort()` has returned, the
+    run hanging, no report. hold_job parks the run in the poll loop, inside the dispatch, so the
+    abort lands where the `finally` (and the `job_stranded` emit) will run on the way out; the
+    clock is then advanced well past the back-off so a surviving retry would have every chance to
+    re-dispatch.
+
+    The termination guard is `asyncio.wait`, deliberately NOT `wait_for`: an engine that lets a
+    sink displace a cancellation displaces the one `wait_for` itself issues on timeout, and
+    `wait_for` then waits for that cancellation to land — forever. Against this bug the usual
+    guard IS the hang (measured: the pre-fix code hung pytest indefinitely under `wait_for`).
+    `asyncio.wait` never cancels, so a run that will not stop is an assertion failure."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.hold_job("measure")
+    clock = FakeClock()
+    sink = _StrandEventRaisingSink()
+    run = ExperimentRun(
+        client,
+        _od_workflow(retry={"attempts": 5, "backoff": "60s"}),
+        options=RunOptions(clock=clock, log_sink=sink),
+    )
+    task = asyncio.ensure_future(run.execute())
+    await clock.settle()
+    await clock.advance(1.0)  # inside the job poll loop, i.e. inside the dispatch
+    before = len(fake.calls)
+    run.abort()
+    await clock.advance(300.0)  # five back-offs' worth: a live retry would have fired by now
+    done, _pending = await asyncio.wait({task}, timeout=5.0)
+    if not done:
+        task.cancel()  # never awaited: a run that swallows cancellations would hang the test
+        raise AssertionError("the run never terminated after abort(): the abort was swallowed")
+    with pytest.raises(RunAbortedError):
+        await task
+    assert sink.raised == 1  # the sink DID raise on the abort path (else the test proves nothing)
+    assert run.report.status == "aborted"  # not "failed": the sink's error never became the run's
+    assert isinstance(run.report.error, asyncio.CancelledError)
+    after = verbs(fake)[before:]
+    assert ("densitometer_1", "measure") not in after  # no re-dispatch after abort() returned
+    assert set(after) <= _FINALIZER_SWEEP  # and nothing else reached the wire but safe state
+    kinds = [e.kind for e in run.report.log.events]
+    assert kinds.count("block_retried") == 0  # nor was the abort delayed by a back-off
+
+
+async def test_a_retry_never_dispatches_after_an_abort_however_the_error_arrived(fake_client):
+    """The second half of that fix, on its own. With the `finally` emit wrapped, nothing can
+    displace the CancelledError through the executor's own paths any more — so the retry loop's
+    `abort_requested` guard is defence in depth, and this is the only way to see it work. Drive
+    `_run_action` directly in the exact state a displaced cancellation leaves behind: the abort is
+    a FACT (`ctx.abort_requested`), but no CancelledError is in flight. Nothing may reach the
+    wire: `abort()` has returned."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    clock = FakeClock()
+    run = ExperimentRun(
+        client,
+        _od_workflow(retry={"attempts": 3, "backoff": "1s"}),
+        options=RunOptions(clock=clock),
+    )
+    ctx = run._ctx
+    ctx.abort_requested = True  # the cancellation was consumed; only the fact survives
+    with pytest.raises(asyncio.CancelledError):
+        await _run_action(run._workflow.blocks[0], ctx)
+    assert fake.calls == []  # the retry loop refused to dispatch at all

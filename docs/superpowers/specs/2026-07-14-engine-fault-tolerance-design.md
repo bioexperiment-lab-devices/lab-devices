@@ -529,3 +529,35 @@ this stack today" becomes one that can.
 `abort`/`alarm` blocks (§7 of the limitations doc), a validator warning-severity tier, `slope`/
 `median`/`stddev` stat functions, and fixing the duplicate-serial collision itself (a lab-bridge
 defect — retry papers over it here, but the state file should be keyed by device id, not serial).
+
+### 11.1 Deferred to v2, and named — the warning tier, and `on_error` on an actuation
+
+Carried out of the final review of this increment (2026-07-14). **Not built. Recorded so it is
+not re-derived from scratch, and so the reason it matters is not lost.**
+
+**What.** A **warning severity tier** in the validator (today every diagnostic is an error, so
+there is nowhere to put a "this is probably wrong" finding), and, on top of it, a check that
+**flags `on_error` on an *actuating* command** — a `pump.dispense`, a `valve.set_position`, a
+`densitometer.set_thermostat`: any verb whose trait moves the world rather than reading it. The
+registry already carries what the check needs (`retry_safe` is the closest existing marker; a
+dedicated `actuating` / `read_only` trait flag would be the honest one). The warning would name
+the block and say what it costs: *the world is left in an unknown state and every block after
+this one inherits it.*
+
+**Why it is worth doing.** The hazard is currently **prose only** — "Tolerance is for reads", in
+`docs/experiment-engine-limitations.md`, and the corresponding "What is still not solved" bullet.
+A tolerated *read* costs a sample. A tolerated *actuation* costs the integrity of the experiment,
+silently: the `set_position` fails, the tolerance absorbs it, the next `dispense` puts the drug in
+the wrong tube, and the run reports `"completed"`. Nothing in the run says so.
+
+And prose in these documents is not a control. **This branch proved that twice.** The prose said
+an abort is never swallowed; it was — once by a `parallel`'s tolerance (Round 4, C1), once by a
+raising log sink displacing the in-flight `CancelledError` in `_dispatch_action`'s `finally`
+(Round 5, Fix 1). Both were fixed by putting a *check* where the sentence used to be. The
+actuation hazard is the last one still guarded by a sentence alone, and it is the one whose
+failure mode is a silently invalidated experiment rather than a crash.
+
+**Why not now.** The tier is a real schema/API change (`Diagnostic.severity`, the validator's
+return shape, the `/validate` response, Studio's diagnostics panel and its "can I run this?"
+gate — a warning must *not* block a run, which is the whole point of the tier and the whole
+difficulty of adding one). That is an increment, not a fix, and this branch is closing.
