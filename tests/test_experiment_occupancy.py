@@ -1,6 +1,6 @@
 import pytest
 
-from lab_devices.experiment.errors import InvariantViolationError
+from lab_devices.experiment.errors import InvariantViolationError, OrphanedJobError
 from lab_devices.experiment.occupancy import Occupancy, OpenMode
 
 MOTOR = frozenset({"motor"})
@@ -102,6 +102,39 @@ def test_open_modes_snapshot_in_open_order():
     occ.acquire("densitometer_1", THERMAL, "b2")
     occ.register_open(thermo)
     assert [m.mode_verb for m in occ.open_modes()] == ["set_led", "set_thermostat"]
+
+
+def test_a_stranded_job_keeps_its_channels_until_it_is_really_stopped():
+    """A job the engine abandoned but could not stop is still running on the hardware, so its
+    channels are still busy. `release` (the block's own `finally`) must NOT free them -- the
+    block is over, but the JOB is not -- and the next dispatch on that channel must be refused
+    with an OrphanedJobError naming the job, not with an InvariantViolationError: nothing
+    proven-impossible happened, and a never-tolerated error would kill a run whose author asked
+    to survive device faults. Only a stop that really killed the job frees them."""
+    occ = Occupancy()
+    occ.acquire("densitometer_1", OPTICS, "blocks[1]")
+    occ.strand("densitometer_1", OPTICS, "blocks[1]", "j-1")
+
+    occ.release("densitometer_1", OPTICS, "blocks[1]")  # the block's finally: must not free it
+    with pytest.raises(OrphanedJobError, match="j-1"):
+        occ.acquire("densitometer_1", OPTICS, "blocks[2]")
+    assert occ.is_busy("densitometer_1") is True  # the idle oracle sees the live job
+    occ.acquire("densitometer_1", THERMAL, "blocks[3]")  # a disjoint channel is unaffected
+
+    occ.release_stranded("densitometer_1", "j-2")  # a DIFFERENT job's id frees nothing
+    with pytest.raises(OrphanedJobError):
+        occ.acquire("densitometer_1", OPTICS, "blocks[4]")
+
+    occ.release_stranded("densitometer_1", "j-1")  # the orphan was stopped for real
+    occ.acquire("densitometer_1", OPTICS, "blocks[5]")  # free again
+
+
+def test_strand_only_converts_the_holds_of_the_block_that_placed_them():
+    occ = Occupancy()
+    occ.acquire("densitometer_1", OPTICS, "blocks[1]")
+    occ.strand("densitometer_1", OPTICS | THERMAL, "blocks[9]", "j-1")  # not blocks[1]'s
+    occ.release("densitometer_1", OPTICS, "blocks[1]")  # so this still frees its own hold
+    assert occ.busy_devices() == set()
 
 
 def test_is_busy_tracks_holds():

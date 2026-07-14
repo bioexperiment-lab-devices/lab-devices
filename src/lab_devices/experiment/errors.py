@@ -76,6 +76,17 @@ class InvariantViolationError(ExperimentRunError):
     BusyError). Never retried: the static proof was violated (design 4-exec §7)."""
 
 
+class OrphanedJobError(ExperimentRunError):
+    """A dispatch was refused because an ORPHANED job — one the engine abandoned (a job
+    timeout, or an exhausted poll-failure budget) and could not stop (the device-wide stop
+    would have closed an open mode) — is still running on the target channel(s).
+
+    NOT an InvariantViolationError: nothing proven-impossible happened. The engine knows what
+    is on that channel and declines to stack a second job on it. An ordinary run-time device
+    fault, so `on_error: continue` may absorb it — but never retried (`_NEVER_RETRY`): every
+    attempt would be refused identically until the finalizer stops the device."""
+
+
 class RunAbortedError(ExperimentRunError):
     """The operator aborted the run; the finalizer has completed (design 4-exec §10)."""
 

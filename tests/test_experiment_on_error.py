@@ -10,7 +10,9 @@ from lab_devices.experiment import (
     RunAbortedError,
     RunOptions,
 )
+from lab_devices.experiment.blocks import Retry
 from lab_devices.experiment.execute import _tolerable
+from lab_devices.experiment.runlog import InMemoryRunLog
 from tests.experiment_run_helpers import make_workflow, verbs
 from tests.fakeclock import FakeClock, drive
 
@@ -427,6 +429,111 @@ async def test_an_abort_inside_a_tolerated_parallel_lane_is_never_swallowed(fake
     assert ("valve_1", "home") not in verbs(fake)  # the lane stopped at the abort
 
 
+class AbortWhenBlockFails(InMemoryRunLog):
+    """A run-log sink that hits `abort()` the instant a named block's failure is logged.
+
+    This is the operator watching the run log in Studio and reacting to the failure they have
+    just seen -- and it makes the C1 race DETERMINISTIC instead of hopeful. `execute_block`
+    emits `block_failed` from inside the failing lane's own task, at a moment when the run task
+    is provably parked in `_run_parallel`'s `TaskGroup.__aexit__` (create_task only *schedules*
+    the lanes; the parent reaches __aexit__ and suspends before any lane body runs). So the
+    abort lands on a parked parent, and the lane's exception is recorded by the TaskGroup
+    immediately afterwards -- which is exactly the interleaving in which a TaskGroup gives the
+    error priority and DROPS the cancellation. No sleeps, no polling, no luck."""
+
+    def __init__(self, fake, block_id: str) -> None:
+        super().__init__()
+        self.fake = fake
+        self.block_id = block_id
+        self.run = None
+        self.wire_at_abort = None  # the wire as it stood the moment abort() was called
+
+    def emit(self, event) -> None:
+        super().emit(event)
+        if (
+            self.wire_at_abort is None
+            and event.kind == "block_failed"
+            and event.block_id == self.block_id
+        ):
+            self.wire_at_abort = list(self.fake.calls)  # set BEFORE abort(): abort() re-emits
+            self.run.abort()
+
+
+SAFE_STATE_VERBS = {"stop", "stop_monitoring", "set_led", "set_thermostat"}
+
+
+async def test_an_abort_racing_a_lane_failure_in_a_tolerated_parallel_is_never_swallowed(
+    fake_client,
+):
+    """C1. `asyncio.TaskGroup` DROPS a CancelledError that races a child error -- its docs:
+    it propagates the cancellation "except if there are other errors -- those have priority".
+    So an abort that lands while a lane is failing produces a plain ExceptionGroup containing
+    only the lane's fault, with no CancelledError anywhere inside it (a TaskGroup skips its
+    cancelled children). `execute_block`'s `except BaseExceptionGroup -> _tolerate` arm then
+    absorbed that group and RETURNED NORMALLY: the operator's abort was gone, the run walked on
+    to the next block, homed valve_1 on real hardware, and reported `completed`.
+
+    `_tolerable`'s `asyncio.CancelledError` entry cannot catch this: it guards against a
+    CancelledError LEAF inside the group, and the TaskGroup never puts one there. (Proof:
+    deleting that entry leaves the whole suite green.) The fact that survives the TaskGroup is
+    `ctx.abort_requested`, so that -- not the shape of the exception -- is what must be asked.
+
+    The discriminating assertions are at the WIRE and on the reported status. "The run raised"
+    proves nothing: a TaskGroup re-raises the parent's cancellation in other paths, so a
+    swallowing engine can still LOOK aborted while it keeps driving hardware.
+
+    Mutation-verified, both halves of the fix independently:
+      - delete `_run_parallel`'s BaseExceptionGroup -> CancelledError conversion: status becomes
+        `failed` (an ExceptionGroup, not an abort) -- FAILS.
+      - delete `_tolerate`'s `abort_requested` check as well: the abort is absorbed outright,
+        valve_1 is homed AFTER abort() returned, and the run reports `completed` -- FAILS.
+    Both existing abort-tolerance tests park the run in a HELD JOB with no concurrent lane
+    failure, so neither can see this shape; both stay green against the broken code.
+    """
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.add_device("valve_1", "valve")
+    fake.inject_error("densitometer_1", "measure", *FLAKY, times=10)  # the lane fault
+    sink = AbortWhenBlockFails(fake, "blocks[0].children[0]")
+    clock = FakeClock()
+    workflow = make_workflow(
+        [
+            {
+                "parallel": {"children": [
+                    _measure(1),                     # fails -> the TaskGroup's only error
+                    {"wait": {"duration": "600s"}},  # a genuine second lane
+                ]},
+                "on_error": "continue",              # the arm that swallowed the abort
+            },
+            _home("valve_1"),  # must never reach the wire: the operator has aborted
+        ],
+        streams={"od_1": {}},
+    )
+    run = ExperimentRun(client, workflow, options=RunOptions(clock=clock, log_sink=sink))
+    sink.run = run
+    task = asyncio.ensure_future(run.execute())
+
+    # No clock advance anywhere: the lane's dispatch fails at once, the abort rides its
+    # block_failed event, and wait_for turns a swallowed abort into a failure, not a hang.
+    with pytest.raises(RunAbortedError):
+        await asyncio.wait_for(task, timeout=5.0)
+
+    assert sink.wire_at_abort is not None  # the race really happened: abort() did fire
+    assert run.report.status == "aborted"  # not "completed", and not "failed"
+    assert isinstance(run.report.error, asyncio.CancelledError)  # not an ExceptionGroup
+    # THE WIRE. Nothing the workflow asked for was dispatched after abort() returned: valve_1
+    # was never touched at all, and every command issued after the abort belongs to the
+    # finalizer's safe-state sweep of the one device the run had already touched.
+    assert ("valve_1", "home") not in verbs(fake)
+    after_abort = fake.calls[len(sink.wire_at_abort):]
+    assert after_abort  # the finalizer did run
+    assert all(device == "densitometer_1" for device, _cmd, _params in after_abort)
+    assert all(cmd in SAFE_STATE_VERBS for _device, cmd, _params in after_abort)
+    # ...and the tolerance did not record the operator's decision as a workflow fault
+    assert run.report.tolerated_errors == ()
+    assert _kinds(run.report).count("block_error_tolerated") == 0
+
+
 async def test_a_tolerated_timeout_still_leaves_its_orphan_to_the_finalizer(fake_client):
     """A tolerance must not weaken the Task-5 invariant: `_await_job` raises JobTimeoutError
     WITHOUT cancelling the job -- it is still physically running -- so the job stays in
@@ -458,6 +565,107 @@ async def test_a_tolerated_timeout_still_leaves_its_orphan_to_the_finalizer(fake
     assert [j.state for j in fake.jobs.values()] == ["cancelled"]
     wire = verbs(fake)
     assert wire.index(("valve_1", "home")) < wire.index(("densitometer_1", "stop"))
+
+
+async def test_a_tolerated_orphan_refusal_never_lets_the_next_block_dispatch_on_the_live_job(
+    fake_client,
+):
+    """I4. The shipped morbidostat's exact shape, on entirely DEFAULT RunOptions.
+
+    `job_timeout` defaults to None, but `job_poll_max_failures` defaults to 5 and is the OTHER
+    exit that abandons a live job: six consecutive `get_job` faults exhaust the budget and the
+    fault propagates with the job still RUNNING on the hardware (`_await_job` neither cancels
+    nor untracks it). The retry's orphan-clear would stop it -- but the densitometer holds an
+    open thermostat mode and `Job.cancel()` IS a device-wide `device.stop()`, so the guard
+    FAILS CLOSED and refuses. The original error surfaces... and `on_error: continue` absorbs
+    it.
+
+    That is where the run used to go wrong. The tolerance walked on; the block's `finally` had
+    handed the optics channels back to `ctx.occupancy`; and the NEXT measure dispatched straight
+    on top of the still-running job -- a second concurrent job on one densitometer. On a real
+    agent the second command draws `busy`, which `_dispatch_action` converts to an
+    InvariantViolationError, which is never retried and never tolerated: the run dies blaming an
+    invariant that was never violated. (Here, with the fake, the old code simply started j-2
+    while j-1 was still running -- the same fault, visible at the wire.)
+
+    The occupancy, not the tolerance, is what has to remember: an abandoned job KEEPS its
+    channels (Occupancy.strand). The next dispatch is then refused before it reaches the wire,
+    with an honest diagnostic naming the job that is actually on the channel -- an
+    OrphanedJobError, which the author's `on_error` may absorb like any other device fault, and
+    which no retry can "fix". Nothing else moves: the thermal channel stays free (the run's
+    thermostat still works), the finalizer still stops the device and tears the mode down, and
+    `ctx.in_flight` still carries the abandoned job.
+    """
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.inject_error("densitometer_1", "get_job", "device_unreachable", "no response", times=6)
+    clock = FakeClock()
+    workflow = make_workflow(
+        [
+            {"command": {"device": "densitometer_1", "verb": "set_thermostat",
+                         "params": {"enabled": True, "target_c": 37.0}}},
+            _measure(1, on_error="continue"),  # its job is abandoned, still running
+            _measure(1, on_error="continue"),  # must NOT dispatch on top of it
+        ],
+        streams={"od_1": {}},
+    )
+    workflow.defaults.retry = Retry(attempts=2, backoff="1s")  # zero author opt-in: retry_safe
+    run = ExperimentRun(client, workflow, options=RunOptions(clock=clock))  # DEFAULT options
+
+    report = await drive(clock, run.execute())
+
+    # ONE job was ever put on that densitometer. Not two.
+    assert [(j.cmd, j.state) for j in fake.jobs.values()] == [("measure", "cancelled")]
+    assert len([c for c in fake.calls if c[1] == "measure"]) == 1
+    # The second block failed HONESTLY -- naming the live job, not a phantom invariant.
+    assert report.status == "completed"  # the author asked to continue; the run is not dead
+    assert [t.block_id for t in report.tolerated_errors] == ["blocks[1]", "blocks[2]"]
+    refusal = report.tolerated_errors[1].error
+    assert "j-1" in refusal  # ...the job that is actually on the channel
+    assert "still running on the hardware" in refusal
+    assert "will not dispatch on top of a live job" in refusal
+    assert _kinds(report).count("invariant_violation") == 0  # nothing was ever "proven impossible"
+    assert _kinds(report).count("block_retried") == 0  # a refusal is not retryable
+    assert _kinds(report).count("job_stranded") == 1  # ...and the operator can see why
+    # The obligations the fix must not break:
+    assert "j-1" in run._ctx.in_flight  # never untracked while it may still be running
+    assert any(e.kind == "job_cancelled" and e.block_id is None for e in report.log.events)
+    assert any(  # the mode was torn down for real, not silently
+        e.kind == "teardown_issued" and e.data["verb"] == "set_thermostat"
+        for e in report.log.events
+    )
+    assert run._ctx.occupancy.open_modes() == ()
+    assert run._ctx.occupancy.busy_devices() == set()  # the stop freed the stranded channels
+
+
+async def test_a_stranded_job_does_not_block_the_devices_other_channels(fake_client):
+    """The refusal is per-CHANNEL, not per-device -- which is what makes it composable with the
+    morbidostat at all. The densitometer is the one device whose channel groups are disjoint
+    (optics vs thermal): an abandoned `measure` (optics) must not stop the run from driving the
+    thermostat (thermal), which the hardware happily accepts and on which a three-week culture
+    depends. Refusing the whole DEVICE would have been the easy fix and would have killed the
+    thermostat's own close."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.inject_error("densitometer_1", "get_job", "device_unreachable", "no response", times=6)
+    clock = FakeClock()
+    workflow = make_workflow(
+        [
+            _measure(1, on_error="continue"),  # abandons a live job on optics
+            {"command": {"device": "densitometer_1", "verb": "set_thermostat",
+                         "params": {"enabled": True, "target_c": 37.0}}},  # thermal: must run
+        ],
+        streams={"od_1": {}},
+    )
+    run = ExperimentRun(client, workflow, options=RunOptions(clock=clock))
+
+    report = await drive(clock, run.execute())
+
+    assert report.status == "completed"
+    assert ("densitometer_1", "set_thermostat") in verbs(fake)  # the thermostat still went on
+    assert [t.block_id for t in report.tolerated_errors] == ["blocks[0]"]  # only the measure
+    assert run._ctx.occupancy.open_modes() == ()  # ...and the finalizer closed the mode again
+    assert _kinds(report).count("mode_opened") == 1  # the mode really did open, past the strand
 
 
 async def test_a_tolerated_mode_open_failure_leaves_no_phantom_mode_or_busy_slot(fake_client):
