@@ -18,6 +18,7 @@ class VerbEntry(TypedDict):
     kind: str  # "measure" if the verb records a sample, else "command"
     params: list[ParamEntry]
     result_field: str | None
+    retry_safe: bool  # False = re-issuing is not idempotent; UI disables the retry control
 
 
 def verb_catalog() -> dict[str, dict[str, VerbEntry]]:
@@ -31,6 +32,7 @@ def verb_catalog() -> dict[str, dict[str, VerbEntry]]:
                 for p in trait.params
             ],
             result_field=trait.result_field,
+            retry_safe=trait.retry_safe,
         )
     return catalog
 

@@ -176,3 +176,51 @@ def test_result_field_only_on_measurement_verbs():
             assert trait.result_field is not None, (dtype, verb)
         else:
             assert trait.result_field is None, (dtype, verb)
+
+
+def test_dispense_is_not_retry_safe():
+    assert lookup("pump_1", "dispense").retry_safe is False
+
+
+def test_reads_and_absolute_setters_are_retry_safe():
+    assert lookup("densitometer_1", "measure").retry_safe is True
+    assert lookup("densitometer_1", "measure_blank").retry_safe is True
+    assert lookup("densitometer_1", "set_thermostat").retry_safe is True
+    assert lookup("valve_1", "set_position").retry_safe is True
+    assert lookup("valve_1", "home").retry_safe is True
+    assert lookup("pump_1", "stop").retry_safe is True
+
+
+def test_relative_and_hidden_state_verbs_are_not_retry_safe():
+    # dispense moves a *relative* volume: a retry after a partial dispense double-doses.
+    assert lookup("pump_1", "dispense").retry_safe is False
+    # rotate opens an unbounded fluid-moving mode; it needs an explicit author opt-in.
+    assert lookup("pump_1", "rotate").retry_safe is False
+    # calibrate_tube derives its factor from the *last measurement*, not from its params.
+    assert lookup("densitometer_1", "calibrate_tube").retry_safe is False
+
+
+# Every verb, classified deliberately. A verb added without a decision defaults to False
+# and fails this test, which is the point: nobody gets a silent retry by omission.
+_RETRY_SAFE = {
+    ("pump", "dispense"): False,
+    ("pump", "rotate"): False,
+    ("pump", "stop"): True,
+    ("pump", "set_calibration"): True,
+    ("valve", "set_position"): True,
+    ("valve", "home"): True,
+    ("valve", "configure"): True,
+    ("valve", "stop"): True,
+    ("densitometer", "measure"): True,
+    ("densitometer", "measure_blank"): True,
+    ("densitometer", "set_led"): True,
+    ("densitometer", "set_thermostat"): True,
+    ("densitometer", "set_tube_correction"): True,
+    ("densitometer", "calibrate_tube"): False,
+    ("densitometer", "stop"): True,
+    ("densitometer", "stop_monitoring"): True,
+}
+
+
+def test_every_registry_verb_declares_its_retry_safety():
+    assert {key: trait.retry_safe for key, trait in _REGISTRY.items()} == _RETRY_SAFE
