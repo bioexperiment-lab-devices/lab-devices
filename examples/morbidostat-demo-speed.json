@@ -1,7 +1,7 @@
 {
   "doc_version": 1,
   "name": "Morbidostat (demo speed)",
-  "description": "Morbidostat, demo speed: the same control loop as the 'Morbidostat' example compressed into ~25 minutes (25 cycles of 60 s) so it can be watched end-to-end in Studio.\n\nThe intervals are biologically meaningless - no culture grows measurably in 60 s - so this doc is for learning the block structure and watching the live chart, NOT for running an actual evolution experiment. Use the 'Morbidostat' example for that.\n\nBecause the OD trace is sampled every 3 s instead of every 1 min, the slope constant is 480 instead of 24: it is 60*2/(n*dt) with n = 5. Everything else is identical.",
+  "description": "Morbidostat, demo speed: the same control loop as the 'Morbidostat' example compressed into ~25 minutes (25 cycles of 60 s) so it can be watched end-to-end in Studio.\n\nThe intervals are biologically meaningless - no culture grows measurably in 60 s - so this doc is for learning the block structure and watching the live chart, NOT for running an actual evolution experiment. Use the 'Morbidostat' example for that.\n\nBecause the OD trace is sampled every 3 s instead of every 1 min, the slope constant is 480 instead of 24: it is 60*2/(n*dt) with n = 5. The retry back-off is 1 s rather than 2 s, so a retry still fits inside the 3 s sampling pace. Everything else is identical.\n\nFault tolerance: this doc takes 750 measurements, and a live run of the demo-speed doc once died at cycle 17 on ONE flaky densitometer read. So every retry-safe device call inherits the workflow default retry (3 attempts, 1s apart). The pumps' `dispense` is deliberately NOT covered - `volume_ml` is relative, so a retried dispense would double-dose the culture; a default never retries a non-idempotent verb. The three OD reads additionally carry `on_error: continue`, so a read that fails all three attempts drops one sample instead of the run, and its two sibling lanes keep reading. Each tube's service branch is therefore guarded by `count(od_N) > 0`, independently of its neighbours. Read that guard precisely: a tube that has produced no reading at all is skipped entirely - you must never decide on an injection with no data - but a tube that has read before and merely lost this cycle's samples decides on its most recent trace, holding its last decision. That is deliberate: withholding the dilution perturbs a culture more than one stale slope does. What the guard categorically prevents is a decision over an empty window, which is an EvaluationError and would kill the run. The blanks are NOT tolerated: a failed blank is a setup failure and must stop the run before any culture is committed.\n\nCaveat on a dropped sample: the slope estimator above assumes evenly spaced samples, and a dropped one perturbs it - the trailing means are then taken over a slightly shorter, unevenly spaced span. Retry makes drops rare, and the decision is a sign test (is the culture out-growing its dilution?), so one drop in ten biases the estimate only marginally. It is still a real caveat: a tube that drops several samples in a cycle decides on a noisier slope than the trace suggests. The run log records every one (`block_retried` / `block_error_tolerated`, and `tolerated_errors` in the report) - read them before you trust a cycle.",
   "roles": {
     "medium_pump": {
       "type": "pump"
@@ -36,7 +36,13 @@
     "metadata": {
       "name": "Morbidostat (demo speed)",
       "author": "lab-devices examples",
-      "description": "Morbidostat, demo speed: the same control loop as the 'Morbidostat' example compressed into ~25 minutes (25 cycles of 60 s) so it can be watched end-to-end in Studio.\n\nThe intervals are biologically meaningless - no culture grows measurably in 60 s - so this doc is for learning the block structure and watching the live chart, NOT for running an actual evolution experiment. Use the 'Morbidostat' example for that.\n\nBecause the OD trace is sampled every 3 s instead of every 1 min, the slope constant is 480 instead of 24: it is 60*2/(n*dt) with n = 5. Everything else is identical."
+      "description": "Morbidostat, demo speed: the same control loop as the 'Morbidostat' example compressed into ~25 minutes (25 cycles of 60 s) so it can be watched end-to-end in Studio.\n\nThe intervals are biologically meaningless - no culture grows measurably in 60 s - so this doc is for learning the block structure and watching the live chart, NOT for running an actual evolution experiment. Use the 'Morbidostat' example for that.\n\nBecause the OD trace is sampled every 3 s instead of every 1 min, the slope constant is 480 instead of 24: it is 60*2/(n*dt) with n = 5. The retry back-off is 1 s rather than 2 s, so a retry still fits inside the 3 s sampling pace. Everything else is identical.\n\nFault tolerance: this doc takes 750 measurements, and a live run of the demo-speed doc once died at cycle 17 on ONE flaky densitometer read. So every retry-safe device call inherits the workflow default retry (3 attempts, 1s apart). The pumps' `dispense` is deliberately NOT covered - `volume_ml` is relative, so a retried dispense would double-dose the culture; a default never retries a non-idempotent verb. The three OD reads additionally carry `on_error: continue`, so a read that fails all three attempts drops one sample instead of the run, and its two sibling lanes keep reading. Each tube's service branch is therefore guarded by `count(od_N) > 0`, independently of its neighbours. Read that guard precisely: a tube that has produced no reading at all is skipped entirely - you must never decide on an injection with no data - but a tube that has read before and merely lost this cycle's samples decides on its most recent trace, holding its last decision. That is deliberate: withholding the dilution perturbs a culture more than one stale slope does. What the guard categorically prevents is a decision over an empty window, which is an EvaluationError and would kill the run. The blanks are NOT tolerated: a failed blank is a setup failure and must stop the run before any culture is committed.\n\nCaveat on a dropped sample: the slope estimator above assumes evenly spaced samples, and a dropped one perturbs it - the trailing means are then taken over a slightly shorter, unevenly spaced span. Retry makes drops rare, and the decision is a sign test (is the culture out-growing its dilution?), so one drop in ten biases the estimate only marginally. It is still a real caveat: a tube that drops several samples in a cycle decides on a noisier slope than the trace suggests. The run log records every one (`block_retried` / `block_error_tolerated`, and `tolerated_errors` in the report) - read them before you trust a cycle."
+    },
+    "defaults": {
+      "retry": {
+        "attempts": 3,
+        "backoff": "1s"
+      }
     },
     "persistence": {
       "default": "disk",
@@ -119,7 +125,7 @@
               }
             },
             {
-              "serial": {
+              "parallel": {
                 "children": [
                   {
                     "command": {
@@ -130,7 +136,11 @@
                         "target_c": 30.0
                       }
                     },
-                    "label": "tube 1: hold 30 C"
+                    "label": "tube 1: hold 30 C",
+                    "retry": {
+                      "attempts": 3,
+                      "backoff": "1s"
+                    }
                   },
                   {
                     "command": {
@@ -141,7 +151,11 @@
                         "target_c": 30.0
                       }
                     },
-                    "label": "tube 2: hold 30 C"
+                    "label": "tube 2: hold 30 C",
+                    "retry": {
+                      "attempts": 3,
+                      "backoff": "1s"
+                    }
                   },
                   {
                     "command": {
@@ -152,11 +166,15 @@
                         "target_c": 30.0
                       }
                     },
-                    "label": "tube 3: hold 30 C"
+                    "label": "tube 3: hold 30 C",
+                    "retry": {
+                      "attempts": 3,
+                      "backoff": "1s"
+                    }
                   }
                 ]
               },
-              "label": "thermostats to 30 C, one at a time (agent state store is not concurrency-safe); the finalizer switches them off again"
+              "label": "thermostats to 30 C, all three at once; retry rides out the agent's duplicate-serial state-store race (see docs/experiment-engine-limitations.md). The finalizer switches them off again"
             },
             {
               "serial": {
@@ -187,7 +205,7 @@
                   }
                 ]
               },
-              "label": "blank each densitometer (every later OD is measured against this)"
+              "label": "blank each densitometer (every later OD is measured against this). Retried, but NOT tolerated: a blank that will not read is a setup failure, and it must stop the run before any culture is committed"
             },
             {
               "operator_input": {
@@ -282,7 +300,8 @@
                                   "verb": "measure",
                                   "into": "od_1"
                                 },
-                                "label": "tube 1 OD"
+                                "label": "tube 1 OD (retried; a read that still fails costs this one sample, not the run)",
+                                "on_error": "continue"
                               },
                               {
                                 "measure": {
@@ -290,7 +309,8 @@
                                   "verb": "measure",
                                   "into": "od_2"
                                 },
-                                "label": "tube 2 OD"
+                                "label": "tube 2 OD (retried; a read that still fails costs this one sample, not the run)",
+                                "on_error": "continue"
                               },
                               {
                                 "measure": {
@@ -298,11 +318,12 @@
                                   "verb": "measure",
                                   "into": "od_3"
                                 },
-                                "label": "tube 3 OD"
+                                "label": "tube 3 OD (retried; a read that still fails costs this one sample, not the run)",
+                                "on_error": "continue"
                               }
                             ]
                           },
-                          "label": "read all three tubes at once (independent densitometers)"
+                          "label": "read all three tubes at once (independent densitometers); a lane that fails is absorbed in that lane, so its two siblings still read"
                         }
                       ]
                     },
@@ -310,7 +331,7 @@
                   },
                   {
                     "branch": {
-                      "if": "last(od_1) >= od_min",
+                      "if": "count(od_1) > 0 and last(od_1) >= od_min",
                       "then": [
                         {
                           "branch": {
@@ -393,11 +414,11 @@
                         }
                       ]
                     },
-                    "label": "tube 1: service (skipped entirely while too dilute to read)"
+                    "label": "tube 1: service (skipped entirely with no reading at all, or while too dilute to read)"
                   },
                   {
                     "branch": {
-                      "if": "last(od_2) >= od_min",
+                      "if": "count(od_2) > 0 and last(od_2) >= od_min",
                       "then": [
                         {
                           "branch": {
@@ -480,11 +501,11 @@
                         }
                       ]
                     },
-                    "label": "tube 2: service (skipped entirely while too dilute to read)"
+                    "label": "tube 2: service (skipped entirely with no reading at all, or while too dilute to read)"
                   },
                   {
                     "branch": {
-                      "if": "last(od_3) >= od_min",
+                      "if": "count(od_3) > 0 and last(od_3) >= od_min",
                       "then": [
                         {
                           "branch": {
@@ -567,7 +588,7 @@
                         }
                       ]
                     },
-                    "label": "tube 3: service (skipped entirely while too dilute to read)"
+                    "label": "tube 3: service (skipped entirely with no reading at all, or while too dilute to read)"
                   },
                   {
                     "parallel": {
