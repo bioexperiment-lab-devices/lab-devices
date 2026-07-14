@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.4.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.3.0...v0.4.0) (2026-07-14)
+
+
+### Features
+
+* **examples:** morbidostat demonstration experiment + engine limitations ([#18](https://github.com/bioexperiment-lab-devices/lab-devices/issues/18)) ([d7e3955](https://github.com/bioexperiment-lab-devices/lab-devices/commit/d7e395549e2a63b28bc81f92392cc72f83cfa842))
+* **examples:** morbidostat survives a transient device fault ([0e96cf0](https://github.com/bioexperiment-lab-devices/lab-devices/commit/0e96cf01f90d33488316350fb5f6fa18189933e8))
+* **experiment:** declare per-verb retry_safe in the registry ([00211d4](https://github.com/bioexperiment-lab-devices/lab-devices/commit/00211d4bb1ba0dc95467f7e125e481f899bce840))
+* **experiment:** engine fault tolerance — retry, on_error, per-device isolation ([27adc8d](https://github.com/bioexperiment-lab-devices/lab-devices/commit/27adc8d5939bd382db2b653da95754a29e7017ff))
+* **experiment:** guard refinement for may-written streams ([841095e](https://github.com/bioexperiment-lab-devices/lab-devices/commit/841095e9f337e7c25f5e5cf341af278ec5e3cd4f))
+* **experiment:** on_error tolerance and per-lane fault isolation ([7b90917](https://github.com/bioexperiment-lab-devices/lab-devices/commit/7b909170e3d8bbd0ce7b18be92d7f82fbcab4c6d))
+* **experiment:** retry + on_error block schema and round-trip ([6c87cc7](https://github.com/bioexperiment-lab-devices/lab-devices/commit/6c87cc763a5aefef377799b0999d1a57936aec92))
+* **experiment:** retry policy on command and measure blocks ([7188601](https://github.com/bioexperiment-lab-devices/lab-devices/commit/718860127191561c9e0a2d9bcec27da16b234701))
+* **experiment:** validate retry placement, idempotency opt-in, defaults ([a5f3f71](https://github.com/bioexperiment-lab-devices/lab-devices/commit/a5f3f71e8c217fb9c587dbdf626e92a92591ca92))
+* **studio:** author and display retry / on_error in the builder and run log ([702f3a3](https://github.com/bioexperiment-lab-devices/lab-devices/commit/702f3a397a1f15f6c6f33f7e02e779cef9a22b29))
+
+
+### Bug Fixes
+
+* **engine:** a raising log sink can no longer displace an in-flight abort ([0ce80fe](https://github.com/bioexperiment-lab-devices/lab-devices/commit/0ce80fe9771952bfcb7d4ddff250b30da3c29969))
+* **engine:** poll a live job again instead of re-dispatching it; close the mode-guard TOCTOU ([5787521](https://github.com/bioexperiment-lab-devices/lab-devices/commit/57875215b8f2d26545b5043ebace4cf9d95a9ce6))
+* **examples:** a dead sensor must not latch an open-loop drug injector ([2a2298f](https://github.com/bioexperiment-lab-devices/lab-devices/commit/2a2298f8bf0feacaed6fb7458d420066339d40af))
+* **experiment:** an abort racing a lane failure is never swallowed; an orphan keeps its channels ([4d8a2db](https://github.com/bioexperiment-lab-devices/lab-devices/commit/4d8a2db18479133f941d29268cfc101c9e7934ef))
+* **experiment:** close six retry-loop gaps found in review ([52fef3a](https://github.com/bioexperiment-lab-devices/lab-devices/commit/52fef3a15cb055fec41b69b74b51a29d564009e9))
+* **experiment:** discriminate lane isolation, flatten masked group errors ([e95fb7d](https://github.com/bioexperiment-lab-devices/lab-devices/commit/e95fb7dd7e0ed6547b5a25bc104739024ece2395))
+* **experiment:** make guard refinement window-aware (duration-window soundness hole) ([1b7fb10](https://github.com/bioexperiment-lab-devices/lab-devices/commit/1b7fb100a8660428b7c4a891bcbc23849b6ad50b))
+* **experiment:** make the orphan-cancel fail-closed when a stop would kill an open mode ([7bfef3d](https://github.com/bioexperiment-lab-devices/lab-devices/commit/7bfef3d96e748308069df2aff9339a1bb2686eef))
+* **experiment:** sync webapp role walker with engine block keys, export Retry/Defaults, reject defaults.on_error ([a3580ba](https://github.com/bioexperiment-lab-devices/lab-devices/commit/a3580ba1ee1ccf7e859304dfcb3e66abc4f41b1c))
+* **studio:** stop cross-doc field leakage, per-stream persistence loss, stale allow_repeat ([9e6af87](https://github.com/bioexperiment-lab-devices/lab-devices/commit/9e6af87036e1aecf95b2da16318b0fb664466336))
+* **studio:** stop the builder from destroying workflow.defaults/persistence on save ([849d272](https://github.com/bioexperiment-lab-devices/lab-devices/commit/849d27214651c6a7bdb6738fc30f2ad631282807))
+
+
+### Documentation
+
+* correct four claims against Task 11 real-hardware measurements ([8f7a28a](https://github.com/bioexperiment-lab-devices/lab-devices/commit/8f7a28a516b2f0845ec0c7943a463d2a1392b807))
+* correct the SerialHop store race — root cause is duplicate device serials ([#20](https://github.com/bioexperiment-lab-devices/lab-devices/issues/20)) ([8be489e](https://github.com/bioexperiment-lab-devices/lab-devices/commit/8be489e0cbc69bf3698ce67d7dee50607f33d5af))
+* design for engine fault tolerance (retry + on_error) ([a63138c](https://github.com/bioexperiment-lab-devices/lab-devices/commit/a63138c95b3c9aca5a6ae0cd3cf47bba9018d65b))
+* engine fault tolerance shipped; retract the flaky-read warning ([2e8c477](https://github.com/bioexperiment-lab-devices/lab-devices/commit/2e8c477fa9b177ca74ddf126c236656d5e3d47a4))
+* **experiment:** correct Task 2 review findings on retry_safe rationale ([7c01aab](https://github.com/bioexperiment-lab-devices/lab-devices/commit/7c01aab3c69791193e7e33d5eb3ba77f2517f55b))
+* TDD plan for engine fault tolerance (11 tasks) ([ca8e319](https://github.com/bioexperiment-lab-devices/lab-devices/commit/ca8e319bd6ca36878873d0119451d856486651b0))
+* the canonical example must not teach an open-loop injector ([37adbe9](https://github.com/bioexperiment-lab-devices/lab-devices/commit/37adbe9f648f16a30c90c50f672673205938bb27))
+
 ## [0.3.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.2.0...v0.3.0) (2026-07-12)
 
 
