@@ -11,10 +11,18 @@ from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import ExpressionError, WorkflowLoadError
 from lab_devices.experiment.expr import parse_expression
 from lab_devices.experiment.registry import lookup
-from lab_devices.experiment.workflow import Group, Metadata, Persistence, StreamDecl, Workflow
+from lab_devices.experiment.workflow import (
+    Defaults,
+    Group,
+    Metadata,
+    Persistence,
+    StreamDecl,
+    Workflow,
+)
 
 SCHEMA_VERSION = 1
-_TIMING_KEYS = ("label", "gap_after", "start_offset")
+_BLOCK_KEYS = ("label", "gap_after", "start_offset", "retry", "on_error")
+_ON_ERROR_VALUES = ("fail", "continue")
 
 
 def _req(body: Any, key: str, ctx: str) -> Any:
@@ -72,6 +80,18 @@ def _checked_params(body: Any, ctx: str) -> dict[str, Any]:
         if isinstance(value, str):
             _checked_expr(value, f"{ctx} param {name!r}")
     return params
+
+
+def _retry(value: Any, ctx: str) -> B.Retry:
+    body = _obj(value, ctx)
+    attempts = body.get("attempts")
+    if not isinstance(attempts, int) or isinstance(attempts, bool) or attempts < 1:
+        raise WorkflowLoadError(f"{ctx}: attempts must be an integer >= 1, got {attempts!r}")
+    backoff = _checked_duration(body.get("backoff", "1s"), f"{ctx} backoff")
+    allow_repeat = body.get("allow_repeat", False)
+    if not isinstance(allow_repeat, bool):
+        raise WorkflowLoadError(f"{ctx}: allow_repeat must be a boolean, got {allow_repeat!r}")
+    return B.Retry(attempts=attempts, backoff=backoff, allow_repeat=allow_repeat)
 
 
 def _command(body: Any, timing: dict[str, Any]) -> B.Block:
@@ -164,12 +184,18 @@ _BUILDERS: dict[str, Callable[[Any, dict[str, Any]], B.Block]] = {
 def block_from_dict(d: Any) -> B.Block:
     if not isinstance(d, dict):
         raise WorkflowLoadError(f"block must be an object, got {type(d).__name__}")
-    timing = {k: d[k] for k in _TIMING_KEYS if k in d}
+    timing = {k: d[k] for k in _BLOCK_KEYS if k in d}
     if "gap_after" in timing:
         timing["gap_after"] = _checked_duration(timing["gap_after"], "gap_after")
     if "start_offset" in timing:
         timing["start_offset"] = _checked_duration(timing["start_offset"], "start_offset")
-    type_keys = [k for k in d if k not in _TIMING_KEYS]
+    if "retry" in timing:
+        timing["retry"] = _retry(timing["retry"], "retry")
+    if "on_error" in timing and timing["on_error"] not in _ON_ERROR_VALUES:
+        raise WorkflowLoadError(
+            f"on_error must be one of {_ON_ERROR_VALUES}, got {timing['on_error']!r}"
+        )
+    type_keys = [k for k in d if k not in _BLOCK_KEYS]
     if len(type_keys) != 1:
         raise WorkflowLoadError(f"block must have exactly one type key, got {type_keys}")
     key = type_keys[0]
@@ -223,6 +249,13 @@ def _dump_body(b: B.Block) -> tuple[str, dict[str, Any]]:
     raise WorkflowLoadError(f"cannot serialize {type(b).__name__}")
 
 
+def _retry_to_dict(r: B.Retry) -> dict[str, Any]:
+    body: dict[str, Any] = {"attempts": r.attempts, "backoff": r.backoff}
+    if r.allow_repeat:
+        body["allow_repeat"] = True
+    return body
+
+
 def block_to_dict(b: B.Block) -> dict[str, Any]:
     """Serialize a block to its canonical JSON form."""
     key, body = _dump_body(b)
@@ -233,6 +266,10 @@ def block_to_dict(b: B.Block) -> dict[str, Any]:
         out["gap_after"] = b.gap_after
     if b.start_offset is not None:
         out["start_offset"] = b.start_offset
+    if b.retry is not None:
+        out["retry"] = _retry_to_dict(b.retry)
+    if b.on_error != "fail":
+        out["on_error"] = b.on_error
     return out
 
 
@@ -252,6 +289,10 @@ def workflow_from_dict(d: Any) -> Workflow:
     persistence = Persistence(
         default=pd.get("default", "in_memory"), format=pd.get("format", "jsonl")
     )
+    dd = _obj(d.get("defaults", {}), "defaults")
+    defaults = Defaults(
+        retry=_retry(dd["retry"], "defaults.retry") if "retry" in dd else None
+    )
     streams: dict[str, StreamDecl] = {}
     for name, sv in _obj(d.get("streams", {}), "streams").items():
         s = _obj(sv, f"stream {name!r}")
@@ -264,6 +305,7 @@ def workflow_from_dict(d: Any) -> Workflow:
         schema_version=version,
         blocks=_children(d.get("blocks", []), "blocks"),
         metadata=metadata, persistence=persistence, streams=streams, groups=groups,
+        defaults=defaults,
     )
 
 
@@ -278,6 +320,8 @@ def workflow_to_dict(w: Workflow) -> dict[str, Any]:
     if md:
         out["metadata"] = md
     out["persistence"] = {"default": w.persistence.default, "format": w.persistence.format}
+    if w.defaults.retry is not None:
+        out["defaults"] = {"retry": _retry_to_dict(w.defaults.retry)}
     if w.streams:
         out["streams"] = {
             name: {k: v for k, v in (("units", s.units), ("persistence", s.persistence))

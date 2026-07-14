@@ -2,7 +2,12 @@ import pytest
 
 from lab_devices.experiment import blocks as B
 from lab_devices.experiment.errors import UnknownVerbError, WorkflowLoadError
-from lab_devices.experiment.serialize import block_from_dict, block_to_dict
+from lab_devices.experiment.serialize import (
+    block_from_dict,
+    block_to_dict,
+    workflow_from_dict,
+    workflow_to_dict,
+)
 
 
 def test_command_with_timing():
@@ -131,3 +136,58 @@ def test_null_count_loop_rejected():
 def test_unknown_block_type_rejected():
     with pytest.raises(WorkflowLoadError):
         block_from_dict({"typo_key": {}})
+
+
+def test_round_trip_preserves_retry_and_on_error():
+    doc = {
+        "schema_version": 1,
+        "persistence": {"default": "in_memory", "format": "jsonl"},
+        "defaults": {"retry": {"attempts": 2, "backoff": "5s"}},
+        "streams": {"od_1": {"units": "AU"}},
+        "blocks": [
+            {
+                "measure": {"device": "densitometer_1", "verb": "measure", "into": "od_1"},
+                "label": "read OD",
+                "retry": {"attempts": 3, "backoff": "2s"},
+                "on_error": "continue",
+            },
+            {
+                "command": {
+                    "device": "pump_1", "verb": "dispense", "params": {"volume_ml": 0.5}
+                },
+                "retry": {"attempts": 2, "backoff": "1s", "allow_repeat": True},
+            },
+        ],
+    }
+    assert workflow_to_dict(workflow_from_dict(doc)) == doc
+
+
+def test_retry_defaults_backoff_to_one_second():
+    w = workflow_from_dict({
+        "schema_version": 1,
+        "streams": {"od_1": {}},
+        "blocks": [{"measure": {"device": "densitometer_1", "verb": "measure", "into": "od_1"},
+                    "retry": {"attempts": 3}}],
+    })
+    assert w.blocks[0].retry.attempts == 3
+    assert w.blocks[0].retry.backoff == "1s"
+    assert w.blocks[0].retry.allow_repeat is False
+    assert w.blocks[0].on_error == "fail"
+
+
+def test_bad_on_error_value_rejected_at_load():
+    with pytest.raises(WorkflowLoadError, match="on_error"):
+        workflow_from_dict({
+            "schema_version": 1,
+            "blocks": [{"wait": {"duration": "1s"}, "on_error": "retry"}],
+        })
+
+
+def test_bad_retry_attempts_rejected_at_load():
+    with pytest.raises(WorkflowLoadError, match="attempts"):
+        workflow_from_dict({
+            "schema_version": 1,
+            "streams": {"od_1": {}},
+            "blocks": [{"measure": {"device": "densitometer_1", "verb": "measure",
+                                    "into": "od_1"}, "retry": {"attempts": 0}}],
+        })
