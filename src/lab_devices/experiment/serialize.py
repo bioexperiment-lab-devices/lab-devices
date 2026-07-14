@@ -22,7 +22,6 @@ from lab_devices.experiment.workflow import (
 
 SCHEMA_VERSION = 1
 _BLOCK_KEYS = ("label", "gap_after", "start_offset", "retry", "on_error")
-_ON_ERROR_VALUES = ("fail", "continue")
 _DEFAULTS_KEYS = ("retry",)
 
 
@@ -192,9 +191,9 @@ def block_from_dict(d: Any) -> B.Block:
         timing["start_offset"] = _checked_duration(timing["start_offset"], "start_offset")
     if "retry" in timing:
         timing["retry"] = _retry(timing["retry"], "retry")
-    if "on_error" in timing and timing["on_error"] not in _ON_ERROR_VALUES:
+    if "on_error" in timing and timing["on_error"] not in B.ON_ERROR_VALUES:
         raise WorkflowLoadError(
-            f"on_error must be one of {_ON_ERROR_VALUES}, got {timing['on_error']!r}"
+            f"on_error must be one of {B.ON_ERROR_VALUES}, got {timing['on_error']!r}"
         )
     type_keys = [k for k in d if k not in _BLOCK_KEYS]
     if len(type_keys) != 1:

@@ -1,8 +1,10 @@
 import pytest
 
+from lab_devices.experiment import blocks as B
 from lab_devices.experiment.errors import ValidationError
 from lab_devices.experiment.serialize import workflow_from_dict
 from lab_devices.experiment.validate import validate
+from lab_devices.experiment.workflow import Workflow
 
 
 def _validate(doc):
@@ -80,9 +82,26 @@ def test_defaults_retry_does_not_make_dispense_retryable():
 def test_on_error_continue_is_accepted_on_every_container():
     _validate({
         "schema_version": 1,
+        "groups": {"g": {"body": [{"wait": {"duration": "1s"}}]}},
         "blocks": [
             {"serial": {"children": [{"wait": {"duration": "1s"}}]}, "on_error": "continue"},
             {"parallel": {"children": [{"wait": {"duration": "1s"}}]}, "on_error": "continue"},
             {"wait": {"duration": "1s"}, "on_error": "continue"},
+            {
+                "loop": {"count": 1, "body": [{"wait": {"duration": "1s"}}]},
+                "on_error": "continue",
+            },
+            {
+                "branch": {"if": "true", "then": [{"wait": {"duration": "1s"}}]},
+                "on_error": "continue",
+            },
+            {"group_ref": {"name": "g"}, "on_error": "continue"},
         ],
     })
+
+
+def test_bad_on_error_on_a_programmatic_ast_is_rejected():
+    w = Workflow(schema_version=1, blocks=[B.Wait(duration="1s", on_error="retry")])
+    with pytest.raises(ValidationError) as exc:
+        validate(w)
+    assert any("on_error must be one of" in m for m in _messages(exc))

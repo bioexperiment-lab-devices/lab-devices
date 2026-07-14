@@ -302,15 +302,12 @@ def _check_loop(
         _check_condition(b.until, f"{path} loop until", w, binding_types, out)
 
 
-_ON_ERROR_VALUES = ("fail", "continue")
-
-
 def _check_on_error(block: B.Block, path: str, out: list[Diagnostic]) -> None:
     """Legal on every block type (design 2026-07-14 §2.2)."""
-    if block.on_error not in _ON_ERROR_VALUES:
+    if block.on_error not in B.ON_ERROR_VALUES:
         out.append(Diagnostic(
             "block", path,
-            f"on_error must be one of {_ON_ERROR_VALUES}, got {block.on_error!r}",
+            f"on_error must be one of {B.ON_ERROR_VALUES}, got {block.on_error!r}",
         ))
 
 
