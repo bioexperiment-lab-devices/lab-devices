@@ -3,6 +3,18 @@
 Date: 2026-07-13
 Status: settled (user-approved 2026-07-13)
 
+> **Superseded 2026-07-14.** Left in place as the historical record of what was decided on
+> 2026-07-13 — do not treat it as current. The fault-tolerance work and its real-hardware
+> validation are recorded in
+> [`2026-07-14-engine-fault-tolerance-design.md`](2026-07-14-engine-fault-tolerance-design.md).
+> Two claims below no longer hold:
+> - **§3.2, "the decision is a sign test."** It is not: `r > r_dil` is a *threshold* test at a
+>   positive setpoint the controller pins itself to, so decisions are habitually marginal and the
+>   magnitude carries the decision, not the sign. See `docs/experiment-engine-limitations.md`.
+> - **§7.3, "The engine has no retry, so one flaky read destroys the run."** Retry, `on_error`,
+>   per-device fault isolation, and resilient job polling shipped 2026-07-14 and are validated on
+>   real hardware — see the design doc above and `docs/experiment-engine-limitations.md`.
+
 A worked example that implements the morbidostat algorithm of `docs/morbidostat_algorithm.md`
 (Toprak et al. 2012/2013) as an Experiment Studio document. Its job is pedagogic: show users
 how a real closed-loop evolution experiment decomposes into the engine's block vocabulary.

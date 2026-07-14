@@ -160,18 +160,27 @@ dictates the block structure, and the validator enforces it.
 *not* teach you. `set_thermostat`, `home`, and `configure` persist device state to a file on the
 agent host, keyed by the device's *serial number*. On a test rig whose simulated devices are
 clones (all three densitometers reporting the same serial), those three files are **one** file —
-so setting three thermostats at once means three writers racing on it, which fails ~92% of the
-time and kills the run. The first live run of this example died exactly that way, 26 s in.
+so setting three thermostats at once means three writers racing on it. Measured on real hardware
+2026-07-14: **8/25 (32%)** failed in a dedicated baseline, **29/75 (38.7%)** consistently across
+all thermostat trials that day — real, reproducible, and frequent enough to test against, but
+rarer than first recorded. The first live run of this example died exactly that way, 26 s in.
 
 The example originally serialised the whole setup to dodge it. It no longer has to: the
 thermostat block is `parallel` again, with `retry: {attempts: 6, backoff: "1s"}` on each lane.
 The race is transient and `set_thermostat` is an absolute setter, so re-issuing it lands the
-same state. **Six attempts, not three** — the three lanes fail *together*, the back-off has no
-jitter so they retry together, and the contenders only thin out as each round's winner drops out
-(3 → 2 → 1). Three attempts is zero headroom. The blanks and the valve `home`/`configure` stay
-serial: also one-time, and there was nothing to buy back. The monitor loop was always parallel,
-because `measure` is a pure read — verified over 90 concurrent calls. On real hardware with
-unique serials none of this arises; details and the real fix in
+same state. **Six attempts, not three — but not for the reason first written here.** The
+original argument was that a jitterless back-off can't de-synchronize a thundering herd, so three
+colliding lanes would retry in lockstep and only thin out 3 → 2 → 1 over three clean rounds.
+**Measured on real hardware, that isn't what happens:** across 25 trials with `attempts: 6`, the
+fault fired 9 times and produced 10 `block_retried` events — every single one `attempt: 1 of 6`.
+No block ever reached attempt 2. A collision costs one loser exactly one extra second, because by
+the next attempt the other writers have already released the file. `attempts: 2` would have
+covered every observed case. Six stays — free headroom on a one-time block — but the reasoning is
+corrected: a jitterless back-off didn't need to de-synchronize anything here, because collisions
+resolved one loser at a time. The blanks and the valve `home`/`configure` stay serial: also
+one-time, and there was nothing to buy back. The monitor loop was always parallel, because
+`measure` is a pure read — verified over 90 concurrent calls. On real hardware with unique serials
+none of this arises; details and the real fix in
 [`../docs/experiment-engine-limitations.md`](../docs/experiment-engine-limitations.md).
 
 `pace` is a floor, not a deadline: the 10 min growth phase plus a ~1.4 min dilution pass fits
@@ -189,6 +198,17 @@ That is fixed. The engine has `retry` and `on_error`, and this example uses both
 to completion *through* that class of fault. What follows is how to author them without hurting
 a culture, because the features are small and the ways to misuse them are not.
 
+**Measured on real hardware, 2026-07-14.** A 25-cycle run of `morbidostat-demo-speed.json` on
+the same test rig completed: 25/25 cycles, 750/750 OD samples, zero dropped. Three transient
+densitometer faults fired during the run — the same fault class that killed the historical run
+above — and all three were cured on the first retry (`block_retried: 3`,
+`block_error_tolerated: 0`). **The dosing arms were not exercised, though.** The test rig's
+simulated densitometers read absorbance `0.0` on all 750 reads, so every cycle took the "too
+dilute → no action" branch: no `dispense`, no valve actuation, ever, in that run. The run
+validates setup, thermostats, measurement, the guard, branching, and fault tolerance end to end
+on real hardware — it does not validate the pump/valve dosing arms on real hardware. That is a
+property of the test rig's simulator, not of the engine or this example.
+
 ### `retry` — ride out a transient fault
 
 ```json
@@ -200,9 +220,12 @@ policy. (You can put `retry` on a single block too; the thermostats do.)
 
 - **`attempts` is the TOTAL number of tries**, not retries-after-the-first. `attempts: 3` means
   the block is dispatched at most three times.
-- **`backoff` is a constant delay** between attempts (default `"1s"`). There is **no jitter**,
-  so retry does not de-synchronize a thundering herd: lanes that fail together retry together.
-  That is why the thermostat block asks for 6 attempts and not 3.
+- **`backoff` is a constant delay** between attempts (default `"1s"`). There is **no jitter** —
+  but measured on real hardware (2026-07-14, 25 trials on the thermostat block), that did not
+  produce a multi-round thundering herd: the fault fired 9 times, produced 10 retries, and every
+  one was `attempt 1 of 6` — max observed retry depth **1**. The thermostat block still asks for
+  6 attempts (free headroom on a one-time block), not because 3 rounds of thinning were needed —
+  see "Why the setup blocks look the way they do" above for the measurement.
 - Only *transient* errors are retried — a device or transport fault. An author error (unknown
   device, bad params, an empty stream window) fails immediately, because it would fail
   identically forever. An operator abort is never delayed.

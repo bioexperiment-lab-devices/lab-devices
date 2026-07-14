@@ -80,6 +80,21 @@ not skip a cycle.
 that killed it, and the one-time thermostat setup went back to being `parallel` (see the
 duplicate-serial section below — retry rides the race out).
 
+**Measured on real hardware, 2026-07-14.** A 25-cycle run of `morbidostat-demo-speed.json` on
+`windows_arm64_test_client` completed: 25/25 cycles, 750/750 OD samples recorded, zero dropped.
+Three transient densitometer faults fired during the run — the same fault class that killed the
+historical cycle-17 run above — and all three were cured on the first retry (`block_retried: 3`,
+`block_error_tolerated: 0`). The parallel thermostat race did not even fire this run; it happened
+to win clean.
+
+**Honest gap: dosing was never exercised.** The test client's simulated densitometers read
+absorbance **0.0** on all 750 reads, so every cycle took the "too dilute → no action" branch —
+no `dispense`, no valve actuation, ever, in this run. The run validates setup, thermostats,
+measurement, the freshness guard, branching, and fault tolerance end to end on real hardware. It
+does **not** validate the pump/valve dosing arms on real hardware. That gap is a property of the
+test rig's simulator, not of the engine, and "runs to completion" above should be read for what
+it actually covers.
+
 ### How to use it without hurting a culture
 
 This is the part that matters. The features are small; the ways to misuse them are not.
@@ -94,11 +109,21 @@ This is the part that matters. The features are small; the ways to misuse them a
 `attempts` is the **total** number of tries, not retries-after-the-first — `attempts: 3` means
 the block is dispatched at most three times. (My original sketch said `times: 3`, which is
 ambiguous, and on a `pump.dispense` that ambiguity is a dosing hazard.) `backoff` is a
-**constant** delay between attempts, default `"1s"`. There is no jitter, so retry does **not**
-de-synchronize a thundering herd: three lanes that fail together will retry together. That is
-why the example's thermostat block, whose three lanes contend on one file, asks for **6**
-attempts rather than 3 — the contenders only thin out as each round's winner drops out
-(3 → 2 → 1), and 3 attempts leaves exactly zero headroom for that.
+**constant** delay between attempts, default `"1s"`. There is no jitter. I originally argued from
+that fact that the example's thermostat block, whose three lanes contend on one file, needed
+**6** attempts rather than 3: a jitterless back-off cannot de-synchronize a thundering herd, so
+three lanes that collide would retry together, and the contending set would only thin out as
+each round's winner drops out (3 → 2 → 1) — three clean rounds needed, so 3 attempts would leave
+exactly zero headroom.
+
+**That argument is wrong, and measured hardware says so.** Across 25 trials with `attempts: 6`
+on this exact roster (2026-07-14), the fault fired in 9 and produced 10 `block_retried` events —
+**every one of them `attempt: 1 of 6`.** Not one block ever reached attempt 2. A collision
+produces **one loser at a time**, and that loser wins on its very next attempt, one second later,
+because by then the other writers have already finished and released the file. `attempts: 2`
+would have sufficed in every observed trial. **`attempts: 6` stays** — it is free headroom on a
+one-time block and costs nothing — but the reasoning that used to justify it was speculative and
+is now known to be false. State what was actually measured, not the thundering-herd story.
 
 **`allow_repeat` is not a safety feature.** `retry` on a verb the registry does not mark
 `retry_safe` is a validation error, and `allow_repeat: true` is the escape hatch. It does not
@@ -478,12 +503,33 @@ Every single failure named the *same* file. Valves never collide precisely becau
 serial and so are not keyed onto a shared one — which is itself the confirmation of the
 mechanism.
 
+**Re-measured 2026-07-14, same hardware, same fault, same file, same two sharing-violation
+variants (temp-open and rename).** A dedicated baseline of `set_thermostat` in parallel (no
+retry) failed **8/25 (32%)**, not 23/25 (92%) — measured under Task 11's real-hardware
+validation, through the engine's executor rather than raw parallel client calls. Across all
+thermostat trials that day (three batches under different retry/on_error configurations), the
+rate held consistent with itself: **29/75 (38.7%)**. The fault is real, reproduces reliably, and
+names the identical file and error text above — it is just roughly a third as frequent as first
+recorded. I did not determine why the rate differs; the duplicate serials are intact and the
+fault source is unchanged, so the likely explanation is the harness or ambient load on the
+Windows box at the time of the original measurement. Take **32%** as the current number for this
+roster.
+
 **What is NOT broken (tested, so the alarming version can be ruled out).** Runtime device state
 is per-device, not shared: setting `pump_1`'s calibration to 0.002 left `pump_2` and `pump_3` at
 0.001. So the aliasing does **not** cause silent cross-talk during a run — three pumps do not
 share one live calibration. The damage is confined to the persist path, where it is loud (the
 command fails) rather than quiet. Persisted state presumably *is* last-writer-wins across an
 agent restart, but that was not tested.
+
+**Also not broken — in fact aliased in exactly the direction you'd expect, and a direct
+consequence of this same root cause.** The blank calibration (`measure_blank`) persists to the
+same shared `densitometer-25-006.json` this whole section is about, so blanking any one of the
+three densitometers blanks all three. Measured 2026-07-14: withholding `measure_blank` from
+`densitometer_3` and calling `measure` on it anyway returned a full 5/5 samples across 3 trials,
+identical to the blanked lanes. **`measure` does not require a prior `measure_blank` on this
+roster** — the requirement is real in principle (an unblanked read is meaningless) and
+unenforceable in practice, for the same aliasing reason as everything else here.
 
 **Where it bit.** The example originally set all three thermostats in one `parallel` block —
 legal, validator-approved, three distinct devices. It killed the first live run 26 s in.
@@ -494,13 +540,18 @@ calls stayed parallel: a pure read, what the science requires, verified over 90 
 
 **Superseded, 2026-07-14 (§0 shipped).** The thermostat block is `parallel` again, with
 `retry: {attempts: 6, backoff: "1s"}` on each lane — the race is transient and
-`set_thermostat` is an absolute setter, so a retry is safe and lands the same state. **6
-attempts, not 3**: the three lanes fail *together* and the back-off has **no jitter**, so they
-retry together too; the contenders only thin out as each round's winner drops out (3 → 2 → 1),
-and 3 attempts leaves exactly zero headroom for that. The block is one-time, so the headroom is
-nearly free. It is deliberately **not** tolerated — a silently-unset thermostat is a scientific
-defect, not a dropped sample. The blanks and the valve `home`/`configure` remain serial: they
-are equally one-time and there was nothing to buy back.
+`set_thermostat` is an absolute setter, so a retry is safe and lands the same state. The 6
+attempts were originally justified by a convergence story: the three lanes fail *together* and
+the back-off has **no jitter**, so they retry together too, and the contenders only thin out as
+each round's winner drops out (3 → 2 → 1), leaving 3 attempts exactly zero headroom. **Measured
+on real hardware the same day, that story is wrong:** across 25 trials the fault fired 9 times,
+produced 10 `block_retried` events, and every single one was `attempt: 1 of 6` — no block ever
+reached attempt 2. A collision costs exactly one loser one extra second, not several rounds;
+`attempts: 2` would have covered every observed case. **6 stays anyway** — it is nearly free
+headroom on a one-time block — but the rationale is corrected, not the number. It is
+deliberately **not** tolerated — a silently-unset thermostat is a scientific defect, not a
+dropped sample. The blanks and the valve `home`/`configure` remain serial: they are equally
+one-time and there was nothing to buy back.
 
 Retry papers over the defect; it does not fix it. Everything below still stands.
 
@@ -552,6 +603,6 @@ scale for *retry policy* specifically, and nothing else.
 
 Separately, the **duplicate-serial collision** above is not an engine issue at all, and it has a
 one-line fix: give the simulated test devices distinct serials. Until then, a `parallel` block of
-state-persisting verbs fails ~92% of the time on that roster and nothing warns the author —
-retry now rides the race out (the example asks for 6 attempts), which makes it survivable, not
-fixed.
+state-persisting verbs fails **~32%** of the time on that roster (measured 2026-07-14; 29/75 =
+38.7% across all thermostat trials that day) and nothing warns the author — retry now rides the
+race out (the example asks for 6 attempts), which makes it survivable, not fixed.
