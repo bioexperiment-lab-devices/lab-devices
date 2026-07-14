@@ -22,6 +22,23 @@ describe('describeEvent', () => {
     expect(d('input_requested', { name: 'target' })).toBe("operator input requested: 'target'")
     expect(d('input_bound', { name: 'target', value: 5 })).toBe('target = 5')
   })
+  it('covers fault tolerance', () => {
+    expect(d('block_retried', { attempt: 1, of: 3, error: 'flaky' }))
+      .toBe('retrying (attempt 1/3): flaky')
+    // A failed poll is not a failed job: the operator must be able to see that the job kept
+    // running and was never re-dispatched.
+    expect(d('job_poll_retried', {
+      device: 'densitometer_1', job_id: 'j-1', failure: 1, of: 5, error: 'unreachable',
+    })).toBe('densitometer_1: poll of job j-1 failed (1/5), still running: unreachable')
+    // A run that dropped 40 samples must not look identical to a clean one: this is the
+    // event-log side of that guarantee (RunReport.tolerated_errors is the record-level side).
+    expect(d('block_error_tolerated', { error: 'no response' }))
+      .toBe('tolerated failure: no response')
+    // A stranded job is a degraded-but-safe outcome, not a silent success: it must not fall
+    // through to the raw-JSON default case (2026-07-14 review, engine agent addendum).
+    expect(d('job_stranded', { device: 'pump_1', job_id: 'j-9', channels: [0, 1] }))
+      .toBe('pump_1: job j-9 stranded, channels 0,1 held')
+  })
   it('covers the finalizer', () => {
     expect(d('finalize_started')).toBe('finalize started')
     expect(d('finalize_finished', { errors: 0 })).toBe('finalize finished (0 errors)')

@@ -48,6 +48,17 @@ class ValidationError(ExperimentError):
         super().__init__(f"{len(self.diagnostics)} validation error(s):\n{lines}")
 
 
+@dataclass(frozen=True)
+class ToleratedError:
+    """A block failure absorbed by `on_error: continue` (design 2026-07-14 §3.4).
+
+    Not an exception: the run survived it. It is the *record* that it happened, so a run
+    that silently dropped 40 samples cannot look identical to a clean one."""
+
+    block_id: str
+    error: str
+
+
 class ExperimentRunError(ExperimentError):
     """Base for errors raised while executing a workflow (design 4-exec §15)."""
 
@@ -63,6 +74,17 @@ class BlockFailedError(ExperimentRunError):
 class InvariantViolationError(ExperimentRunError):
     """A proven-impossible occupancy state was observed (busy-slot conflict or hardware
     BusyError). Never retried: the static proof was violated (design 4-exec §7)."""
+
+
+class OrphanedJobError(ExperimentRunError):
+    """A dispatch was refused because an ORPHANED job — one the engine abandoned (a job
+    timeout, or an exhausted poll-failure budget) and could not stop (the device-wide stop
+    would have closed an open mode) — is still running on the target channel(s).
+
+    NOT an InvariantViolationError: nothing proven-impossible happened. The engine knows what
+    is on that channel and declines to stack a second job on it. An ordinary run-time device
+    fault, so `on_error: continue` may absorb it — but never retried (`_NEVER_RETRY`): every
+    attempt would be refused identically until the finalizer stops the device."""
 
 
 class RunAbortedError(ExperimentRunError):

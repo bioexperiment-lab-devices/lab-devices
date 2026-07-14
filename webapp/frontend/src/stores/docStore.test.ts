@@ -7,8 +7,10 @@ import {
   pauseHistory,
   redo,
   resumeHistory,
+  selectContent,
   selectDirty,
   selectDoc,
+  snapshotOf,
   undo,
   useDocStore,
 } from './docStore'
@@ -118,6 +120,82 @@ describe('docStore', () => {
     expect(selectDirty(store())).toBe(true)
     store().markSaved('id-123')
     expect(selectDirty(store())).toBe(false)
+  })
+
+  it('loading a doc without defaults/persistence clears what the PREVIOUS doc left behind ' +
+    '(I1 — cross-document contamination introduced by the Task 8 carry-through fix)', () => {
+    loadDoc(
+      docToTree({
+        doc_version: 1, name: 'A', description: null, roles: {},
+        workflow: {
+          schema_version: 1,
+          persistence: { default: 'disk' },
+          defaults: { retry: { attempts: 3, backoff: '2s' } },
+          streams: {},
+          blocks: [],
+        },
+      }),
+      'a-id',
+    )
+    expect(store().defaults).toEqual({ retry: { attempts: 3, backoff: '2s' } })
+    expect(store().persistence).toEqual({ default: 'disk' })
+
+    loadDoc(
+      docToTree({
+        doc_version: 1, name: 'B', description: null, roles: {},
+        workflow: { schema_version: 1, streams: {}, blocks: [] },
+      }),
+      'b-id',
+    )
+    expect(store().defaults).toBeUndefined()
+    expect(store().persistence).toBeUndefined()
+    const savedB = selectDoc(store())
+    expect(savedB.workflow.defaults).toBeUndefined()
+    expect(savedB.workflow.persistence).toEqual({ default: 'in_memory', format: 'jsonl' })
+  })
+
+  it('the dirty-check covers defaults and persistence, not just the visible fields', () => {
+    // No UI mutates either today, so this was inert — but a snapshot that omits them means a
+    // change to either reads CLEAN and is silently lost on navigate-away.
+    loadDoc(
+      docToTree({
+        doc_version: 1, name: 'A', description: null, roles: {},
+        workflow: {
+          schema_version: 1,
+          defaults: { retry: { attempts: 3, backoff: '2s' } },
+          streams: {},
+          blocks: [],
+        },
+      }),
+      'a-id',
+    )
+    expect(selectDirty(store())).toBe(false)
+    useDocStore.setState({ defaults: { retry: { attempts: 5, backoff: '2s' } } })
+    expect(selectDirty(store())).toBe(true)
+    store().markSaved('a-id', snapshotOf(selectContent(store())))
+    expect(selectDirty(store())).toBe(false)
+    useDocStore.setState({ persistence: { default: 'disk' } })
+    expect(selectDirty(store())).toBe(true)
+  })
+
+  it('newDoc() also starts clean of whatever the previously open document carried', () => {
+    loadDoc(
+      docToTree({
+        doc_version: 1, name: 'A', description: null, roles: {},
+        workflow: {
+          schema_version: 1,
+          persistence: { default: 'disk' },
+          defaults: { retry: { attempts: 3 } },
+          streams: {},
+          blocks: [],
+        },
+      }),
+      'a-id',
+    )
+    newDoc()
+    expect(store().defaults).toBeUndefined()
+    expect(store().persistence).toBeUndefined()
+    expect(selectDoc(store()).workflow.persistence).toEqual({ default: 'in_memory', format: 'jsonl' })
   })
 
   it('pauseHistory suppresses undo tracking until resumeHistory', () => {

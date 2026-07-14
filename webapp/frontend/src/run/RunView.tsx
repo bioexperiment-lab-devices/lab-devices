@@ -9,6 +9,7 @@ import { formatElapsed } from '../records/format'
 import { StreamChart } from '../charts/StreamChart'
 import { EventLog } from './EventLog'
 import { InputDialog } from './InputDialog'
+import { toleratedSummary } from './reportSummary'
 
 function Elapsed() {
   const feed = useRunStore((s) => s.feed)
@@ -48,6 +49,7 @@ export function RunView() {
   const controlBusy = useRunStore((s) => s.controlBusy)
   const report = useRunStore((s) => s.report)
   const recordId = useRunStore((s) => s.recordId)
+  const tolerated = toleratedSummary(report)
 
   const buttonClass =
     'rounded border border-slate-300 bg-white px-3 py-1 text-xs hover:bg-slate-100 disabled:opacity-40'
@@ -108,6 +110,10 @@ export function RunView() {
               persistence errors: {report.persistence_errors.join('; ')}
             </p>
           )}
+          {/* A run that dropped samples via on_error: 'continue' must not look identical to
+              a clean one on the live screen — EventLog alone isn't enough (it slices to the
+              last 500 events, so this can scroll out of view on a long run). */}
+          {tolerated !== null && <p className="text-xs text-amber-800">{tolerated}</p>}
           {recordId !== null && (
             <button
               onClick={() => {

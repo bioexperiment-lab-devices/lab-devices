@@ -15,6 +15,10 @@ from lab_devices.experiment.errors import (
     BlockFailedError,
     EvaluationError,
     InvariantViolationError,
+    OrphanedJobError,
+    RunAbortedError,
+    ToleratedError,
+    UnknownVerbError,
 )
 from lab_devices.experiment.evaluate import Value, evaluate, resolve
 from lab_devices.experiment.expr import parse_expression
@@ -25,6 +29,74 @@ from lab_devices.experiment.state import Sample
 from lab_devices.jobs import Job
 
 _TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
+
+# Errors a retry can never fix: they will fail identically, or they mean the safety
+# model itself is broken (design 2026-07-14 §3.1).
+_NEVER_RETRY: tuple[type[BaseException], ...] = (
+    InvariantViolationError,
+    # The channel is held by a job we abandoned and could not stop. Nothing this block does
+    # can change that: every attempt is refused identically until the finalizer stops the
+    # device. A retry would only spin the block through its whole back-off schedule to reach
+    # the same refusal.
+    OrphanedJobError,
+    EvaluationError,
+    core_errors.InvalidParamsError,
+    core_errors.InvalidRequestError,
+    core_errors.UnknownCommandError,
+    core_errors.UnknownDeviceError,
+    core_errors.NotCalibratedError,
+    core_errors.NotHomedError,
+    # A job reports `cancelled` only because someone deliberately stopped the device
+    # (Job.cancel() -> device.stop(), the Console/Studio recovery seam). It is the closest
+    # sibling of asyncio.CancelledError in the taxonomy: a stop decision, not a transient
+    # fault. Re-dispatching would silently undo an operator's stop.
+    core_errors.JobCancelledError,
+)
+
+
+def _emit(ctx: RunContext, kind: str, block_id: str | None = None, **data: Any) -> None:
+    """Best-effort emit for every site that runs WHILE AN EXCEPTION IS IN FLIGHT — inside an
+    `except` arm or a `finally`. Mirrors `finalize._emit` (and `run.py`'s three wrapped emits):
+    the sink protocol says `emit()` must never raise (design 5 §8), and here a sink that breaks
+    that contract does not merely lose an event, it REPLACES the exception the engine is already
+    carrying:
+
+    - Displace an `asyncio.CancelledError` and the operator's abort is gone. `_dispatch_action`'s
+      `finally` is on the abort path: the sink's error would surface there instead, `_run_action`'s
+      `except Exception` would catch it, `_is_retryable` would say yes, and the retry would
+      RE-DISPATCH hardware after `abort()` had already returned. (`_run_action`'s
+      `abort_requested` re-check is the second, independent net under that.)
+    - Displace an `InvariantViolationError` (the two `invariant_violation` emits) and a broken
+      safety invariant becomes an ordinary error — retryable, and tolerable by `on_error`.
+
+    Happy-path emits (`block_started`, `mode_opened`, `measure_recorded`, ...) are deliberately
+    NOT wrapped: nothing is in flight there, so a sink that raises is a real fault and should fail
+    the run (pinned by test_raising_log_sink_still_finalizes_and_sets_report)."""
+    try:
+        ctx.emit(kind, block_id, **data)
+    except BaseException:  # noqa: BLE001 - deliberate, mirrors finalize._emit
+        pass
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Allow-by-default over device/transport faults, with a deny-list. CancelledError is
+    a BaseException and never reaches here, but the isinstance guard is explicit anyway."""
+    if isinstance(exc, asyncio.CancelledError):
+        return False
+    return not isinstance(exc, _NEVER_RETRY)
+
+
+def _effective_retry(
+    block: B.Command | B.Measure, trait: Trait, ctx: RunContext
+) -> B.Retry | None:
+    """Block policy wins; otherwise the workflow default — but a blanket default never
+    retries a non-idempotent verb (design 2026-07-14 §2.4)."""
+    if block.retry is not None:
+        return block.retry
+    default = ctx.workflow.defaults.retry
+    if default is not None and trait.retry_safe:
+        return default
+    return None
 
 
 def _condition(text: str, ctx: RunContext) -> bool:
@@ -74,17 +146,48 @@ async def _call_verb(device: Any, verb: str, params: dict[str, Any]) -> Any:
     return await method(**params)
 
 
-async def _await_job(job: Job, device_id: str, ctx: RunContext) -> Any:
+async def _await_job(job: Job, block: B.Command | B.Measure, ctx: RunContext) -> Any:
     """Clock-driven poll to terminal, then delegate interpretation to job.result()
-    (terminal-state result() neither polls nor sleeps). Design 4-exec §6."""
+    (terminal-state result() neither polls nor sleeps). Design 4-exec §6.
+
+    A failed poll is NOT a failed job. `job.refresh()` is a `get_job` over the wire, and a
+    transient fault on ONE poll (device_unreachable, internal_error, a protocol blip) says
+    nothing about the job: it is still running on the hardware. Letting that fault out of here
+    would abandon a live job and let `_run_action` re-dispatch ON TOP of it — a second
+    concurrent job on the same device, from a single dropped packet, with no author opt-in
+    (`densitometer.measure` is retry_safe, so a plain `defaults.retry` reaches this). The right
+    answer to a failed poll is to poll again: back off on the clock and ask the job again.
+
+    Bounded by `options.job_poll_max_failures` CONSECUTIVE failures (any successful poll resets
+    the count, so a flaky link never accumulates its way to a false failure). Exhausting the
+    bound propagates as before, with the job still in `ctx.in_flight` so the finalizer stops the
+    device. A deny-listed poll error (e.g. an unknown job_id -> InvalidParamsError) is not
+    retried: it will fail identically forever.
+
+    An abort is never swallowed or delayed: `asyncio.CancelledError` is a BaseException, so it
+    passes straight through `except Exception` and tears the poll down at once.
+    """
     opts = ctx.options
     deadline = None if opts.job_timeout is None else ctx.clock.now() + opts.job_timeout
     interval = opts.job_poll_interval
+    failures = 0
     while job.state not in _TERMINAL:
-        async with ctx.lock(device_id):
-            await job.refresh()
-        if job.state in _TERMINAL:
-            break
+        try:
+            async with ctx.lock(block.device):
+                await job.refresh()
+        except Exception as exc:
+            failures += 1
+            if failures > opts.job_poll_max_failures or not _is_retryable(exc):
+                raise  # NOT untracked: the job may still be running (design §7 step 6)
+            _emit(
+                ctx, "job_poll_retried", block.id,
+                device=block.device, job_id=job.job_id,
+                failure=failures, of=opts.job_poll_max_failures, error=str(exc),
+            )
+        else:
+            failures = 0  # the link is alive again; a later blip starts from zero
+            if job.state in _TERMINAL:
+                break
         if deadline is not None and ctx.clock.now() >= deadline:
             # NOT untracked: the finalizer must stop this device (design §7 step 6).
             raise core_errors.JobTimeoutError(
@@ -97,6 +200,165 @@ async def _await_job(job: Job, device_id: str, ctx: RunContext) -> Any:
 
 
 async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
+    """Retry envelope around the dispatch pipeline (design 2026-07-14 §3.2). Each attempt
+    re-resolves params against fresh state and re-acquires occupancy — a retry is a fresh
+    dispatch, and this is what a fresh dispatch does."""
+    policy = _effective_retry(block, lookup(block.device, block.verb), ctx)
+    attempts = 1 if policy is None else policy.attempts
+    backoff = 0.0 if policy is None else parse_duration(policy.backoff)
+    for attempt in range(1, attempts + 1):
+        await ctx.gate.wait()  # a pause during a retry storm quiesces at the next attempt
+        if ctx.abort_requested:
+            # Defence in depth: NO attempt is ever dispatched after an abort, however the
+            # exception that got us here arrived. A `CancelledError` is a *message* that can be
+            # displaced — a log sink that raises inside `_dispatch_action`'s `finally` replaces
+            # it outright, and `except Exception` below would then treat the operator's abort as
+            # a retryable device fault and re-dispatch on the hardware. `ctx.abort_requested` is
+            # a *fact* that cannot be displaced. Same reasoning, and the same wire-level
+            # guarantee, as `execute_block`'s guard: after `abort()` returns, nothing more
+            # reaches the wire.
+            raise asyncio.CancelledError
+        started: list[Job] = []  # the job this attempt put on the hardware, if any
+        try:
+            return await _dispatch_action(block, ctx, started)
+        except Exception as exc:
+            if attempt == attempts or not _is_retryable(exc):
+                raise
+            if not await _clear_orphaned_job(exc, started, block, ctx):
+                raise  # could not stop the abandoned job; never stack a second one on it
+            _emit(
+                ctx, "block_retried", block.id,
+                attempt=attempt, of=attempts, error=str(exc),
+            )
+            await ctx.clock.sleep(backoff)
+    raise AssertionError("unreachable: the loop either returns or raises")  # pragma: no cover
+
+
+def _refuse_retry(exc: Exception, reason: str) -> bool:
+    """Refuse the retry and let the ORIGINAL error surface, with `reason` folded into its
+    message. An `add_note` will not do: `execute_block` emits `block_failed` with
+    `error=str(exc)`, which drops `__notes__`, so the reason would never reach the run log,
+    the operator, or Studio. Same object, same type, original text preserved as a prefix —
+    the error is annotated, never masked (so the deny-list and `on_error` still see a
+    JobTimeoutError)."""
+    folded = f"{exc}; {reason}"
+    exc.args = (folded,)
+    if isinstance(exc, core_errors.LabError):
+        # LabError.__init__ stores the message a SECOND time. Rewriting only `args` would
+        # leave `str(exc)` and `exc.message` disagreeing — the reason visible in the run log
+        # and absent from the attribute a reader would reach for first.
+        exc.message = folded
+    return False
+
+
+def _modes_a_stop_would_close(device: str, ctx: RunContext) -> tuple[OpenMode, ...]:
+    """The open modes a `stop` on this device would silently kill.
+
+    `Job.cancel()` IS `device.stop()` (jobs.py) — device-wide, not job-scoped. The
+    densitometer is the one device whose channel groups are disjoint (optics vs thermal), so
+    `Occupancy` permits an open mode and a job to be live on it at once; and its `stop`
+    declares `optics | thermal`, i.e. it kills the thermostat and the LED as well as the job.
+    A device type that declares no `stop` verb has an undeclared blast radius: assume the
+    worst rather than the best."""
+    try:
+        stop_channels: frozenset[str] | None = lookup(device, "stop").channels
+    except UnknownVerbError:
+        stop_channels = None
+    modes = ctx.occupancy.open_modes(device)
+    if stop_channels is None:
+        return modes
+    return tuple(mode for mode in modes if mode.channels & stop_channels)
+
+
+def _doomed_mode_reason(
+    job: Job, block: B.Command | B.Measure, doomed: tuple[OpenMode, ...]
+) -> str:
+    names = ", ".join(sorted(mode.mode_verb for mode in doomed))
+    return (
+        f"retry refused: clearing the orphaned job {job.job_id} means stopping "
+        f"{block.device}, and that stop is device-wide (Job.cancel() is device.stop()) — "
+        f"it would have silently closed the open mode(s) {names}, leaving the hardware "
+        f"uncontrolled while the run believed the mode was still held"
+    )
+
+
+def _orphan(started: list[Job], ctx: RunContext) -> Job | None:
+    """The job THIS attempt put on the hardware and abandoned there, or None.
+
+    "Abandoned" is the general predicate — "is THIS job still tracked?" — and NOT
+    `isinstance(exc, JobTimeoutError)`. Tracking is the fact that matters (an untracked job is
+    terminal and harmless); the exception type is a proxy for it that a new error class can
+    silently invalidate. `_await_job` already has two exits that strand a live job: the timeout,
+    and an exhausted poll-failure budget.
+
+    Identity, not just job_id: `ctx.in_flight` is keyed by job_id alone, so two devices
+    returning the same id would overwrite each other's entry, and a bare membership test could
+    then treat a foreign job as our own orphan — stopping the wrong device's job and untracking
+    someone else's entry."""
+    if not started:
+        return None
+    job = started[-1]
+    entry = ctx.in_flight.get(job.job_id)
+    if entry is None or entry[1] is not job:
+        return None  # not tracked (already terminal), or the id belongs to a DIFFERENT job
+    return job
+
+
+async def _clear_orphaned_job(
+    exc: Exception, started: list[Job], block: B.Command | B.Measure, ctx: RunContext
+) -> bool:
+    """May the retry proceed? An attempt that failed with its job still in `ctx.in_flight`
+    abandoned a job that is still *physically running* — `_await_job` neither cancels nor
+    untracks it (design 4-exec §7 step 6). A retry would then put a SECOND concurrent job on the
+    same device: on a real agent the second command draws `busy`, which the executor reports as a
+    false `invariant_violation` — the invariant was never violated, the retry raced its own
+    orphan. So stop the orphan first. `_orphan` is the trigger, on the general predicate.
+
+    But the stop is device-wide. If it would also close an open mode, we must NOT issue it: the
+    mode would die on the hardware while `ctx.occupancy` still held it, and the run would carry
+    on — a thermostat believed on and physically off for the rest of a three-week experiment,
+    with nothing in the event log to say so. Fail closed instead: refuse the retry.
+
+    Either refusal leaves the original error to surface and the job in `ctx.in_flight`, so the
+    finalizer still stops that device (§11) — the abandoned job is never untracked while it may
+    still be running on the hardware — AND leaves `_dispatch_action`'s stranded occupancy in
+    place, so no later block can dispatch on top of that live job either."""
+    job = _orphan(started, ctx)
+    if job is None:
+        return True
+    try:
+        async with ctx.lock(block.device):
+            # The open-mode check happens HERE, under the lock, and only here: a read taken
+            # before queuing for a contended lock can go stale before we actually hold it. The
+            # task ahead of us in the queue may be a sibling lane whose own wire call is in
+            # flight — `_dispatch_action` awaits it *under this same lock* and calls
+            # `register_open` only after releasing it (see the comment there, and
+            # test_mode_opening_traits_complete_immediately) — so a `set_thermostat` that has
+            # physically switched the heater on can still be absent from `ctx.occupancy` at the
+            # moment we'd queue, and present by the moment we're granted the lock. Reading it
+            # here, with the wire to this device ours alone, is the only sound moment.
+            doomed = _modes_a_stop_would_close(block.device, ctx)
+            if doomed:
+                return _refuse_retry(exc, _doomed_mode_reason(job, block, doomed))
+            await job.cancel()  # Job.cancel() -> device.stop()
+    except Exception as cancel_exc:
+        return _refuse_retry(
+            exc,
+            f"retry refused: the orphaned job {job.job_id} could not be cancelled "
+            f"({cancel_exc!r}), so a retry would have stacked a second job on {block.device}",
+        )
+    ctx.in_flight.pop(job.job_id, None)  # the device was stopped; the finalizer need not
+    # ...and nothing of ours is running on those channels any more, so give them back: this is
+    # the one exit that legitimately clears the occupancy `_dispatch_action` stranded, and the
+    # retry about to re-dispatch this very block needs them free.
+    ctx.occupancy.release_stranded(block.device, job.job_id)
+    _emit(ctx, "job_cancelled", block.id, device=block.device, verb=block.verb)
+    return True
+
+
+async def _dispatch_action(
+    block: B.Command | B.Measure, ctx: RunContext, started: list[Job]
+) -> Any:
     """The dispatch pipeline (design 4-exec §7): resolve -> classify -> occupy ->
     invoke -> complete. The occupancy check-and-mark is synchronous (no interleave
     window); the wire lock spans exactly one HTTP call (D2)."""
@@ -109,7 +371,7 @@ async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
     try:
         ctx.occupancy.acquire(block.device, trait.channels, block_id, closes=closes)
     except InvariantViolationError as exc:
-        ctx.emit("invariant_violation", block.id, error=str(exc))
+        _emit(ctx, "invariant_violation", block.id, error=str(exc))
         raise
     holding = True
     try:
@@ -118,16 +380,27 @@ async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
             async with ctx.lock(block.device):
                 result = await _call_verb(device, block.verb, params)
         except core_errors.BusyError as exc:
-            ctx.emit("invariant_violation", block.id, error=str(exc))
+            _emit(ctx, "invariant_violation", block.id, error=str(exc))
             raise InvariantViolationError(
                 f"hardware reported busy for a statically-proven-free dispatch: {exc}"
             ) from exc
         if trait.completion == "job":
             job: Job = result
             ctx.in_flight[job.job_id] = (block.device, job)
-            result = await _await_job(job, block.device, ctx)
+            started.append(job)  # so a retry can stop what this attempt abandoned
+            result = await _await_job(job, block, ctx)
         if action is not None and action.kind == "open":
             assert trait.teardown is not None  # every mode entry declares its teardown
+            # No `await` may land between the wire lock's release (above) and this call.
+            # _clear_orphaned_job's open-mode guard reads ctx.occupancy WHILE HOLDING that same
+            # lock, and that check is sound only because register_open always runs
+            # synchronously right after the lock is released here -- true today only because
+            # every mode-opening trait is completion == "immediate" (pinned by
+            # test_mode_opening_traits_complete_immediately, tests/test_experiment_registry.py).
+            # If a mode-opening verb ever became completion == "job", the `await
+            # _await_job(...)` above would land in this exact gap -- and _await_job takes and
+            # releases this same wire lock on every poll -- reopening the Critical bug that
+            # guard exists to prevent.
             ctx.occupancy.register_open(
                 OpenMode(
                     device=block.device,
@@ -146,7 +419,30 @@ async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
         return result
     finally:
         if holding:
-            ctx.occupancy.release(block.device, trait.channels, block_id)
+            # A job this attempt started and left in `ctx.in_flight` is still PHYSICALLY RUNNING
+            # (design 4-exec §7 step 6: `_await_job`'s timeout and poll-budget exits neither
+            # cancel nor untrack it). Handing its channels back would tell the rest of the run
+            # the device is free, and the next block — or the next loop iteration, or a tolerated
+            # block's successor — would dispatch straight on top of it: a second concurrent job
+            # on one device, which a real agent answers with `busy`, which `_call_verb` reports
+            # as a FALSE invariant violation (never retried, never tolerated: the run dies
+            # blaming an invariant that was never violated). `_run_action`'s orphan-clear can
+            # stop that job, but it deliberately FAILS CLOSED when the device-wide stop would
+            # kill an open mode — the shipped morbidostat's exact shape — and a block carrying
+            # `on_error: continue` then absorbs the error and walks on. So the occupancy, not the
+            # tolerance, has to be the thing that remembers: keep the slots.
+            orphan = _orphan(started, ctx)
+            if orphan is None:
+                ctx.occupancy.release(block.device, trait.channels, block_id)
+            else:
+                ctx.occupancy.strand(block.device, trait.channels, block_id, orphan.job_id)
+                # `_emit`, not `ctx.emit`: this `finally` runs with the abort's CancelledError in
+                # flight, and a raising sink here would REPLACE it — see `_emit`'s docstring.
+                _emit(
+                    ctx, "job_stranded", block.id,
+                    device=block.device, job_id=orphan.job_id,
+                    channels=sorted(trait.channels),
+                )
 
 
 async def execute_blocks(blocks: list[B.Block], ctx: RunContext) -> None:
@@ -157,18 +453,132 @@ async def execute_blocks(blocks: list[B.Block], ctx: RunContext) -> None:
             await ctx.clock.sleep(parse_duration(block.gap_after))
 
 
+def _tolerable(exc: BaseException) -> bool:
+    """An abort and a broken safety invariant escape every tolerance (design 2026-07-14 §3.3).
+
+    - `asyncio.CancelledError`: an operator abort is not a fault the workflow may absorb. It
+      is a BaseException, so `except Exception` never sees it — but `except BaseExceptionGroup`
+      would, which is exactly why this predicate recurses into a group.
+    - `InvariantViolationError`: a proven-impossible occupancy state. The safety model itself
+      is broken; tolerating it would hide that, and the run would carry on dispatching against
+      a proof it has just watched fail.
+    - `RunAbortedError`: unreachable inside a block today — its only raise site is `run.py`,
+      AFTER the block walk has already returned — but it is the abort error named by design's
+      own never-swallow table, and `_tolerate`'s whole reason to exist is defence against a
+      one-edit-away mistake. If that raise site ever moved inward, this is where the mistake
+      would otherwise become live.
+    - `core_errors.BusyError`: today converted to `InvariantViolationError` at its one call
+      site (`_dispatch_action`'s `_call_verb`) — a statically-proven-free dispatch drawing
+      `busy` IS the invariant violation. A bare `BusyError` surfacing from anywhere else (e.g.
+      a future `job.refresh()` / `job.result()` path) must not be laundered into an ordinary,
+      tolerable fault just because that one call site forgot to convert it first.
+    """
+    if isinstance(
+        exc,
+        (
+            asyncio.CancelledError,
+            InvariantViolationError,
+            RunAbortedError,
+            core_errors.BusyError,
+        ),
+    ):
+        return False
+    if isinstance(exc, BaseExceptionGroup):
+        # A parallel lane may have been cancelled, or may have violated an invariant. Nesting
+        # is possible (a parallel inside a parallel), so recurse rather than scan one level.
+        return all(_tolerable(inner) for inner in exc.exceptions)
+    return True
+
+
+def _leaves(exc: BaseException) -> list[BaseException]:
+    """Flatten a `BaseExceptionGroup` down to its leaf exceptions, recursing through nested
+    groups (a parallel inside a parallel); a bare exception is its own single leaf.
+
+    Exists so a tolerated container never reports the group's own boilerplate `str()`
+    ("unhandled errors in a TaskGroup (1 sub-exception)") in place of what actually failed —
+    design §3.4's "a run that dropped 40 samples must not look identical to a clean one"
+    depends on the message naming the real fault, not the shape that carried it."""
+    if isinstance(exc, BaseExceptionGroup):
+        result: list[BaseException] = []
+        for inner in exc.exceptions:
+            result.extend(_leaves(inner))
+        return result
+    return [exc]
+
+
+def _tolerate(block: B.Block, exc: BaseException, ctx: RunContext) -> bool:
+    """Absorb this block's failure and let the parent proceed (design 2026-07-14 §3.3-3.4).
+
+    True when the failure was absorbed. EVERY tolerance decision in `execute_block` routes
+    through this one predicate — including the `except Exception` arm, where `_tolerable` is
+    strictly redundant today (a CancelledError is a BaseException and an ExceptionGroup is
+    caught above it). That redundancy is the point: the arm order is the only thing standing
+    between an operator's abort and a tolerance, and an arm order is one edit away from being
+    wrong. This makes the guarantee independent of it.
+
+    The `abort_requested` check is the load-bearing one, and it is NOT redundant with
+    `_tolerable`'s CancelledError entry. `asyncio.TaskGroup` DROPS a cancellation that races a
+    child error — its docs: it propagates CancelledError "except if there are other errors —
+    those have priority". So a `parallel` whose lane fails at the moment the operator aborts
+    raises a plain ExceptionGroup with NO CancelledError anywhere inside it (the TaskGroup skips
+    cancelled children), and `_tolerable` — which can only inspect what it is handed — sees an
+    ordinary tolerable fault and says yes. The abort would be absorbed, the run would carry on
+    dispatching hardware, and it would report `completed`. The operator's decision is not a
+    fault of the workflow's to absorb: ask the RUN, not the exception."""
+    if ctx.abort_requested:
+        return False
+    if block.on_error != "continue" or not _tolerable(exc):
+        return False
+    # `str(exc)` is fine for a bare exception, but for a BaseExceptionGroup (a tolerated
+    # `parallel` catching its TaskGroup's failure) it is the group's own boilerplate, not the
+    # fault that actually happened. _leaves flattens to what really failed, at any nesting
+    # depth, so the ONE shape that used to reach report.json and Studio with no indication of
+    # the real error no longer does (design 2026-07-14 §3.4).
+    message = "; ".join(str(leaf) for leaf in _leaves(exc))
+    ctx.tolerated.append(ToleratedError(str(block.id), message))
+    _emit(ctx, "block_error_tolerated", block.id, error=message)
+    return True
+
+
 async def execute_block(block: B.Block, ctx: RunContext) -> None:
-    """One block: pause gate, per-type execution, exactly-once failure events (§7, §10)."""
+    """One block: pause gate, per-type execution, exactly-once failure events (§7, §10).
+
+    `on_error: "continue"` absorbs the failure HERE, in this block's own frame, and returns
+    normally instead of raising (design 2026-07-14 §3.3). On a parallel CHILD that single fact
+    is per-lane fault isolation: `_run_parallel`'s TaskGroup cancels the siblings only when a
+    lane *raises*, and a tolerated lane never does — so one bad vial no longer kills the other
+    fourteen. On the `parallel` block itself it catches the TaskGroup's ExceptionGroup and
+    abandons the whole container, leaving the parent to carry on.
+
+    A tolerated block emits `block_failed` (it did fail) then `block_error_tolerated` — never
+    `block_finished`.
+
+    No block STARTS once an abort has been requested. `abort()` cancels the run task, and a
+    cancellation normally makes this check unreachable — but a cancellation is a message that
+    can be consumed (`asyncio.TaskGroup` drops one that races a child error; see `_tolerate`),
+    and `ctx.abort_requested` is a fact that cannot. This is the wire-level backstop for the
+    property that actually matters: after `abort()` returns, no further command reaches the
+    hardware."""
     await ctx.gate.wait()
+    if ctx.abort_requested:
+        raise asyncio.CancelledError
     ctx.emit("block_started", block.id)
     try:
         await _execute_inner(block, ctx)
-    except (BlockFailedError, InvariantViolationError):
-        raise  # the origin frame already emitted its event
-    except BaseExceptionGroup:
-        raise  # parallel children emitted their own events (plan 4b)
+    except (BlockFailedError, InvariantViolationError) as exc:
+        if _tolerate(block, exc, ctx):  # the origin frame already emitted its event
+            return
+        raise
+    except BaseExceptionGroup as exc:
+        if _tolerate(block, exc, ctx):  # parallel children emitted their own events (plan 4b)
+            return
+        raise
+    except asyncio.CancelledError:
+        raise  # an abort is never a block failure, and is never tolerated
     except Exception as exc:
-        ctx.emit("block_failed", block.id, error=str(exc))
+        _emit(ctx, "block_failed", block.id, error=str(exc))
+        if _tolerate(block, exc, ctx):
+            return
         raise BlockFailedError(str(block.id), str(exc)) from exc
     ctx.emit("block_finished", block.id)
 
@@ -261,10 +671,25 @@ async def _run_branch(block: B.Branch, ctx: RunContext) -> None:
 async def _run_parallel(block: B.Parallel, ctx: RunContext) -> None:
     """One task per child (design §9). Device-distinctness is statically proven; the
     occupancy model is the runtime net. A failing child cancels its siblings; the
-    TaskGroup's ExceptionGroup propagates unflattened."""
-    async with asyncio.TaskGroup() as tg:
-        for child in block.children:
-            tg.create_task(_parallel_child(child, ctx))
+    TaskGroup's ExceptionGroup propagates unflattened.
+
+    Except when an abort raced a lane failure. `asyncio.TaskGroup` gives errors priority over a
+    cancellation and DROPS the CancelledError: the group it raises then carries only the lane's
+    fault, and nothing downstream — not `_tolerable`, not `run.py`'s `isinstance(error,
+    CancelledError)` status test — can tell an abort happened. The run would report `failed` at
+    best and, with `on_error: continue` on this block, `completed` at worst. `ctx.abort_requested`
+    is the fact the TaskGroup cannot consume: restore the cancellation the abort was owed, here,
+    at the one frame that swallowed it. The lanes' own failures are already in the run log
+    (each emitted `block_failed` in its own frame), so `from None` loses nothing: what the
+    operator asked for, and what the report must say, is `aborted`."""
+    try:
+        async with asyncio.TaskGroup() as tg:
+            for child in block.children:
+                tg.create_task(_parallel_child(child, ctx))
+    except BaseExceptionGroup:
+        if ctx.abort_requested:
+            raise asyncio.CancelledError from None
+        raise
 
 
 async def _parallel_child(child: B.Block, ctx: RunContext) -> None:

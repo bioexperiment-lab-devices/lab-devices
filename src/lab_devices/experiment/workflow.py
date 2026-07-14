@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from lab_devices.experiment.blocks import Block
+from lab_devices.experiment.blocks import Block, Retry
 
 
 @dataclass
@@ -33,6 +33,14 @@ class Group:
 
 
 @dataclass
+class Defaults:
+    """Workflow-wide defaults (design 2026-07-14 §2.4). `retry` only — a blanket
+    `on_error` would silently make a missed injection survivable."""
+
+    retry: Retry | None = None
+
+
+@dataclass
 class Workflow:
     schema_version: int
     blocks: list[Block] = field(default_factory=list)
@@ -40,3 +48,4 @@ class Workflow:
     persistence: Persistence = field(default_factory=Persistence)
     streams: dict[str, StreamDecl] = field(default_factory=dict)
     groups: dict[str, Group] = field(default_factory=dict)
+    defaults: Defaults = field(default_factory=Defaults)

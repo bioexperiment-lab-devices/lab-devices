@@ -13,6 +13,11 @@ export interface RecordRow {
   dir: string
 }
 
+export interface ToleratedErrorJson {
+  block_id: string
+  error: string
+}
+
 export interface RecordReport {
   status: string
   error: string | null
@@ -25,6 +30,9 @@ export interface RecordReport {
   experiment_name: string
   lab: string
   role_mapping: Record<string, string>
+  // Failures absorbed by on_error: 'continue' (design 2026-07-14 §3.4). A run that dropped 40
+  // samples still reports status 'completed' — this is what stops it looking like a clean one.
+  tolerated_errors?: ToleratedErrorJson[]
 }
 
 export interface RecordDetail extends RecordRow {

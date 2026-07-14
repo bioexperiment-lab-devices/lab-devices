@@ -39,6 +39,12 @@ class Trait:
     measurement: bool = field(default=False, kw_only=True)
     result_field: str | None = field(default=None, kw_only=True)
     params: tuple[ParamSpec, ...] = field(default=(), kw_only=True)
+    retry_safe: bool = field(default=False, kw_only=True)
+    # True iff re-issuing this verb with the same params is idempotent: pure reads and
+    # absolute setters land the hardware in the same state. False for relative actions
+    # (pump.dispense): a retry after a partial dispense double-doses the culture
+    # (design 2026-07-14 §4). Default False — a verb added later is conservative until
+    # someone thinks about it.
 
 
 _MOTOR = frozenset({"motor"})
@@ -47,6 +53,8 @@ _THERMAL = frozenset({"thermal"})
 
 _REGISTRY: dict[tuple[str, str], Trait] = {
     # pump — one actuator: every verb occupies the motor channel
+    # NOT retry_safe: volume_ml is *relative*. A retry after a partial dispense delivers a
+    # second dose on top of what already went in — a silent double-dose of the culture.
     ("pump", "dispense"): Trait(
         "job",
         "none",
@@ -58,6 +66,9 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
             ParamSpec("drop_suckback_ml", "number"),
         ),
     ),
+    # NOT retry_safe: re-issuing rotate lands the same *state* (direction/speed), but it opens
+    # unbounded fluid delivery whose dose is set by how long it runs, not by its params. An
+    # auto-retry must not start liquid moving into a culture without an author's opt-in.
     ("pump", "rotate"): Trait(
         "immediate",
         "mode",
@@ -68,85 +79,121 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
             ParamSpec("speed_ml_min", "number", required=True),
         ),
     ),
-    ("pump", "stop"): Trait("immediate", "none", channels=_MOTOR),
+    # Safe-state primitive; firmware documents it as "always succeeds" (§3.6). Stopping twice
+    # is stopped: plain idempotence — NOT a finalization safeguard. finalize.py never consults
+    # retry_safe; its safe-state sweep is unconditional and best-effort regardless
+    # (finalize.py:46). retry_safe only governs the executor's normal-path dispatch, where
+    # `stop` can appear as an ordinary workflow block.
+    ("pump", "stop"): Trait("immediate", "none", channels=_MOTOR, retry_safe=True),
+    # Absolute write of ml_per_step (either directly, or derived from a fixed calibration
+    # run's step count); re-issuing the same params persists the same value.
     ("pump", "set_calibration"): Trait(
         "immediate",
         "none",
         channels=_MOTOR,
+        retry_safe=True,
         params=(
             ParamSpec("measured_volume_ml", "number"),
             ParamSpec("ml_per_step", "number"),
         ),
     ),
     # valve — one actuator: motor channel
+    # Absolute target position; requesting the current position completes instantly.
     ("valve", "set_position"): Trait(
         "job",
         "none",
         channels=_MOTOR,
+        retry_safe=True,
         params=(
             ParamSpec("position", "int", required=True),
             ParamSpec("rotation", "string"),
         ),
     ),
+    # Declares the current physical position (no motion) — pure absolute state write.
     ("valve", "home"): Trait(
         "immediate",
         "none",
         channels=_MOTOR,
+        retry_safe=True,
         params=(ParamSpec("position", "int", required=True),),
     ),
+    # Absolute per-field config write; omitted fields are unchanged.
     ("valve", "configure"): Trait(
         "immediate",
         "none",
         channels=_MOTOR,
+        retry_safe=True,
         params=(
             ParamSpec("default_rotation", "string"),
             ParamSpec("hold_torque", "bool"),
         ),
     ),
-    ("valve", "stop"): Trait("immediate", "none", channels=_MOTOR),
+    # Safe-state primitive; a no-op when already idle.
+    ("valve", "stop"): Trait("immediate", "none", channels=_MOTOR, retry_safe=True),
     # densitometer — optics (LED/measure path) and thermal are independent subsystems
+    # Pure read: takes a fresh reading and actuates nothing.
     ("densitometer", "measure"): Trait(
         "job",
         "none",
         channels=_OPTICS,
         measurement=True,
         result_field="absorbance",
+        retry_safe=True,
         params=(ParamSpec("include_raw", "bool"),),
     ),
+    # Re-measures the blank and overwrites the stored baseline: last-write-wins, no accumulation.
     ("densitometer", "measure_blank"): Trait(
-        "job", "none", channels=_OPTICS, measurement=True, result_field="slope"
+        "job", "none", channels=_OPTICS, measurement=True, result_field="slope", retry_safe=True
     ),
+    # Absolute LED level (0-20), diagnostic: no dosing, no accumulation.
     ("densitometer", "set_led"): Trait(
         "immediate",
         "mode",
         Teardown("set_led", {"level": 0}),
         channels=_OPTICS,
+        retry_safe=True,
         params=(ParamSpec("level", "int", required=True),),
     ),
+    # Absolute setpoint (enabled + target_c): the thermostat converges to the same state.
     ("densitometer", "set_thermostat"): Trait(
         "immediate",
         "mode",
         Teardown("set_thermostat", {"enabled": False}),
         channels=_THERMAL,
+        retry_safe=True,
         params=(
             ParamSpec("enabled", "bool", required=True),
             ParamSpec("target_c", "number"),
         ),
     ),
+    # Absolute correction factor (0.5-2.0): setting the same factor twice persists the same value.
     ("densitometer", "set_tube_correction"): Trait(
         "immediate",
         "none",
         channels=_OPTICS,
+        retry_safe=True,
         params=(ParamSpec("factor", "number", required=True),),
     ),
+    # NOT retry_safe: unlike set_tube_correction, this derives the factor from the *last
+    # measurement* (hidden device state, not its params). A retry can consume a different
+    # reading than the first attempt did, silently re-calibrating the OD that drives dosing.
     ("densitometer", "calibrate_tube"): Trait(
         "immediate",
         "none",
         channels=_OPTICS,
         params=(ParamSpec("reference_absorbance", "number", required=True),),
     ),
-    ("densitometer", "stop"): Trait("immediate", "none", channels=_OPTICS | _THERMAL),
-    ("densitometer", "stop_monitoring"): Trait("immediate", "none", channels=_OPTICS),
+    # Cancels job/monitoring, LED off; firmware documents it as "always succeeds" (§3.8) —
+    # plain idempotence. (Not a finalization safeguard: finalize.py never consults retry_safe.)
+    ("densitometer", "stop"): Trait(
+        "immediate", "none", channels=_OPTICS | _THERMAL, retry_safe=True
+    ),
+    # Ends monitoring mode. Retry-safe because it cannot accumulate state, not because §3.8
+    # promises a no-op when idle — unlike `stop`, it isn't documented as "always succeeds", so
+    # a re-issue while not monitoring could surface a spurious error rather than a clean no-op.
+    ("densitometer", "stop_monitoring"): Trait(
+        "immediate", "none", channels=_OPTICS, retry_safe=True
+    ),
 }
 
 

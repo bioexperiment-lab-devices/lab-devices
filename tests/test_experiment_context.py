@@ -21,6 +21,9 @@ def test_defaults():
     assert options.job_poll_interval == 0.25
     assert options.job_poll_max == 2.0
     assert options.job_timeout is None
+    # Tolerate a transient blip on ONE get_job without abandoning a live job, but never poll a
+    # genuinely dead device forever: 5 consecutive failures, ~6s at the capped poll interval.
+    assert options.job_poll_max_failures == 5
 
 
 async def test_device_handles_cached(fake_client):

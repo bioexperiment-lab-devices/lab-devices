@@ -3,6 +3,18 @@
 Date: 2026-07-13
 Status: settled (user-approved 2026-07-13)
 
+> **Superseded 2026-07-14.** Left in place as the historical record of what was decided on
+> 2026-07-13 — do not treat it as current. The fault-tolerance work and its real-hardware
+> validation are recorded in
+> [`2026-07-14-engine-fault-tolerance-design.md`](2026-07-14-engine-fault-tolerance-design.md).
+> Two claims below no longer hold:
+> - **§3.2, "the decision is a sign test."** It is not: `r > r_dil` is a *threshold* test at a
+>   positive setpoint the controller pins itself to, so decisions are habitually marginal and the
+>   magnitude carries the decision, not the sign. See `docs/experiment-engine-limitations.md`.
+> - **§7.3, "The engine has no retry, so one flaky read destroys the run."** Retry, `on_error`,
+>   per-device fault isolation, and resilient job polling shipped 2026-07-14 and are validated on
+>   real hardware — see the design doc above and `docs/experiment-engine-limitations.md`.
+
 A worked example that implements the morbidostat algorithm of `docs/morbidostat_algorithm.md`
 (Toprak et al. 2012/2013) as an Experiment Studio document. Its job is pedagogic: show users
 how a real closed-loop evolution experiment decomposes into the engine's block vocabulary.
@@ -168,6 +180,13 @@ a non-atomic write-temp-then-rename, which loses on Windows. Measured over 25 tr
 no shared file) **0/25**; `measure` (pure read) survived **90 concurrent calls**. Runtime state
 is *not* aliased — writing `pump_1`'s calibration left `pump_2/3` untouched — so there is no
 silent cross-talk, only a loud failure on the persist path.
+
+> **Correction, 2026-07-14.** That **23/25 (92%)** is the rate this doc measured with raw parallel
+> client calls, and it is roughly three times too high. Re-measured the same day on the same
+> roster, through the engine's executor: **8/25 (32%)** in a dedicated no-retry baseline, and
+> **29/75 (38.7%)** across all thermostat trials that day. Same fault, same file, same two
+> sharing-violation variants — just less frequent than first recorded. **Take 32% as the current
+> number**; see `docs/experiment-engine-limitations.md`, final section.
 
 So: every state-persisting setup command is now serial (~2 s, one time), and the monitor loop's
 three simultaneous `measure` calls — the parallelism the science actually needs — stay parallel.

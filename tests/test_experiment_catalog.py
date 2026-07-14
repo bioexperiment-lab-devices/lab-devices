@@ -43,3 +43,9 @@ def test_expression_functions_sorted_and_windows():
 
 def test_catalog_is_json_serializable():
     json.dumps({"device_types": verb_catalog(), "expression": expression_functions()})
+
+
+def test_catalog_exposes_retry_safe():
+    catalog = verb_catalog()
+    assert catalog["densitometer"]["measure"]["retry_safe"] is True
+    assert catalog["pump"]["dispense"]["retry_safe"] is False

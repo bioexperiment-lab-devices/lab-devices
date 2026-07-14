@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import Coroutine
 from typing import Any
 
 import httpx
@@ -32,6 +34,7 @@ class FakeJob:
     def __init__(self, job_id: str, cmd: str) -> None:
         self.job_id = job_id
         self.cmd = cmd
+        self.device = ""  # set by _command when the job is started
         self.state = "running"
         self.polls = 0
         self.result: dict[str, Any] | None = None
@@ -50,9 +53,13 @@ class FakeLab:
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
         self.record_polls = False
         self.fail_jobs: set[str] = set()
+        self.cancel_jobs: set[str] = set()  # jobs of this cmd report state "cancelled"
         self.held_jobs: set[str] = set()
+        self.held_job_ids: set[str] = set()  # individual jobs held (see hold_next_job)
         self.polls_to_complete_by_cmd: dict[str, int] = {}
+        self._hold_next: set[str] = set()
         self._injected: dict[tuple[str, str], list[tuple[str, str]]] = {}
+        self._get_job_gate: asyncio.Event | None = None
 
     # ---- setup helpers ----
     def add_device(
@@ -76,6 +83,21 @@ class FakeLab:
         """Jobs of this command never advance by polling; use complete_job()."""
         self.held_jobs.add(cmd)
 
+    def hold_next_job(self, cmd: str) -> None:
+        """Hold only the NEXT job started for this command; later ones complete normally.
+        Models the transient hang that a retry exists to survive (hold_job holds them all)."""
+        self._hold_next.add(cmd)
+
+    def pause_next_get_job(self) -> asyncio.Event:
+        """The NEXT get_job call genuinely parks on the returned Event before it resolves,
+        instead of returning immediately -- lets a test suspend execution INSIDE
+        `job.refresh()`'s wire call itself (the only await `_await_job`'s `try` can ever
+        observe), with no wall-clock sleep. Cancelling the caller while parked here exercises
+        the poll loop's except clause for real; setting the event resumes it normally."""
+        event = asyncio.Event()
+        self._get_job_gate = event
+        return event
+
     def complete_job(self, job_id: str, *, error: dict[str, Any] | None = None) -> None:
         """Manually finish a (typically held) job."""
         job = self.jobs[job_id]
@@ -85,7 +107,9 @@ class FakeLab:
             job.state, job.result = "succeeded", JOB_RESULTS.get(job.cmd, {})
 
     # ---- request routing ----
-    def handler(self, request: httpx.Request) -> httpx.Response:
+    def handler(
+        self, request: httpx.Request
+    ) -> httpx.Response | Coroutine[Any, Any, httpx.Response]:
         path = request.url.path
         if path == "/api/v1/devices":
             return self._devices_list()
@@ -112,7 +136,9 @@ class FakeLab:
             200, json={"devices": devices, "discovered_at": "2026-07-06T12:00:00Z"}
         )
 
-    def _command(self, device_id: str, env: dict[str, Any]) -> httpx.Response:
+    def _command(
+        self, device_id: str, env: dict[str, Any]
+    ) -> httpx.Response | Coroutine[Any, Any, httpx.Response]:
         req_id = env.get("id", "")
         cmd = env.get("cmd")
         params = env.get("params") or {}
@@ -139,11 +165,25 @@ class FakeLab:
 
         # get_job / identify are memory-served (200 even if unreachable).
         if cmd == "get_job":
-            job = self.jobs.get(params.get("job_id", ""))
-            if job is None:
-                return err(200, "invalid_params", "unknown job_id")
-            self._advance(job)
-            return ok(self._job_object(job))
+            def _resolve_get_job() -> httpx.Response:
+                job = self.jobs.get(params.get("job_id", ""))
+                if job is None:
+                    return err(200, "invalid_params", "unknown job_id")
+                self._advance(job)
+                return ok(self._job_object(job))
+
+            gate, self._get_job_gate = self._get_job_gate, None
+            if gate is not None:
+                # A test asked to park genuinely INSIDE this wire call (pause_next_get_job).
+                # Returning a coroutine here is deliberate: httpx.MockTransport's async path
+                # awaits it, so the caller (job.refresh(), inside _await_job's try) is
+                # suspended for real -- not merely "as if" -- with no wall-clock sleep needed.
+                async def _parked_get_job() -> httpx.Response:
+                    await gate.wait()
+                    return _resolve_get_job()
+
+                return _parked_get_job()
+            return _resolve_get_job()
         if cmd == "identify":
             ident = self.devices[device_id].get("identify")
             if ident is None:
@@ -158,9 +198,15 @@ class FakeLab:
         if cmd == "status":
             return ok(self.devices[device_id].get("_canned", {}).get("status", {"state": "idle"}))
         if cmd == "stop":
+            # A real agent's stop cancels whatever job that device is running.
+            for job in self.jobs.values():
+                if job.device == device_id and job.state == "running":
+                    job.state = "cancelled"
             return ok({"state": "idle"})
         if cmd in JOB_COMMANDS:
-            return ok({"job": self._start_job(cmd)})
+            started = self._start_job(cmd)
+            self.jobs[started["job_id"]].device = device_id
+            return ok({"job": started})
         # other commands: return canned result or an empty ok.
         return ok(self.devices[device_id].get("_canned", {}).get(cmd, {}))
 
@@ -169,15 +215,22 @@ class FakeLab:
         self._job_counter += 1
         job = FakeJob(f"j-{self._job_counter}", cmd)
         self.jobs[job.job_id] = job
+        if cmd in self._hold_next:
+            self._hold_next.discard(cmd)
+            self.held_job_ids.add(job.job_id)
         return {"job_id": job.job_id, "state": "running", "estimated_duration_s": 1.0}
 
     def _advance(self, job: FakeJob) -> None:
         if job.state != "running" or job.cmd in self.held_jobs:
             return
+        if job.job_id in self.held_job_ids:
+            return
         job.polls += 1
         threshold = self.polls_to_complete_by_cmd.get(job.cmd, self.polls_to_complete)
         if job.polls >= threshold:
-            if self.fail_job or job.cmd in self.fail_jobs:
+            if job.cmd in self.cancel_jobs:  # someone stopped the device out of band
+                job.state = "cancelled"
+            elif self.fail_job or job.cmd in self.fail_jobs:
                 job.state = "failed"
                 job.error = {"code": "hardware_error", "message": "device became unreachable"}
             else:

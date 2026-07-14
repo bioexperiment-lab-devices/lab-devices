@@ -15,6 +15,17 @@ def test_unknown_param():
     assert any(x.category == "params" and "speed_profile" in x.message for x in d)
 
 
+def test_measure_unknown_param():
+    """A Measure must reach _check_action's param checks too, not just _check_measure
+    (design §12; _check_block deliberately runs both for command and measure blocks)."""
+    d = diags(wf(
+        [{"measure": {"device": "densitometer_1", "verb": "measure", "into": "OD",
+                       "params": {"exposure_ms": 10}}}],
+        streams=["OD"],
+    ))
+    assert any(x.category == "params" and "exposure_ms" in x.message for x in d)
+
+
 def test_missing_required_param():
     d = diags(wf([cmd("pump_1", "rotate", {"direction": "forward"})]))
     assert any(x.category == "params" and "speed_ml_min" in x.message for x in d)

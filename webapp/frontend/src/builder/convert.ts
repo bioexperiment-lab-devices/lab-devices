@@ -1,7 +1,7 @@
 /** Doc v1 JSON <-> editor tree. treeToDoc(docToTree(doc)) must round-trip the golden
  * fixture byte-for-byte (deep equality); emission rules mirror the engine serializer:
  * omit empty params, omit null timing keys, `check` only alongside `until`, `else`
- * omitted (not null) when absent. */
+ * omitted (not null) when absent, `on_error` omitted unless it is 'continue'. */
 import type {
   BlockJson,
   BranchBody,
@@ -11,6 +11,7 @@ import type {
   MeasureBody,
   OperatorInputBody,
   StreamDeclJson,
+  WorkflowJson,
 } from '../types/doc'
 import { newUid, type BlockNode, type InputType } from './tree'
 
@@ -18,8 +19,17 @@ export interface DocContent {
   name: string
   description: string | null
   roles: Record<string, { type: string }>
-  streams: Record<string, { units: string | null }>
+  // persistence is per-stream override support (2026-07-14 review, I2) — the builder has no
+  // UI for it (StreamsPanel.tsx), but a stream declared `persistence: "disk"` under an
+  // `in_memory` workflow default must survive Save, or its samples are silently never
+  // written to disk at all.
+  streams: Record<string, { units: string | null; persistence?: string | null }>
   tree: BlockNode[]
+  // Carried opaquely — the builder has no UI for either, but it must not destroy them on
+  // save (2026-07-14 review, Fix 1): a hand-authored workflow.defaults.retry is a
+  // documented, supported policy, and a custom persistence setting is a real run knob.
+  persistence?: WorkflowJson['persistence']
+  defaults?: WorkflowJson['defaults']
 }
 
 export class DocConvertError extends Error {
@@ -29,7 +39,7 @@ export class DocConvertError extends Error {
   }
 }
 
-const TIMING_KEYS = new Set(['label', 'gap_after', 'start_offset'])
+const BLOCK_KEYS = new Set(['label', 'gap_after', 'start_offset', 'retry', 'on_error'])
 
 export function docToTree(doc: ExperimentDocJson): DocContent {
   if (doc.doc_version !== 1) {
@@ -44,7 +54,10 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
   }
   const streams: DocContent['streams'] = {}
   for (const [name, decl] of Object.entries(wf.streams ?? {})) {
-    streams[name] = { units: decl.units ?? null }
+    streams[name] = {
+      units: decl.units ?? null,
+      ...(decl.persistence !== undefined ? { persistence: decl.persistence } : {}),
+    }
   }
   const roles: DocContent['roles'] = {}
   for (const [name, role] of Object.entries(doc.roles)) roles[name] = { type: role.type }
@@ -54,11 +67,13 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
     roles,
     streams,
     tree: (wf.blocks ?? []).map(blockToNode),
+    ...(wf.persistence !== undefined ? { persistence: wf.persistence } : {}),
+    ...(wf.defaults !== undefined ? { defaults: wf.defaults } : {}),
   }
 }
 
 function blockToNode(block: BlockJson): BlockNode {
-  const keys = Object.keys(block).filter((k) => !TIMING_KEYS.has(k))
+  const keys = Object.keys(block).filter((k) => !BLOCK_KEYS.has(k))
   if (keys.length !== 1) {
     throw new DocConvertError(`block must have exactly one type key, got [${keys.join(', ')}]`)
   }
@@ -68,6 +83,8 @@ function blockToNode(block: BlockJson): BlockNode {
     label: block.label ?? null,
     gapAfter: block.gap_after ?? null,
     startOffset: block.start_offset ?? null,
+    ...(block.retry !== undefined ? { retry: block.retry } : {}),
+    ...(block.on_error !== undefined ? { onError: block.on_error } : {}),
   }
   switch (kind) {
     case 'command': {
@@ -134,21 +151,30 @@ function blockToNode(block: BlockJson): BlockNode {
 
 export function treeToDoc(content: DocContent): ExperimentDocJson {
   const streams: Record<string, StreamDeclJson> = {}
-  for (const [name, s] of Object.entries(content.streams)) streams[name] = { units: s.units }
+  for (const [name, s] of Object.entries(content.streams)) {
+    streams[name] = {
+      units: s.units,
+      ...(s.persistence !== undefined ? { persistence: s.persistence } : {}),
+    }
+  }
   const roles: ExperimentDocJson['roles'] = {}
   for (const [name, role] of Object.entries(content.roles)) roles[name] = { type: role.type }
+  const workflow: WorkflowJson = {
+    schema_version: 1,
+    metadata: { name: content.name },
+    // Preserve a custom persistence setting if the doc carried one in; only fall back to
+    // the builder's historical default when none was present (2026-07-14 review, Fix 1).
+    persistence: content.persistence ?? { default: 'in_memory', format: 'jsonl' },
+    streams,
+    blocks: content.tree.map(nodeToBlock),
+  }
+  if (content.defaults !== undefined) workflow.defaults = content.defaults
   return {
     doc_version: 1,
     name: content.name,
     description: content.description,
     roles,
-    workflow: {
-      schema_version: 1,
-      metadata: { name: content.name },
-      persistence: { default: 'in_memory', format: 'jsonl' },
-      streams,
-      blocks: content.tree.map(nodeToBlock),
-    },
+    workflow,
   }
 }
 
@@ -207,5 +233,9 @@ export function nodeToBlock(node: BlockNode): BlockJson {
   if (node.label !== null) out.label = node.label
   if (node.gapAfter !== null) out.gap_after = node.gapAfter
   if (node.startOffset !== null) out.start_offset = node.startOffset
+  if (node.retry !== undefined) out.retry = node.retry
+  // Mirrors block_to_dict: on_error is only emitted when it is 'continue' — a default-'fail'
+  // block round-trips to a dict with no on_error key at all.
+  if (node.onError === 'continue') out.on_error = node.onError
   return out
 }

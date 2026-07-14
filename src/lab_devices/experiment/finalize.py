@@ -34,7 +34,17 @@ async def run_finalizer(ctx: RunContext) -> list[BaseException]:
     _emit(ctx, "finalize_started")
     # 1. Cancel in-flight jobs: stop each device that still owns a live job.
     for device_id in dict.fromkeys(entry[0] for entry in ctx.in_flight.values()):
-        await _issue(ctx, device_id, "stop", {}, "job_cancelled", errors)
+        stopped = await _issue(ctx, device_id, "stop", {}, "job_cancelled", errors)
+        if stopped:
+            # The stop killed the device's jobs, so the channels an abandoned job was still
+            # holding (Occupancy.strand, design 2026-07-14 §3.2) are genuinely free now. Hand
+            # them back, exactly as step 2 hands back a mode's channels once its teardown
+            # succeeded: `ctx.occupancy` is the live idle oracle behind Console.busy_devices(),
+            # and an operator recovering AFTER the run must not find the device busy for ever.
+            # `ctx.in_flight` deliberately keeps the record — the run did abandon that job.
+            for job_id, (owner, _job) in ctx.in_flight.items():
+                if owner == device_id:
+                    ctx.occupancy.release_stranded(device_id, job_id)
     # 2. Tear down open modes, most recently opened first.
     for mode in reversed(ctx.occupancy.open_modes()):
         ok = await _issue(

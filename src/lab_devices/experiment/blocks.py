@@ -7,6 +7,17 @@ from dataclasses import dataclass, field
 # A scalar slot: a literal, or an infix-expression string (parsed in Increment 2).
 ValueExpr = str | int | float | bool
 
+ON_ERROR_VALUES = ("fail", "continue")
+
+
+@dataclass(frozen=True)
+class Retry:
+    """Retry policy for one action block (design 2026-07-14 §2.1)."""
+
+    attempts: int  # TOTAL tries, not retries-after-the-first
+    backoff: str = "1s"
+    allow_repeat: bool = False  # explicit opt-in to retry a non-idempotent verb (§4)
+
 
 @dataclass(kw_only=True)
 class BlockBase:
@@ -14,6 +25,8 @@ class BlockBase:
     label: str | None = None
     gap_after: str | None = None  # serial: end-of-this -> start-of-next
     start_offset: str | None = None  # parallel: container-start -> this-start
+    retry: Retry | None = None  # command/measure only (2026-07-14 §2.1)
+    on_error: str = "fail"  # one of ON_ERROR_VALUES (2026-07-14 §2.2)
 
 
 @dataclass(kw_only=True)

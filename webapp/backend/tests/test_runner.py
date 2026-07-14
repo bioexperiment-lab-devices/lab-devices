@@ -68,6 +68,7 @@ async def test_happy_path_completes_with_full_artifacts(env: SimpleNamespace) ->
     assert report["error"] is None
     assert report["finalize_errors"] == []
     assert report["persistence_errors"] == []
+    assert report["tolerated_errors"] == []
     assert isinstance(report["clock_origin"], float)
     assert report["started_at"] < report["ended_at"]
     assert report["role_mapping"] == runsupport.MAPPING
@@ -93,6 +94,43 @@ async def test_persistence_forced_to_disk_csv(env: SimpleNamespace) -> None:
     lines = (art / "od.csv").read_text().splitlines()
     assert lines[0] == "timestamp,value"
     assert len(lines) == 2
+
+
+async def test_report_records_errors_tolerated_by_on_error(env: SimpleNamespace) -> None:
+    """A block with `on_error: continue` fails, the run absorbs it and still reports
+    `completed`. report.json is assembled field-by-field, so without an explicit entry a run
+    that silently dropped its samples would look IDENTICAL to a clean one — which is the whole
+    point of RunReport.tolerated_errors."""
+    env.fake.inject_error("densitometer_1", "measure", "hardware_error", "flaky", times=10)
+    blocks = [
+        {
+            "serial": {
+                "children": [
+                    {
+                        "measure": {"device": "meter", "verb": "measure", "into": "od"},
+                        "on_error": "continue",
+                    },
+                    {"command": {"device": "feed", "verb": "dispense", "params": {"volume_ml": 1}}},
+                ]
+            }
+        }
+    ]
+    experiment_id = await _create_doc(env, blocks)
+    run_id = await env.manager.start(experiment_id, runsupport.LAB, runsupport.MAPPING)
+    await _finish(env)
+
+    report = json.loads((env.data_dir / f"runs/{run_id}" / "report.json").read_text())
+    assert report["status"] == "completed"
+    assert report["error"] is None
+    assert len(report["tolerated_errors"]) == 1
+    tolerated = report["tolerated_errors"][0]
+    assert tolerated["block_id"] == "blocks[0].children[0]"
+    assert "flaky" in tolerated["error"]
+    # the sibling still ran: the tolerance let the run carry on
+    assert ("pump_1", "dispense") in [(d, c) for d, c, _ in env.fake.calls]
+
+    record = await RecordsStore(env.db, env.data_dir).get(run_id)
+    assert record["status"] == "completed"
 
 
 async def test_mapping_saved_on_start(env: SimpleNamespace) -> None:

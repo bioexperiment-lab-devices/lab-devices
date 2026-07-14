@@ -1,7 +1,7 @@
 /** Editor tree model: the canvas tree IS the engine AST (settled decision S1), with
  * stable uids for React keys, selection, and diagnostics mapping. All ops are pure and
  * return new trees (zustand/zundo snapshot immutability). */
-import type { ParamValue } from '../types/doc'
+import type { ParamValue, RetryJson } from '../types/doc'
 import type { VerbSpec } from '../types/catalog'
 
 export type InputType = 'int' | 'float' | 'bool' | 'enum'
@@ -12,6 +12,10 @@ interface NodeBase {
   label: string | null
   gapAfter: string | null
   startOffset: string | null
+  // retry is command/measure only in the engine (2026-07-14 §2.1); on_error is legal on every
+  // block type (§2.2). Both live on NodeBase since it is the one shape every BlockNode extends.
+  retry?: RetryJson
+  onError?: 'fail' | 'continue'
 }
 
 export interface CommandNode extends NodeBase {
@@ -260,6 +264,23 @@ export function updateNode(tree: BlockNode[], uid: string, patch: object): Block
     return out
   }
   return tree.map(walkNode)
+}
+
+/** allow_repeat is the author's acknowledgement of a *specific verb's* hazard (retry-safety
+ * design 2026-07-14 §2.1) — it must not silently carry over onto a different verb the
+ * author never saw the hazard box for (2026-07-14 review, I3). The Inspector calls this
+ * whenever a command/measure block's verb changes; clearing allow_repeat alone is enough:
+ * RetrySection's `locked` is derived from `!retrySafe && !allowRepeat`, so for a
+ * non-retry_safe verb this re-locks attempts/backoff and re-opens the hazard checkbox
+ * unticked, forcing the author back through the acknowledgement for the verb that now runs.
+ *
+ * The device (Role) picker deliberately does NOT get the same treatment: it only ever
+ * offers roles of the SAME catalog device type as the current one, so switching device can
+ * never change the (roleType, verb) pair retry_safe is keyed on — the hazard the author
+ * acknowledged is still the hazard of the verb that runs. */
+export function retryAfterVerbChange(retry: RetryJson | undefined): RetryJson | undefined {
+  if (retry === undefined) return undefined
+  return { ...retry, allow_repeat: undefined }
 }
 
 const nodeBase = (): NodeBase => ({ uid: newUid(), label: null, gapAfter: null, startOffset: null })

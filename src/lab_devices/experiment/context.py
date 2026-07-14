@@ -10,6 +10,7 @@ from typing import Any
 from lab_devices.client import LabClient
 from lab_devices.devices.base import Device
 from lab_devices.experiment.clock import Clock, MonotonicClock
+from lab_devices.experiment.errors import ToleratedError
 from lab_devices.experiment.inputs import OperatorInputProvider, UnattendedInputProvider
 from lab_devices.experiment.occupancy import Occupancy
 from lab_devices.experiment.persist import StreamSink
@@ -31,6 +32,13 @@ class RunOptions:
     job_poll_interval: float = 0.25
     job_poll_max: float = 2.0
     job_timeout: float | None = None
+    job_poll_max_failures: int = 5
+    # Consecutive `get_job` failures tolerated before the fault propagates. A failed poll is
+    # NOT a failed job: the job is still running on the hardware, so the answer to a transient
+    # blip is to poll again, never to re-dispatch (design 2026-07-14 §3.2). This lives here and
+    # not on the block's `Retry` because polling is a pure read of job state — always safe to
+    # repeat, even for a non-idempotent verb with no retry policy at all, so it must not be
+    # gated by one. It tunes the same loop as job_poll_interval / job_poll_max / job_timeout.
 
 
 def _running_gate() -> asyncio.Event:
@@ -52,6 +60,7 @@ class RunContext:
     locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     touched: dict[str, None] = field(default_factory=dict)
     in_flight: dict[str, tuple[str, Job]] = field(default_factory=dict)
+    tolerated: list[ToleratedError] = field(default_factory=list)  # on_error (§3.4)
     gate: asyncio.Event = field(default_factory=_running_gate)
     abort_requested: bool = False
     log_sink: RunLogSink = field(default_factory=InMemoryRunLog)

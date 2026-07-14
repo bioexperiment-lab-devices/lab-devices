@@ -34,4 +34,34 @@ describe('blockSummary', () => {
     ]
     for (const [node, expected] of cases) expect(blockSummary(node)).toBe(expected)
   })
+
+  it('appends a compact marker when retry / on_error: continue is set, otherwise nothing', () => {
+    const withRetry: BlockNode = {
+      uid: 'x', kind: 'command', device: 'feed_pump', verb: 'stop', params: {}, ...base,
+      retry: { attempts: 3 },
+    }
+    expect(blockSummary(withRetry)).toBe('▸ feed_pump · stop R×3')
+
+    const withOnError: BlockNode = { uid: 'x', kind: 'wait', duration: '1s', ...base, onError: 'continue' }
+    expect(blockSummary(withOnError)).toBe('⏱ wait 1s ⤳')
+
+    const withBoth: BlockNode = {
+      uid: 'x', kind: 'measure', device: 'od_meter', verb: 'measure', into: 'od', params: {}, ...base,
+      retry: { attempts: 2 }, onError: 'continue',
+    }
+    expect(blockSummary(withBoth)).toBe('◉ od_meter · measure → od R×2 ⤳')
+
+    const plain: BlockNode = { uid: 'x', kind: 'wait', duration: '1s', ...base }
+    expect(blockSummary(plain)).toBe('⏱ wait 1s')
+  })
+
+  it('the retry marker never collides with the loop block glyph, even when a loop retries', () => {
+    // A retrying loop is the exact case that motivated the marker change (2026-07-14
+    // review, Fix 5): `↻ Loop ×3 ↻2` was unreadable — two near-identical arrows.
+    const retryingLoop: BlockNode = {
+      uid: 'x', kind: 'loop', mode: 'count', count: 3, until: '', check: 'after', pace: null, body: [],
+      ...base, retry: { attempts: 2 },
+    }
+    expect(blockSummary(retryingLoop)).toBe('↻ Loop ×3 R×2')
+  })
 })

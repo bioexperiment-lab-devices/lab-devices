@@ -14,6 +14,7 @@ from lab_devices.experiment.errors import (
     FinalizeError,
     PersistenceError,
     RunAbortedError,
+    ToleratedError,
 )
 from lab_devices.experiment.execute import execute_blocks
 from lab_devices.experiment.finalize import run_finalizer
@@ -55,6 +56,10 @@ class RunReport:
     state: RunState
     log: RunLogSink
     persistence_errors: tuple[BaseException, ...] = ()
+    # Failures absorbed by `on_error: continue` (design 2026-07-14 §3.4). A run that dropped
+    # 40 samples still reports `completed` — this is what stops it looking like a clean one.
+    # Declared last, with a default: the failure path above constructs RunReport positionally.
+    tolerated_errors: tuple[ToleratedError, ...] = ()
 
 
 class ExperimentRun:
@@ -184,6 +189,7 @@ class ExperimentRun:
             status=status, error=error, finalize_errors=finalize_errors,
             state=ctx.state, log=sinks.log_sink,
             persistence_errors=sinks.persistence_errors(),
+            tolerated_errors=tuple(ctx.tolerated),
         )
         if cancelled:
             assert error is not None  # isinstance check above guarantees this (mypy narrowing)

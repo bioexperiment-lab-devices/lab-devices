@@ -28,6 +28,17 @@ export function describeEvent(e: EventLike): string {
     case 'input_bound': return `${s(d.name)} = ${s(d.value)}`
     case 'finalize_started': return 'finalize started'
     case 'finalize_finished': return `finalize finished (${s(d.errors)} errors)`
+    case 'block_retried': return `retrying (attempt ${s(d.attempt)}/${s(d.of)}): ${s(d.error)}`
+    case 'block_error_tolerated': return `tolerated failure: ${s(d.error)}`
+    // Emitted from execute.py's `finally` when an attempt's job is still physically running
+    // but got orphaned and the device-wide stop had to fail closed (an open mode would have
+    // been killed): the channels stay held so nothing dispatches on top of the stranded job —
+    // degraded but safe, same "surfaced, non-fatal" category as block_error_tolerated.
+    case 'job_stranded':
+      return `${s(d.device)}: job ${s(d.job_id)} stranded, channels ${s(d.channels)} held`
+    case 'job_poll_retried':
+      return `${s(d.device)}: poll of job ${s(d.job_id)} failed ` +
+        `(${s(d.failure)}/${s(d.of)}), still running: ${s(d.error)}`
     case 'job_cancelled': return `${s(d.device)}: job ${s(d.verb)} cancelled`
     case 'teardown_issued': return `${s(d.device)}: teardown ${s(d.verb)} issued`
     case 'sweep_command': return `${s(d.device)}: sweep ${s(d.verb)}`

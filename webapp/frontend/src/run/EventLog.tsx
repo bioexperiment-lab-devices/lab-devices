@@ -19,6 +19,15 @@ const KIND_COLOR: Record<string, string> = {
   measure_recorded: 'text-blue-700',
   input_requested: 'text-amber-700',
   input_bound: 'text-amber-700',
+  block_retried: 'text-amber-700',
+  job_poll_retried: 'text-amber-700',
+  // A tolerated error is a real failure the run survived — darker than a plain retry-in-
+  // progress, matching the amber-800 the record's warning panel already uses for the same
+  // "surfaced, non-fatal" category (finalize/persistence errors).
+  block_error_tolerated: 'text-amber-800',
+  // Same category: a stranded job is a real degradation the run survived, not a routine
+  // in-progress retry (2026-07-14 review, engine agent addendum).
+  job_stranded: 'text-amber-800',
 }
 
 export function EventLog(props: { events: ReadonlyArray<LogEvent>; origin: number | null; rev: number }) {

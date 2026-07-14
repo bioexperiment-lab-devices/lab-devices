@@ -163,6 +163,48 @@ def test_mode_channels_pairwise_disjoint_per_device_type():
                 assert not (channel_sets[i] & channel_sets[j]), dtype
 
 
+def test_stop_channels_cover_every_mode_on_the_device_type():
+    """The retry's orphan-cancel is a device.stop() (Job.cancel() IS device.stop()), and its
+    guard -- execute._modes_a_stop_would_close -- only refuses the retry for open modes whose
+    channels INTERSECT the device's `stop` channels. That channel filter is safe only while a
+    stop cannot close a mode it does not name: today every densitometer stop covers optics |
+    thermal, so it does. Narrow densitometer.stop to optics and the guard would happily stop the
+    device to clear an orphaned measure, silently killing the thermostat -- exactly the failure
+    the guard exists to prevent. Pin the invariant so a future narrow stop trips a test here.
+
+    A device type with NO stop verb is fine: the guard assumes the worst (every open mode on the
+    device) rather than the best."""
+    for (dtype, verb), trait in _REGISTRY.items():
+        if trait.state_effect != "mode":
+            continue
+        stop = _REGISTRY.get((dtype, "stop"))
+        if stop is None:
+            continue
+        assert trait.channels & stop.channels, (dtype, verb)
+
+
+def test_mode_opening_traits_complete_immediately():
+    """execute._dispatch_action calls register_open with NO await between releasing the wire
+    lock and that call -- true today only because every mode-opening trait (state_effect ==
+    "mode") has completion == "immediate", so the `if trait.completion == "job": ... await
+    _await_job(...)` branch never executes on a mode-opening dispatch. That absence of an
+    await is exactly what makes _clear_orphaned_job's in-lock open-mode check sound (see the
+    comment above register_open in execute.py): the guard takes ctx.lock(device) and reads
+    ctx.occupancy, trusting that any sibling's register_open has already run by the time it
+    could ever be granted that same lock.
+
+    If a mode-opening verb ever became completion == "job", _dispatch_action would await
+    _await_job(...) in that exact gap -- and _await_job itself takes and releases the wire
+    lock on every poll. The guard could then acquire the lock DURING that job wait, see zero
+    open modes (registration hasn't happened yet), and issue a stop that silently kills the
+    mode being opened: the identical Critical bug design 2026-07-14 §3.3 fixed, reopened by a
+    change in a completely different function. Pin the invariant so that change trips a test
+    here instead of a live thermostat."""
+    for (dtype, verb), trait in _REGISTRY.items():
+        if trait.state_effect == "mode":
+            assert trait.completion == "immediate", (dtype, verb)
+
+
 def test_measurement_verbs_declare_result_field():
     assert lookup("densitometer_1", "measure").result_field == "absorbance"
     assert lookup("densitometer_1", "measure_blank").result_field == "slope"
@@ -176,3 +218,51 @@ def test_result_field_only_on_measurement_verbs():
             assert trait.result_field is not None, (dtype, verb)
         else:
             assert trait.result_field is None, (dtype, verb)
+
+
+def test_dispense_is_not_retry_safe():
+    assert lookup("pump_1", "dispense").retry_safe is False
+
+
+def test_reads_and_absolute_setters_are_retry_safe():
+    assert lookup("densitometer_1", "measure").retry_safe is True
+    assert lookup("densitometer_1", "measure_blank").retry_safe is True
+    assert lookup("densitometer_1", "set_thermostat").retry_safe is True
+    assert lookup("valve_1", "set_position").retry_safe is True
+    assert lookup("valve_1", "home").retry_safe is True
+    assert lookup("pump_1", "stop").retry_safe is True
+
+
+def test_relative_and_hidden_state_verbs_are_not_retry_safe():
+    # dispense moves a *relative* volume: a retry after a partial dispense double-doses.
+    assert lookup("pump_1", "dispense").retry_safe is False
+    # rotate opens an unbounded fluid-moving mode; it needs an explicit author opt-in.
+    assert lookup("pump_1", "rotate").retry_safe is False
+    # calibrate_tube derives its factor from the *last measurement*, not from its params.
+    assert lookup("densitometer_1", "calibrate_tube").retry_safe is False
+
+
+# Every verb, classified deliberately. A verb added without a decision defaults to False
+# and fails this test, which is the point: nobody gets a silent retry by omission.
+_RETRY_SAFE = {
+    ("pump", "dispense"): False,
+    ("pump", "rotate"): False,
+    ("pump", "stop"): True,
+    ("pump", "set_calibration"): True,
+    ("valve", "set_position"): True,
+    ("valve", "home"): True,
+    ("valve", "configure"): True,
+    ("valve", "stop"): True,
+    ("densitometer", "measure"): True,
+    ("densitometer", "measure_blank"): True,
+    ("densitometer", "set_led"): True,
+    ("densitometer", "set_thermostat"): True,
+    ("densitometer", "set_tube_correction"): True,
+    ("densitometer", "calibrate_tube"): False,
+    ("densitometer", "stop"): True,
+    ("densitometer", "stop_monitoring"): True,
+}
+
+
+def test_every_registry_verb_declares_its_retry_safety():
+    assert {key: trait.retry_safe for key, trait in _REGISTRY.items()} == _RETRY_SAFE

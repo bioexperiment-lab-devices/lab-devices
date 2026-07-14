@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import type { ExperimentDocJson } from '../types/doc'
+import type { BlockJson, ExperimentDocJson } from '../types/doc'
 import { DocConvertError, docToTree, nodeToBlock, treeToDoc } from './convert'
-import type { LoopNode, MeasureNode, SerialNode } from './tree'
+import type { LoopNode, MeasureNode, SerialNode, WaitNode } from './tree'
 
 const fixture = (name: string): ExperimentDocJson =>
   JSON.parse(
@@ -86,6 +86,16 @@ describe('treeToDoc', () => {
     expect(countJson.loop).not.toHaveProperty('check')
   })
 
+  it('omits on_error entirely for a default-fail block — engine parity: block_to_dict emits ' +
+    'on_error only via `!= "fail"`, so a default block must round-trip with no on_error key', () => {
+    const base: WaitNode = {
+      uid: 'x', kind: 'wait', duration: '1s', label: null, gapAfter: null, startOffset: null,
+    }
+    expect(nodeToBlock(base)).not.toHaveProperty('on_error')
+    expect(nodeToBlock({ ...base, onError: 'fail' })).not.toHaveProperty('on_error')
+    expect(nodeToBlock({ ...base, onError: 'continue' })).toHaveProperty('on_error', 'continue')
+  })
+
   it('omits empty params, null timing keys, and null else', () => {
     const { tree } = docToTree(fixture('valid-od-growth'))
     const root = tree[0] as SerialNode
@@ -111,5 +121,105 @@ describe('treeToDoc', () => {
     expect(doc.workflow.persistence).toEqual({ default: 'in_memory', format: 'jsonl' })
     expect(doc.workflow.blocks).toEqual([])
     expect(doc.doc_version).toBe(1)
+  })
+
+  it('round-trips retry and on_error through the builder tree', () => {
+    // docToTree/treeToDoc operate on a full ExperimentDocJson, not a bare BlockJson[] —
+    // the brief's snippet was written before the engine landed and guessed wrong here.
+    const blocks: BlockJson[] = [
+      {
+        measure: { device: 'od_meter', verb: 'measure', into: 'od_1' },
+        label: 'read OD',
+        retry: { attempts: 3, backoff: '2s' },
+        on_error: 'continue',
+      },
+    ]
+    const doc: ExperimentDocJson = {
+      doc_version: 1,
+      name: 'Retry test',
+      description: null,
+      roles: { od_meter: { type: 'densitometer' } },
+      workflow: {
+        schema_version: 1,
+        metadata: { name: 'Retry test' },
+        persistence: { default: 'in_memory', format: 'jsonl' },
+        streams: {},
+        blocks,
+      },
+    }
+    expect(treeToDoc(docToTree(doc)).workflow.blocks).toEqual(blocks)
+  })
+
+  it('round-trips workflow.defaults.retry, which the builder has no UI for but must not destroy', () => {
+    // Reproduces the reviewer's proof: a hand-authored doc with a workflow-wide retry
+    // policy must survive Save unmodified, or the run loses its only fault-tolerance
+    // safety net (2026-07-14 review, Fix 1).
+    const doc: ExperimentDocJson = {
+      doc_version: 1,
+      name: 'Defaults test',
+      description: null,
+      roles: {},
+      workflow: {
+        schema_version: 1,
+        metadata: { name: 'Defaults test' },
+        persistence: { default: 'in_memory', format: 'jsonl' },
+        streams: {},
+        defaults: { retry: { attempts: 3, backoff: '2s' } },
+        blocks: [],
+      },
+    }
+    expect(treeToDoc(docToTree(doc)).workflow.defaults).toEqual({
+      retry: { attempts: 3, backoff: '2s' },
+    })
+  })
+
+  it('preserves a custom persistence setting instead of clobbering it with the hardcoded default', () => {
+    const doc: ExperimentDocJson = {
+      doc_version: 1,
+      name: 'Persistence test',
+      description: null,
+      roles: {},
+      workflow: {
+        schema_version: 1,
+        metadata: { name: 'Persistence test' },
+        persistence: { default: 'disk' },
+        streams: {},
+        blocks: [],
+      },
+    }
+    expect(treeToDoc(docToTree(doc)).workflow.persistence).toEqual({ default: 'disk' })
+  })
+
+  it('still stamps the historical default persistence when the doc carries none', () => {
+    const doc = treeToDoc({ name: 'X', description: null, roles: {}, streams: {}, tree: [] })
+    expect(doc.workflow.persistence).toEqual({ default: 'in_memory', format: 'jsonl' })
+    expect(doc.workflow).not.toHaveProperty('defaults')
+  })
+
+  it('round-trips a per-stream persistence override, which the builder has no UI for but ' +
+    'must not destroy (2026-07-14 review, I2) — a stream declared persistence: "disk" under ' +
+    'an in_memory workflow default must not be silently downgraded to in-memory on save, or ' +
+    'its samples are never written to disk at all', () => {
+    const doc: ExperimentDocJson = {
+      doc_version: 1,
+      name: 'Stream persistence test',
+      description: null,
+      roles: {},
+      workflow: {
+        schema_version: 1,
+        metadata: { name: 'Stream persistence test' },
+        persistence: { default: 'in_memory', format: 'jsonl' },
+        streams: { od: { units: 'AU', persistence: 'disk' } },
+        blocks: [],
+      },
+    }
+    expect(treeToDoc(docToTree(doc)).workflow.streams).toEqual({
+      od: { units: 'AU', persistence: 'disk' },
+    })
+  })
+
+  it('omits the per-stream persistence key entirely for a stream that never had an override', () => {
+    const content = docToTree(fixture('valid-od-growth'))
+    expect(treeToDoc(content).workflow.streams?.od?.persistence).toBeUndefined()
   })
 })

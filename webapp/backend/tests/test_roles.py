@@ -125,8 +125,25 @@ def test_substitute_skips_malformed_nodes_without_crashing() -> None:
     assert out["blocks"][3]["command"]["device"] == 42
 
 
+def test_substitute_handles_blocks_with_retry_and_on_error() -> None:
+    workflow = {
+        "schema_version": 1,
+        "streams": {"od_1": {}},
+        "blocks": [{
+            "measure": {"device": "od_meter", "verb": "measure", "into": "od_1"},
+            "retry": {"attempts": 3, "backoff": "2s"},
+            "on_error": "continue",
+        }],
+    }
+    out, diags = roles.substitute(workflow, {"od_meter": "densitometer_1"})
+    assert diags == []
+    assert out["blocks"][0]["measure"]["device"] == "densitometer_1"
+    assert out["blocks"][0]["retry"] == {"attempts": 3, "backoff": "2s"}
+    assert out["blocks"][0]["on_error"] == "continue"
+
+
 def test_walker_grammar_matches_engine_serializer() -> None:
-    assert roles._TIMING_KEYS == serialize._TIMING_KEYS
+    assert roles._BLOCK_KEYS == serialize._BLOCK_KEYS
     covered = (
         set(roles._DEVICE_BLOCKS) | set(roles._CHILD_LISTS) | set(roles._LEAF_BLOCKS)
     )
