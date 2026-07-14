@@ -57,6 +57,11 @@ R0_PER_H = 0.8  # max growth rate, no drug
 IC50 = 1.0  # drug units; r(IC50) = r0/2 = r_dil, the controller's fixed point
 STOCK = 10.0  # Stock A = 10x MIC, in the same units
 
+# The freshness window each doc guards its service branches with: strictly between the growth
+# phase (10 samples x the inner pace) and the cycle pace, so a sample from the previous cycle
+# can never satisfy it. Pace-coupled by construction — see each doc's own prose.
+FRESHNESS = {"morbidostat.json": "11min", "morbidostat-demo-speed.json": "45s"}
+
 
 class Culture:
     """One vial: exponential growth inhibited by drug, diluted on every injection."""
@@ -170,6 +175,17 @@ class FlakyLab(CultureLab):
         super()._advance(job)
 
 
+class DeadSensorLab(FlakyLab):
+    """A CultureLab whose `densitometer_3` reads for one growth phase and then dies forever.
+
+    The fault every retry is powerless against, and the one the whole-stream guard cannot
+    see: the tube HAS read, so `count(od_3) > 0` is true for the rest of the run.
+    """
+
+    def _faulty(self, device: str, attempt: int) -> bool:
+        return device == "densitometer_3" and attempt > 10  # 10 reads = cycle 1, then dark
+
+
 class Answers:
     def __init__(self) -> None:
         self.asked: list[str] = []
@@ -232,14 +248,21 @@ def test_example_declares_its_fault_tolerance(name: str) -> None:
     reads = ratchet["body"][0]["loop"]["body"][0]["parallel"]["children"]
     assert [r["on_error"] for r in reads] == ["continue"] * 3
     for i, service in enumerate(ratchet["body"][1:4], start=1):
-        # Short-circuit guard: no reading, no decision — and no empty-window EvaluationError.
-        assert service["branch"]["if"].startswith(f"count(od_{i}) > 0 and ")
+        # Short-circuit guard: no FRESH reading, no decision — and no empty-window
+        # EvaluationError. The window is what makes it a freshness guard: the whole-stream
+        # form `count(od_N) > 0` latches true forever over an append-only stream, and a
+        # latched guard is an open-loop drug injector (test_a_dead_sensor_does_not_latch).
+        window = FRESHNESS[name]
+        assert service["branch"]["if"].startswith(f"count(od_{i}, last={window}) > 0 and ")
 
     # The thermostat setup is parallel again; retry is what makes that safe on a roster whose
-    # devices share a serial (docs/experiment-engine-limitations.md, final section).
+    # devices share a serial (docs/experiment-engine-limitations.md, final section). Six
+    # attempts, not three: the contending set only thins as each round's winner drops out
+    # (3 -> 2 -> 1), and a jitter-free constant back-off does not de-synchronize the herd.
     thermostats = setup[6]["parallel"]["children"]
     assert [t["command"]["verb"] for t in thermostats] == ["set_thermostat"] * 3
-    assert all(t["retry"]["attempts"] == 3 for t in thermostats)
+    assert all(t["retry"]["attempts"] == 6 for t in thermostats)
+    assert all("on_error" not in t for t in thermostats), "an unset thermostat must stop the run"
 
     # No pump may ever be retried: volume_ml is relative, so a retried dispense double-doses.
     assert not any(
@@ -386,3 +409,67 @@ async def test_morbidostat_survives_a_transient_device_fault(tmp_path: Path) -> 
     t1, t2, t3 = (lab.cultures[t] for t in (1, 2, 3))
     assert len(t1.injections) == 25 and len(t2.injections) == 25
     assert len(t3.injections) == 24, "the guard must skip exactly the cycle with no reading"
+
+
+async def test_a_dead_sensor_does_not_latch_an_open_loop_injector(tmp_path: Path) -> None:
+    """The regression the freshness window exists for, on the shipped 120-cycle doc.
+
+    `densitometer_3` reads cycle 1 and is dark forever after. Under the whole-stream guard
+    `count(od_3) > 0` — true for the rest of the run once the tube has ever read — every
+    stat in tube 3's decision tree freezes on its last successful trace, the condition
+    becomes a CONSTANT, and the same arm fires on all 120 cycles with no feedback. The arm
+    that latches is DRUG (a healthy vial is above OD_THR and out-growing its dilution by
+    construction), so the §1 recursion walks the vial's drug concentration to the undiluted
+    stock: measured, 120/120 drug injections, c -> 9.999 (= Stock A, 10x MIC), OD -> 0.0003.
+    A sterilized culture, and a run that reports `completed`.
+
+    `count(od_3, last=11min) > 0` proves a sample landed during THIS cycle's growth phase,
+    so the tube is serviced once and then left alone — alive, and visibly abandoned in the
+    run log. This test FAILS on the old guard: tube 3 takes 120 injections, not 1.
+
+    All three tubes start in the band (above OD_THR, growing at r0 = 2 * r_dil), which is
+    what makes DRUG the arm that latches — the healthy, and therefore the dangerous, case.
+    """
+    _, workflow = load("morbidostat.json")
+    clock = FakeClock()
+    lab = DeadSensorLab(clock, {1: 0.5, 2: 0.5, 3: 0.5})
+    run = ExperimentRun(
+        LabClient("lab", 9000, http=_http(lab)),
+        workflow,
+        options=RunOptions(
+            clock=clock,
+            input_provider=Answers(),
+            output_dir=tmp_path,
+            job_poll_interval=0.05,
+            job_poll_max=0.2,
+        ),
+    )
+    report = await drive(clock, run.execute(), max_steps=5_000_000)
+
+    assert report.status == "completed"
+    assert len(report.state.streams["od_3"]) == 10, "tube 3 read cycle 1 and nothing after"
+
+    t1, t2, t3 = (lab.cultures[t] for t in (1, 2, 3))
+
+    # --- THE REGRESSION. Servicing a tube stops when its sensor stops, and stays stopped:
+    # the injection count is BOUNDED by the cycles it actually had data for. The old guard
+    # leaves it latched instead — 120 injections, every one of them drug. ---
+    assert t3.injections == ["drug"], "a dead sensor latched the decision tree open"
+
+    # c is one injection's worth of stock (10 * 1/13 = 0.769). The latched run walks it up
+    # the §1 recursion to 9.999 — the fixed point is C, the undiluted stock — while diluting
+    # the vial 120 times: OD 0.00031, a 1,600x collapse, reported as a completed run.
+    assert t3.drug < 0.5 * STOCK, f"tube 3: drug {t3.drug:.3f} is walking toward the stock"
+    # The simulator only advances a culture on a read or an injection, so this is tube 3's
+    # OD as of the moment it was abandoned: still in the band, not diluted to death.
+    assert t3.od > 0.1, f"tube 3: OD {t3.od:.5f} — the culture was diluted to death"
+
+    # --- and the neighbours are untouched: serviced every cycle, still pinned at r_dil ---
+    for t, culture in ((1, t1), (2, t2)):
+        assert len(culture.injections) == 120
+        rate = R0_PER_H / (1.0 + culture.drug / IC50)
+        assert 0.2 <= rate <= 0.6, f"tube {t}: growth rate {rate:.3f} not pinned near r_dil"
+
+    # --- the abandonment is loud, not silent: every lost read is in the report ---
+    od_3_read = "blocks[0].children[10].body[0].body[0].children[2]"
+    assert [t.block_id for t in report.tolerated_errors] == [od_3_read] * (119 * 10)
