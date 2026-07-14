@@ -19,6 +19,7 @@ from lab_devices.experiment.blocks import (
     Measure,
     OperatorInput,
     Parallel,
+    Retry,
     Serial,
     Wait,
 )
@@ -89,6 +90,7 @@ from lab_devices.experiment.serialize import (
 from lab_devices.experiment.state import BindingValue, RunState, Sample, Stream
 from lab_devices.experiment.validate import load_and_validate, validate
 from lab_devices.experiment.workflow import (
+    Defaults,
     Group,
     Metadata,
     Persistence,
@@ -100,12 +102,12 @@ __all__ = [
     "BindingType", "Diagnostic", "ExprRefs", "ExprType", "TypeReport",
     "ValidationError", "infer_type", "load_and_validate", "references", "validate",
     "Block", "Branch", "Command", "GroupRef", "Loop", "Measure", "OperatorInput",
-    "Parallel", "Serial", "Wait",
+    "Parallel", "Retry", "Serial", "Wait",
     "EvaluationError", "ExperimentError", "ExpressionError", "UnknownVerbError",
     "WorkflowLoadError",
     "block_from_dict", "block_to_dict", "load_workflow", "save_workflow",
     "workflow_from_dict", "workflow_to_dict", "SCHEMA_VERSION",
-    "Group", "Metadata", "Persistence", "StreamDecl", "Workflow",
+    "Defaults", "Group", "Metadata", "Persistence", "StreamDecl", "Workflow",
     "AllWindow", "BinaryOp", "BindingRef", "Const", "DurationWindow", "Expr",
     "SampleWindow", "StatCall", "UnaryOp", "Window", "parse_expression", "parse_duration",
     "BindingValue", "RunState", "Sample", "Stream",

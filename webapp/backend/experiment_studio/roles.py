@@ -8,8 +8,9 @@ from typing import Any
 
 ROLE_NAME_RE = re.compile(r"[a-z][a-z0-9_]*\Z")
 
-# Mirrors the engine serializer: block dict = one type key + optional timing keys.
-_TIMING_KEYS = ("label", "gap_after", "start_offset")
+# Mirrors the engine serializer (serialize.py _BLOCK_KEYS): a block dict is one type key
+# plus optional block-level keys. Keep in sync or blocks are silently skipped in _walk.
+_BLOCK_KEYS = ("label", "gap_after", "start_offset", "retry", "on_error")
 _DEVICE_BLOCKS = ("command", "measure")
 _CHILD_LISTS: dict[str, tuple[str, ...]] = {
     "serial": ("children",),
@@ -77,7 +78,7 @@ def _walk(
         path = f"{prefix}[{i}]"
         if not isinstance(block, dict):
             continue
-        type_keys = [k for k in block if k not in _TIMING_KEYS]
+        type_keys = [k for k in block if k not in _BLOCK_KEYS]
         if len(type_keys) != 1:
             continue
         key = type_keys[0]

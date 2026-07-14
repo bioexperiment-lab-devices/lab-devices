@@ -23,6 +23,7 @@ from lab_devices.experiment.workflow import (
 SCHEMA_VERSION = 1
 _BLOCK_KEYS = ("label", "gap_after", "start_offset", "retry", "on_error")
 _ON_ERROR_VALUES = ("fail", "continue")
+_DEFAULTS_KEYS = ("retry",)
 
 
 def _req(body: Any, key: str, ctx: str) -> Any:
@@ -290,6 +291,16 @@ def workflow_from_dict(d: Any) -> Workflow:
         default=pd.get("default", "in_memory"), format=pd.get("format", "jsonl")
     )
     dd = _obj(d.get("defaults", {}), "defaults")
+    for key in dd:
+        if key not in _DEFAULTS_KEYS:
+            if key == "on_error":
+                raise WorkflowLoadError(
+                    "defaults.on_error is not allowed: a blanket on_error would silently "
+                    "tolerate every failure (e.g. a missed drug injection) instead of just "
+                    "the ones an author reviewed block by block; set on_error on the "
+                    "individual blocks that should tolerate failure instead"
+                )
+            raise WorkflowLoadError(f"defaults: unknown key {key!r}")
     defaults = Defaults(
         retry=_retry(dd["retry"], "defaults.retry") if "retry" in dd else None
     )

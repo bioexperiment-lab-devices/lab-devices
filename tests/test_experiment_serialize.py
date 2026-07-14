@@ -191,3 +191,21 @@ def test_bad_retry_attempts_rejected_at_load():
             "blocks": [{"measure": {"device": "densitometer_1", "verb": "measure",
                                     "into": "od_1"}, "retry": {"attempts": 0}}],
         })
+
+
+def test_defaults_on_error_rejected_at_load():
+    with pytest.raises(WorkflowLoadError, match="on_error"):
+        workflow_from_dict({
+            "schema_version": 1,
+            "defaults": {"on_error": "continue"},
+            "blocks": [{"wait": {"duration": "1s"}}],
+        })
+
+
+def test_defaults_unknown_key_rejected_at_load():
+    with pytest.raises(WorkflowLoadError, match="bogus"):
+        workflow_from_dict({
+            "schema_version": 1,
+            "defaults": {"bogus": True},
+            "blocks": [{"wait": {"duration": "1s"}}],
+        })
