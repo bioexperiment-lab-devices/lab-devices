@@ -316,14 +316,26 @@ git commit -m "feat(experiment): retry + on_error block schema and round-trip"
 - Consumes: nothing.
 - Produces: `Trait.retry_safe: bool`; `VerbEntry["retry_safe"]`.
 
-**Context you need:** `Trait` (`registry.py:33`) has three positional fields (`completion`, `state_effect`, `teardown`) followed by a `kw_only=True` block. A new `kw_only` field with a default breaks none of the 17 existing declarations. `catalog.py:8` imports the private `_REGISTRY` and projects each Trait into a `VerbEntry` TypedDict for the Studio verb picker.
+**Context you need:** `Trait` (`registry.py:33`) has three positional fields (`completion`, `state_effect`, `teardown`) followed by a `kw_only=True` block. A new `kw_only` field with a default breaks none of the 16 existing declarations. `catalog.py:8` imports the private `_REGISTRY` and projects each Trait into a `VerbEntry` TypedDict for the Studio verb picker.
 
 **The classification — this is the safety-critical part of the task.** `pump.dispense` takes a **relative** `volume_ml`: retrying after a partial dispense double-doses the culture. Pure reads and *absolute* setters are idempotent. `retry_safe=True` goes on exactly these verbs and no others:
 
-- `densitometer`: `measure`, `measure_blank`, `read_raw`, `set_thermostat`
+- `densitometer`: `measure`, `measure_blank`, `set_thermostat`
 - `valve`: `set_position`, `home`, `configure`
-- `pump`: `stop`, `home`, `set_calibration`, `start_calibration`, and any other absolute setter (`set_*`/`configure`) present in the registry
+- `pump`: `stop`, `set_calibration`, and any other absolute setter (`set_*`/`configure`) present in the registry
 - **`pump.dispense` stays `False`.** So does anything else that moves a relative quantity.
+- **`pump.start_calibration` stays `False` too — do not mark it retry-safe.** Per
+  `docs/lab-bridge-api-reference.md` §3.6, it physically runs the pump for ~2 minutes moving
+  liquid and returns `{steps}`; the operator then measures the delivered volume and feeds it to
+  `set_calibration`. A retry after a partial run leaves the collection vessel holding *partial +
+  full* volume while the job reports only the second run's steps → inflated `measured_volume_ml`
+  → inflated `ml_per_step` → every subsequent dispense silently under-doses, permanently. Same
+  corruption class as a double dispense.
+- `densitometer.read_raw` and `pump.home` are **not** in `_REGISTRY` and do not belong on the
+  "should be True" list above. `pump.home` does not exist in the firmware at all — the **valve**
+  is the homed device (§3.6's pump table has no `home` and explicitly notes "No `not_homed`").
+  (If `read_raw` were ever admitted to the registry it would legitimately be `True` — a pure
+  read — but `start_calibration` and `rotate_raw` would be `False`, for the same reason as above.)
 
 Open `registry.py` and classify **every** entry explicitly — do not guess from the list above alone; read each trait's params and decide whether re-issuing it with the same params is idempotent.
 

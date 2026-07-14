@@ -79,8 +79,11 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
             ParamSpec("speed_ml_min", "number", required=True),
         ),
     ),
-    # Safe-state primitive; firmware documents it as "always succeeds". Stopping twice is
-    # stopped. Retrying a teardown is what keeps a blip from leaving the pump rotating.
+    # Safe-state primitive; firmware documents it as "always succeeds" (§3.6). Stopping twice
+    # is stopped: plain idempotence — NOT a finalization safeguard. finalize.py never consults
+    # retry_safe; its safe-state sweep is unconditional and best-effort regardless
+    # (finalize.py:46). retry_safe only governs the executor's normal-path dispatch, where
+    # `stop` can appear as an ordinary workflow block.
     ("pump", "stop"): Trait("immediate", "none", channels=_MOTOR, retry_safe=True),
     # Absolute write of ml_per_step (either directly, or derived from a fixed calibration
     # run's step count); re-issuing the same params persists the same value.
@@ -180,10 +183,14 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
         channels=_OPTICS,
         params=(ParamSpec("reference_absorbance", "number", required=True),),
     ),
-    # Safe-state primitives: cancel job/monitoring, LED off. "Always succeeds"; idempotent.
+    # Cancels job/monitoring, LED off; firmware documents it as "always succeeds" (§3.8) —
+    # plain idempotence. (Not a finalization safeguard: finalize.py never consults retry_safe.)
     ("densitometer", "stop"): Trait(
         "immediate", "none", channels=_OPTICS | _THERMAL, retry_safe=True
     ),
+    # Ends monitoring mode. Retry-safe because it cannot accumulate state, not because §3.8
+    # promises a no-op when idle — unlike `stop`, it isn't documented as "always succeeds", so
+    # a re-issue while not monitoring could surface a spurious error rather than a clean no-op.
     ("densitometer", "stop_monitoring"): Trait(
         "immediate", "none", channels=_OPTICS, retry_safe=True
     ),

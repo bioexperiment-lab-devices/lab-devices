@@ -161,7 +161,7 @@ and absolute setters (`measure`, `measure_blank`, `valve.set_position`, `home`, 
 retry_safe: bool = field(default=False, kw_only=True)
 ```
 
-Every field after `teardown` is already `kw_only` with a default, so all 17 existing declarations
+Every field after `teardown` is already `kw_only` with a default, so all 16 existing declarations
 keep compiling. Annotate the idempotent verbs `retry_safe=True`; `pump.dispense` stays `False`.
 Default `False` — opt in per verb, so a verb added later is conservative until someone thinks
 about it.
