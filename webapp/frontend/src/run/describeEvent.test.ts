@@ -34,6 +34,10 @@ describe('describeEvent', () => {
     // event-log side of that guarantee (RunReport.tolerated_errors is the record-level side).
     expect(d('block_error_tolerated', { error: 'no response' }))
       .toBe('tolerated failure: no response')
+    // A stranded job is a degraded-but-safe outcome, not a silent success: it must not fall
+    // through to the raw-JSON default case (2026-07-14 review, engine agent addendum).
+    expect(d('job_stranded', { device: 'pump_1', job_id: 'j-9', channels: [0, 1] }))
+      .toBe('pump_1: job j-9 stranded, channels 0,1 held')
   })
   it('covers the finalizer', () => {
     expect(d('finalize_started')).toBe('finalize started')

@@ -31,7 +31,9 @@ export interface DocSnapshot {
   name: string
   description: string | null
   roles: Record<string, { type: string }>
-  streams: Record<string, { units: string | null }>
+  // persistence is a per-stream override (2026-07-14 review, I2) — no UI sets it, but it
+  // must survive store round trips the same way workflow-level persistence/defaults do.
+  streams: Record<string, { units: string | null; persistence?: string | null }>
   tree: BlockNode[]
   // Carried opaquely through load -> save (2026-07-14 review, Fix 1): the builder has no
   // UI for either, but a hand-authored workflow.defaults.retry or custom persistence
@@ -197,7 +199,10 @@ export const useDocStore = create<EditorState>()(
 
       setStreamUnits: (name, units) =>
         set((s) => ({
-          streams: name in s.streams ? { ...s.streams, [name]: { units } } : s.streams,
+          // Spread the existing entry first (2026-07-14 review, I2): replacing it outright
+          // silently destroyed a per-stream `persistence` override the moment its units
+          // were edited, even before the doc was ever saved.
+          streams: name in s.streams ? { ...s.streams, [name]: { ...s.streams[name], units } } : s.streams,
         })),
 
       select: (uid) => set({ selectedUid: uid }),
@@ -240,6 +245,14 @@ export function useTemporal<T>(selector: (s: TemporalState<DocSnapshot>) => T): 
 export function loadDoc(content: DocContent, serverId: string | null): void {
   useDocStore.setState({
     ...content,
+    // Explicit, not just `...content`: zustand's setState (without `replace`) shallow-merges
+    // into the CURRENT state, and `content` simply omits these keys when the incoming doc
+    // has none — Object.assign then leaves whatever the previously-open document left behind
+    // untouched. Writing `undefined` here is an own-property assignment, so it actually
+    // clears them (2026-07-14 review, I1 — cross-document contamination via Task 8's carry-
+    // through: doc B must never inherit doc A's workflow.defaults/persistence).
+    persistence: content.persistence,
+    defaults: content.defaults,
     serverId,
     savedSnapshot: snapshotOf(content),
     selectedUid: null,

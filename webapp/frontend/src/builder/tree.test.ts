@@ -11,6 +11,7 @@ import {
   newVerbNode,
   removeNode,
   replaceSlot,
+  retryAfterVerbChange,
   updateNode,
   withFreshUids,
   type BlockNode,
@@ -157,5 +158,26 @@ describe('tree ops', () => {
     expect(out.children).toHaveLength(1)
     expect(out.uid).toBe(serial.uid)
     expect(() => replaceSlot(wait, 'children', [])).toThrow(/no child slot/)
+  })
+
+  describe('retryAfterVerbChange', () => {
+    it('leaves an unset retry alone', () => {
+      expect(retryAfterVerbChange(undefined)).toBeUndefined()
+    })
+
+    it('strips allow_repeat but keeps attempts/backoff, when switching verb', () => {
+      // Reproduces the reviewer's proof (2026-07-14 review, I3): a block on a non-
+      // retry_safe verb with allow_repeat ticked, switched to a different non-retry_safe
+      // verb, must not carry the old verb's hazard acknowledgement onto the new one.
+      const result = retryAfterVerbChange({ attempts: 3, backoff: '2s', allow_repeat: true })
+      expect(result?.allow_repeat).toBeUndefined()
+      expect(result).toMatchObject({ attempts: 3, backoff: '2s' })
+    })
+
+    it('is a no-op on a retry that never had allow_repeat set', () => {
+      const result = retryAfterVerbChange({ attempts: 2 })
+      expect(result?.allow_repeat).toBeUndefined()
+      expect(result).toMatchObject({ attempts: 2 })
+    })
   })
 })

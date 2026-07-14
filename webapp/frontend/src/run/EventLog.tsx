@@ -25,6 +25,9 @@ const KIND_COLOR: Record<string, string> = {
   // progress, matching the amber-800 the record's warning panel already uses for the same
   // "surfaced, non-fatal" category (finalize/persistence errors).
   block_error_tolerated: 'text-amber-800',
+  // Same category: a stranded job is a real degradation the run survived, not a routine
+  // in-progress retry (2026-07-14 review, engine agent addendum).
+  job_stranded: 'text-amber-800',
 }
 
 export function EventLog(props: { events: ReadonlyArray<LogEvent>; origin: number | null; rev: number }) {

@@ -15,6 +15,7 @@ import {
 import {
   findLocation,
   findNode,
+  retryAfterVerbChange,
   type BlockNode,
   type BranchNode,
   type CommandNode,
@@ -286,7 +287,9 @@ function ActionForm({ node }: { node: CommandNode | MeasureNode }) {
       <FieldRow label="Verb">
         <select
           value={node.verb}
-          onChange={(e) => patchBlock(node.uid, { verb: e.target.value })}
+          onChange={(e) =>
+            patchBlock(node.uid, { verb: e.target.value, retry: retryAfterVerbChange(node.retry) })
+          }
           className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
         >
           {sameKindVerbs.every(([v]) => v !== node.verb) && (

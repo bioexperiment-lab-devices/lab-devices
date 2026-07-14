@@ -19,7 +19,11 @@ export interface DocContent {
   name: string
   description: string | null
   roles: Record<string, { type: string }>
-  streams: Record<string, { units: string | null }>
+  // persistence is per-stream override support (2026-07-14 review, I2) — the builder has no
+  // UI for it (StreamsPanel.tsx), but a stream declared `persistence: "disk"` under an
+  // `in_memory` workflow default must survive Save, or its samples are silently never
+  // written to disk at all.
+  streams: Record<string, { units: string | null; persistence?: string | null }>
   tree: BlockNode[]
   // Carried opaquely — the builder has no UI for either, but it must not destroy them on
   // save (2026-07-14 review, Fix 1): a hand-authored workflow.defaults.retry is a
@@ -50,7 +54,10 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
   }
   const streams: DocContent['streams'] = {}
   for (const [name, decl] of Object.entries(wf.streams ?? {})) {
-    streams[name] = { units: decl.units ?? null }
+    streams[name] = {
+      units: decl.units ?? null,
+      ...(decl.persistence !== undefined ? { persistence: decl.persistence } : {}),
+    }
   }
   const roles: DocContent['roles'] = {}
   for (const [name, role] of Object.entries(doc.roles)) roles[name] = { type: role.type }
@@ -144,7 +151,12 @@ function blockToNode(block: BlockJson): BlockNode {
 
 export function treeToDoc(content: DocContent): ExperimentDocJson {
   const streams: Record<string, StreamDeclJson> = {}
-  for (const [name, s] of Object.entries(content.streams)) streams[name] = { units: s.units }
+  for (const [name, s] of Object.entries(content.streams)) {
+    streams[name] = {
+      units: s.units,
+      ...(s.persistence !== undefined ? { persistence: s.persistence } : {}),
+    }
+  }
   const roles: ExperimentDocJson['roles'] = {}
   for (const [name, role] of Object.entries(content.roles)) roles[name] = { type: role.type }
   const workflow: WorkflowJson = {

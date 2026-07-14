@@ -195,4 +195,31 @@ describe('treeToDoc', () => {
     expect(doc.workflow.persistence).toEqual({ default: 'in_memory', format: 'jsonl' })
     expect(doc.workflow).not.toHaveProperty('defaults')
   })
+
+  it('round-trips a per-stream persistence override, which the builder has no UI for but ' +
+    'must not destroy (2026-07-14 review, I2) — a stream declared persistence: "disk" under ' +
+    'an in_memory workflow default must not be silently downgraded to in-memory on save, or ' +
+    'its samples are never written to disk at all', () => {
+    const doc: ExperimentDocJson = {
+      doc_version: 1,
+      name: 'Stream persistence test',
+      description: null,
+      roles: {},
+      workflow: {
+        schema_version: 1,
+        metadata: { name: 'Stream persistence test' },
+        persistence: { default: 'in_memory', format: 'jsonl' },
+        streams: { od: { units: 'AU', persistence: 'disk' } },
+        blocks: [],
+      },
+    }
+    expect(treeToDoc(docToTree(doc)).workflow.streams).toEqual({
+      od: { units: 'AU', persistence: 'disk' },
+    })
+  })
+
+  it('omits the per-stream persistence key entirely for a stream that never had an override', () => {
+    const content = docToTree(fixture('valid-od-growth'))
+    expect(treeToDoc(content).workflow.streams?.od?.persistence).toBeUndefined()
+  })
 })
