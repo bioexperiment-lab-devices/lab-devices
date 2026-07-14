@@ -53,7 +53,9 @@ class FakeLab:
         self.fail_jobs: set[str] = set()
         self.cancel_jobs: set[str] = set()  # jobs of this cmd report state "cancelled"
         self.held_jobs: set[str] = set()
+        self.held_job_ids: set[str] = set()  # individual jobs held (see hold_next_job)
         self.polls_to_complete_by_cmd: dict[str, int] = {}
+        self._hold_next: set[str] = set()
         self._injected: dict[tuple[str, str], list[tuple[str, str]]] = {}
 
     # ---- setup helpers ----
@@ -77,6 +79,11 @@ class FakeLab:
     def hold_job(self, cmd: str) -> None:
         """Jobs of this command never advance by polling; use complete_job()."""
         self.held_jobs.add(cmd)
+
+    def hold_next_job(self, cmd: str) -> None:
+        """Hold only the NEXT job started for this command; later ones complete normally.
+        Models the transient hang that a retry exists to survive (hold_job holds them all)."""
+        self._hold_next.add(cmd)
 
     def complete_job(self, job_id: str, *, error: dict[str, Any] | None = None) -> None:
         """Manually finish a (typically held) job."""
@@ -177,10 +184,15 @@ class FakeLab:
         self._job_counter += 1
         job = FakeJob(f"j-{self._job_counter}", cmd)
         self.jobs[job.job_id] = job
+        if cmd in self._hold_next:
+            self._hold_next.discard(cmd)
+            self.held_job_ids.add(job.job_id)
         return {"job_id": job.job_id, "state": "running", "estimated_duration_s": 1.0}
 
     def _advance(self, job: FakeJob) -> None:
         if job.state != "running" or job.cmd in self.held_jobs:
+            return
+        if job.job_id in self.held_job_ids:
             return
         job.polls += 1
         threshold = self.polls_to_complete_by_cmd.get(job.cmd, self.polls_to_complete)

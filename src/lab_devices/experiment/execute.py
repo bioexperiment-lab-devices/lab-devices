@@ -15,6 +15,7 @@ from lab_devices.experiment.errors import (
     BlockFailedError,
     EvaluationError,
     InvariantViolationError,
+    UnknownVerbError,
 )
 from lab_devices.experiment.evaluate import Value, evaluate, resolve
 from lab_devices.experiment.expr import parse_expression
@@ -160,6 +161,36 @@ async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
     raise AssertionError("unreachable: the loop either returns or raises")  # pragma: no cover
 
 
+def _refuse_retry(exc: Exception, reason: str) -> bool:
+    """Refuse the retry and let the ORIGINAL error surface, with `reason` folded into its
+    message. An `add_note` will not do: `execute_block` emits `block_failed` with
+    `error=str(exc)`, which drops `__notes__`, so the reason would never reach the run log,
+    the operator, or Studio. Same object, same type, original text preserved as a prefix —
+    the error is annotated, never masked (so the deny-list and `on_error` still see a
+    JobTimeoutError)."""
+    exc.args = (f"{exc}; {reason}",)
+    return False
+
+
+def _modes_a_stop_would_close(device: str, ctx: RunContext) -> tuple[OpenMode, ...]:
+    """The open modes a `stop` on this device would silently kill.
+
+    `Job.cancel()` IS `device.stop()` (jobs.py) — device-wide, not job-scoped. The
+    densitometer is the one device whose channel groups are disjoint (optics vs thermal), so
+    `Occupancy` permits an open mode and a job to be live on it at once; and its `stop`
+    declares `optics | thermal`, i.e. it kills the thermostat and the LED as well as the job.
+    A device type that declares no `stop` verb has an undeclared blast radius: assume the
+    worst rather than the best."""
+    try:
+        stop_channels: frozenset[str] | None = lookup(device, "stop").channels
+    except UnknownVerbError:
+        stop_channels = None
+    modes = ctx.occupancy.open_modes(device)
+    if stop_channels is None:
+        return modes
+    return tuple(mode for mode in modes if mode.channels & stop_channels)
+
+
 async def _clear_orphaned_job(
     exc: Exception, started: list[Job], block: B.Command | B.Measure, ctx: RunContext
 ) -> bool:
@@ -169,27 +200,45 @@ async def _clear_orphaned_job(
     command draws `busy`, which the executor reports as a false `invariant_violation` — the
     invariant was never violated, the retry raced its own orphan. So stop the orphan first.
 
-    If the stop itself fails (often the very fault that timed the job out), refuse the retry
-    and let the original error surface: the job stays in `ctx.in_flight`, so the finalizer
-    still stops that device (§11)."""
+    But the stop is device-wide. If it would also close an open mode, we must NOT issue it: the
+    mode would die on the hardware while `ctx.occupancy` still held it, and the run would carry
+    on — a thermostat believed on and physically off for the rest of a three-week experiment,
+    with nothing in the event log to say so. Fail closed instead: refuse the retry.
+
+    Either refusal leaves the original error to surface and the job in `ctx.in_flight`, so the
+    finalizer still stops that device (§11) — the abandoned job is never untracked while it may
+    still be running on the hardware."""
     if not isinstance(exc, core_errors.JobTimeoutError) or not started:
         return True
     job = started[-1]
     if job.job_id not in ctx.in_flight:
         return True  # already terminal and untracked; nothing to abandon
+    doomed = _modes_a_stop_would_close(block.device, ctx)
+    if doomed:
+        names = ", ".join(sorted(mode.mode_verb for mode in doomed))
+        return _refuse_retry(
+            exc,
+            f"retry refused: clearing the orphaned job {job.job_id} means stopping "
+            f"{block.device}, and that stop is device-wide (Job.cancel() is device.stop()) — "
+            f"it would have silently closed the open mode(s) {names}, leaving the hardware "
+            f"uncontrolled while the run believed the mode was still held",
+        )
     try:
         async with ctx.lock(block.device):
             await job.cancel()  # Job.cancel() -> device.stop()
     except Exception as cancel_exc:
-        exc.add_note(f"orphaned job {job.job_id} could not be cancelled: {cancel_exc!r}")
-        return False
+        return _refuse_retry(
+            exc,
+            f"retry refused: the orphaned job {job.job_id} could not be cancelled "
+            f"({cancel_exc!r}), so a retry would have stacked a second job on {block.device}",
+        )
     ctx.in_flight.pop(job.job_id, None)  # the device was stopped; the finalizer need not
     ctx.emit("job_cancelled", block.id, device=block.device, verb=block.verb)
     return True
 
 
 async def _dispatch_action(
-    block: B.Command | B.Measure, ctx: RunContext, started: list[Job] | None = None
+    block: B.Command | B.Measure, ctx: RunContext, started: list[Job]
 ) -> Any:
     """The dispatch pipeline (design 4-exec §7): resolve -> classify -> occupy ->
     invoke -> complete. The occupancy check-and-mark is synchronous (no interleave
@@ -219,8 +268,7 @@ async def _dispatch_action(
         if trait.completion == "job":
             job: Job = result
             ctx.in_flight[job.job_id] = (block.device, job)
-            if started is not None:
-                started.append(job)  # so a retry can stop what this attempt abandoned
+            started.append(job)  # so a retry can stop what this attempt abandoned
             result = await _await_job(job, block.device, ctx)
         if action is not None and action.kind == "open":
             assert trait.teardown is not None  # every mode entry declares its teardown

@@ -85,9 +85,13 @@ class Occupancy:
                 return mode
         return None
 
-    def open_modes(self) -> tuple[OpenMode, ...]:
-        """Snapshot of live modes in open order (the finalizer tears down reversed)."""
-        return tuple(self._modes)
+    def open_modes(self, device: str | None = None) -> tuple[OpenMode, ...]:
+        """Snapshot of live modes in open order (the finalizer tears down reversed).
+        With `device`, only the modes open on that device — what a device-wide command
+        (a `stop`) would silently kill (design 2026-07-14 §3.3)."""
+        if device is None:
+            return tuple(self._modes)
+        return tuple(m for m in self._modes if m.device == device)
 
     def is_busy(self, device: str) -> bool:
         """True if any (device, channel) slot is held — an in-flight command or open mode

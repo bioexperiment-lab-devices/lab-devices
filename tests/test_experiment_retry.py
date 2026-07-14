@@ -226,6 +226,124 @@ async def test_a_job_timeout_whose_orphan_cannot_be_cancelled_is_not_retried(fak
     assert len([c for c in fake.calls if c[1] == "dispense"]) == 1  # no second, racing job
     assert [e.kind for e in run.report.log.events].count("block_retried") == 0
     assert len(run._ctx.in_flight) == 1  # still tracked: the finalizer must stop this device
+    # ...and WHY we refused reaches the run log: block_failed carries str(exc), which drops
+    # __notes__, so the reason has to live in the message itself.
+    failed = next(e for e in run.report.log.events if e.kind == "block_failed")
+    assert "could not be cancelled" in failed.data["error"]
+    assert "device is not responding" in failed.data["error"]
+
+
+def _thermostat_then_measure_workflow(measures=2):
+    """The examples/morbidostat.json shape: a thermostat mode held open across repeated
+    measures on the SAME densitometer -- the only device whose channel groups (optics vs
+    thermal) are disjoint, so occupancy permits a live mode and a live job at once."""
+    blocks = [{
+        "command": {"device": "densitometer_1", "verb": "set_thermostat",
+                    "params": {"enabled": True, "target_c": 37.0}},
+    }]
+    blocks += [
+        {"measure": {"device": "densitometer_1", "verb": "measure", "into": "od_1"}}
+        for _ in range(measures)
+    ]
+    return make_workflow(blocks, streams={"od_1": {"units": "AU"}})
+
+
+async def test_a_job_timeout_retry_is_refused_when_the_stop_would_kill_an_open_mode(fake_client):
+    """The orphan-cancel is a device.stop(), and densitometer.stop is DEVICE-WIDE (optics |
+    thermal): it kills the thermostat too. Clearing the orphan would have closed the thermostat
+    on the hardware while ctx.occupancy still held the OpenMode -- so the run would have carried
+    on, recorded its samples, reported `completed`, and left the culture thermally uncontrolled
+    for the rest of a three-week experiment, with nothing in the log to say so.
+
+    Zero author opt-in reaches this: densitometer.measure is retry_safe, so a plain workflow
+    defaults.retry is enough. Fail closed: refuse the retry and fail the run.
+    """
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.hold_next_job("measure")  # only the FIRST measure hangs; a retry would have succeeded
+    clock = FakeClock()
+    workflow = _thermostat_then_measure_workflow()
+    workflow.defaults.retry = Retry(attempts=3, backoff="1s")  # no allow_repeat, no block policy
+    run = ExperimentRun(client, workflow, options=RunOptions(clock=clock, job_timeout=5.0))
+
+    with pytest.raises(BlockFailedError) as exc:
+        await drive(clock, run.execute())
+
+    assert run.report.status == "failed"  # NOT "completed" with a silently-dead thermostat
+    assert "did not finish within" in str(exc.value)  # the original error, unmasked
+    assert "set_thermostat" in str(exc.value)  # ...naming the mode the stop would have killed
+    events = run.report.log.events
+    kinds = [e.kind for e in events]
+    assert kinds.count("block_retried") == 0  # the retry was refused, not taken
+    # the thermostat was never stopped mid-run: no orphan-cancel fired, and the only measure
+    # that reached the wire is the one that hung (no second, racing job).
+    assert [e for e in events if e.kind == "job_cancelled" and e.block_id is not None] == []
+    assert len([c for c in fake.calls if c[1] == "measure"]) == 1
+    assert run.report.state.streams["od_1"].samples == []  # no reading under a dead thermostat
+    assert len(run._ctx.in_flight) == 1  # orphan still tracked: the finalizer stops the device
+    # the mode was still held when the block failed, and only the finalizer closed it
+    assert kinds.index("block_failed") < kinds.index("finalize_started")
+    assert any(e.kind == "teardown_issued" and e.data["verb"] == "set_thermostat" for e in events)
+    assert run._ctx.occupancy.open_modes() == ()  # torn down for real, not silently
+
+
+async def test_a_job_timeout_retry_cancels_the_orphan_when_no_mode_is_open(fake_client):
+    """The guard is narrow: with no open mode on the device, the stop closes nothing but the
+    orphan, so the retry proceeds exactly as before -- stop, then re-dispatch."""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.hold_next_job("measure")
+    clock = FakeClock()
+    workflow = _od_workflow()
+    workflow.defaults.retry = Retry(attempts=3, backoff="1s")
+    run = ExperimentRun(client, workflow, options=RunOptions(clock=clock, job_timeout=5.0))
+
+    report = await drive(clock, run.execute())
+
+    assert report.status == "completed"
+    wire = [(device, cmd) for device, cmd, _ in fake.calls]
+    assert wire[:3] == [
+        ("densitometer_1", "measure"), ("densitometer_1", "stop"), ("densitometer_1", "measure"),
+    ]
+    kinds = [e.kind for e in report.log.events]
+    assert kinds.count("block_retried") == 1
+    assert [e for e in report.log.events
+            if e.kind == "job_cancelled" and e.block_id is not None] != []
+    assert len(report.state.streams["od_1"].samples) == 1
+    assert run._ctx.in_flight == {}  # the orphan was stopped; nothing left for the finalizer
+
+
+async def test_an_open_mode_on_another_device_does_not_refuse_the_retry(fake_client):
+    """The guard is scoped to the device being STOPPED, not to the run. Two densitometers --
+    same device type, so the same `stop` channels: a thermostat open on densitometer_1 says
+    nothing about whether densitometer_2 may be stopped to clear its own orphan. (Checking the
+    channels alone would be too coarse here and would strand every retry in the run.)"""
+    fake, client = fake_client
+    fake.add_device("densitometer_1", "densitometer")
+    fake.add_device("densitometer_2", "densitometer")
+    fake.hold_next_job("measure")  # densitometer_2's, the only measure in the workflow
+    clock = FakeClock()
+    workflow = make_workflow(
+        [
+            {"command": {"device": "densitometer_1", "verb": "set_thermostat",
+                         "params": {"enabled": True, "target_c": 37.0}}},
+            {"measure": {"device": "densitometer_2", "verb": "measure", "into": "od_2"}},
+        ],
+        streams={"od_2": {"units": "AU"}},
+    )
+    workflow.defaults.retry = Retry(attempts=3, backoff="1s")
+    run = ExperimentRun(client, workflow, options=RunOptions(clock=clock, job_timeout=5.0))
+
+    report = await drive(clock, run.execute())
+
+    assert report.status == "completed"
+    assert [e.kind for e in report.log.events].count("block_retried") == 1
+    two_wire = [cmd for device, cmd, _ in fake.calls if device == "densitometer_2"]
+    assert two_wire[:3] == ["measure", "stop", "measure"]  # its own orphan was cleared
+    cancels = [e for e in report.log.events
+               if e.kind == "job_cancelled" and e.block_id is not None]
+    assert [e.data["device"] for e in cancels] == ["densitometer_2"]  # d_1 was never stopped
+    assert len(report.state.streams["od_2"].samples) == 1
 
 
 async def test_workflow_defaults_apply_to_a_block_without_retry(fake_client):

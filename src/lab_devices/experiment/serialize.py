@@ -96,7 +96,9 @@ def _retry(value: Any, ctx: str) -> B.Retry:
 
 def _no_misplaced_block_keys(body: Any, ctx: str) -> None:
     """`retry` and `on_error` are siblings of the body, not members of it. Nested, they would
-    be silently dropped — the author would believe they had a retry policy and have none."""
+    be silently dropped — the author would believe they had a retry policy and have none.
+    Checked for EVERY block type (from block_from_dict): `on_error` is legal on all of them,
+    so the trap is too. No block body uses either word as a legitimate field name."""
     if not isinstance(body, dict):
         return
     for key in ("retry", "on_error"):
@@ -110,7 +112,6 @@ def _no_misplaced_block_keys(body: Any, ctx: str) -> None:
 def _command(body: Any, timing: dict[str, Any]) -> B.Block:
     device = _str(_req(body, "device", "command"), "command device")
     verb = _req(body, "verb", "command")
-    _no_misplaced_block_keys(body, "command")
     lookup(device, verb)
     return B.Command(device=device, verb=verb, params=_checked_params(body, "command"), **timing)
 
@@ -118,7 +119,6 @@ def _command(body: Any, timing: dict[str, Any]) -> B.Block:
 def _measure(body: Any, timing: dict[str, Any]) -> B.Block:
     device = _str(_req(body, "device", "measure"), "measure device")
     verb = body.get("verb", "measure")
-    _no_misplaced_block_keys(body, "measure")
     lookup(device, verb)
     return B.Measure(
         device=device, verb=verb, into=_req(body, "into", "measure"),
@@ -217,6 +217,7 @@ def block_from_dict(d: Any) -> B.Block:
     builder = _BUILDERS.get(key)
     if builder is None:
         raise WorkflowLoadError(f"unknown block type {key!r}")
+    _no_misplaced_block_keys(d[key], key)
     return builder(d[key], timing)
 
 

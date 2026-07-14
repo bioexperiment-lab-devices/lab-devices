@@ -215,6 +215,22 @@ def test_on_error_nested_in_a_measure_body_is_rejected_at_load():
         })
 
 
+@pytest.mark.parametrize("body", [
+    {"serial": {"children": [{"wait": {"duration": "1s"}}], "on_error": "continue"}},
+    {"loop": {"body": [{"wait": {"duration": "1s"}}], "count": 1, "on_error": "continue"}},
+    {"wait": {"duration": "1s", "on_error": "continue"}},
+    {"branch": {"if": "true", "then": [{"wait": {"duration": "1s"}}], "on_error": "continue"}},
+    {"parallel": {"children": [{"wait": {"duration": "1s"}}], "on_error": "continue"}},
+    {"loop": {"body": [{"wait": {"duration": "1s"}}], "count": 1, "retry": {"attempts": 3}}},
+    {"wait": {"duration": "1s", "retry": {"attempts": 3}}},
+])
+def test_a_misplaced_block_key_is_rejected_on_every_block_type(body):
+    """`on_error` is legal on EVERY block type, so the silently-dropped-key trap is too:
+    nested in a body it used to load and vanish, and the author believed they had a policy."""
+    with pytest.raises(WorkflowLoadError, match="block-level key"):
+        workflow_from_dict({"schema_version": 1, "blocks": [body]})
+
+
 def test_defaults_on_error_rejected_at_load():
     with pytest.raises(WorkflowLoadError, match="on_error"):
         workflow_from_dict({
