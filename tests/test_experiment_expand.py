@@ -112,3 +112,24 @@ def test_expansion_cap_trips():
             "var": "a", "in": list(range(200)),
             "body": [{"for_each": {"var": "b", "in": list(range(200)),
                                    "body": [{"wait": {"duration": "1s"}}]}}]}}]))
+
+
+def test_parametrized_group_body_may_contain_for_each():
+    inner_cmd = {"command": {"device": "valve_{valve}", "verb": "set_position",
+                              "params": {"position": "{valve}", "ml": "{volume}"}}}
+    out = expand_dict(_wf(
+        [{"group_ref": {"name": "dose", "args": {"volume": 5}}}],
+        groups={"dose": {"params": ["volume"],
+                         "body": [{"for_each": {"var": "valve", "in": [1, 2],
+                                                 "body": [inner_cmd]}}]}},
+    ))
+    cmds = out["blocks"][0]["serial"]["children"]
+    assert [c["command"]["device"] for c in cmds] == ["valve_1", "valve_2"]
+    assert [c["command"]["params"]["position"] for c in cmds] == ["1", "2"]
+    assert [c["command"]["params"]["ml"] for c in cmds] == ["5", "5"]
+
+
+def test_residual_hole_after_expansion_raises():
+    with pytest.raises(WorkflowLoadError, match="unbound hole"):
+        expand_dict(_wf([{"for_each": {"var": "t", "in": [1],
+                          "body": [{"wait": {"duration": "{nope}s"}}]}}]))

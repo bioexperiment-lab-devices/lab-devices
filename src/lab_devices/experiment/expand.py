@@ -38,7 +38,7 @@ def _interpolate(text: str, env: dict[str, Any]) -> str:
     def sub(m: re.Match[str]) -> str:
         name = m.group(1)
         if name not in env:
-            raise WorkflowLoadError(f"for_each/args hole '{{{name}}}' has no binding")
+            return m.group(0)  # leave for an outer for_each/args pass, or the residual scan
         return _fmt(env[name])
 
     return _HOLE_RE.sub(sub, text)
@@ -53,6 +53,24 @@ def _substitute(node: Any, env: dict[str, Any]) -> Any:
     if isinstance(node, dict):
         return {k: _substitute(v, env) for k, v in node.items()}
     return node
+
+
+def _residual_hole(node: Any) -> str | None:
+    """The first '{name}' hole left in a fully-expanded tree, or None."""
+    if isinstance(node, str):
+        m = _HOLE_RE.search(node)
+        return m.group(0) if m is not None else None
+    if isinstance(node, list):
+        for x in node:
+            found = _residual_hole(x)
+            if found is not None:
+                return found
+    elif isinstance(node, dict):
+        for v in node.values():
+            found = _residual_hole(v)
+            if found is not None:
+                return found
+    return None
 
 
 class _Counter:
@@ -155,6 +173,8 @@ def _expand_for_each(
 def _expand_group_ref(
     block: dict[str, Any], groups: dict[str, Any], counter: _Counter, depth: int
 ) -> list[Any]:
+    # Caveat: a group `param` name must not collide with an inner for_each `var` —
+    # the param would shadow the loop var (no enforcement here).
     body = block["group_ref"]
     if not isinstance(body, dict):
         return [block]
@@ -202,6 +222,16 @@ def expand_dict(workflow_dict: dict[str, Any]) -> dict[str, Any]:
         out["groups"] = kept
     else:
         out.pop("groups", None)
+    if counter.n > 0:
+        hole = _residual_hole(out.get("blocks", []))
+        if hole is None:
+            for g in kept.values():
+                if isinstance(g, dict):
+                    hole = _residual_hole(g.get("body", []))
+                    if hole is not None:
+                        break
+        if hole is not None:
+            raise WorkflowLoadError(f"unbound hole '{hole}' remains after expansion")
     return out
 
 
