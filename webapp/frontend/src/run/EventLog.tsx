@@ -17,6 +17,8 @@ const KIND_COLOR: Record<string, string> = {
   invariant_violation: 'text-red-700',
   finalize_step_failed: 'text-red-700',
   measure_recorded: 'text-blue-700',
+  binding_computed: 'text-teal-700',
+  sample_recorded: 'text-blue-700',
   input_requested: 'text-amber-700',
   input_bound: 'text-amber-700',
   block_retried: 'text-amber-700',

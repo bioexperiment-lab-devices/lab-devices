@@ -24,6 +24,8 @@ export function describeEvent(e: EventLike): string {
     case 'mode_opened': return `${s(d.device)}: mode ${s(d.verb)} opened`
     case 'mode_closed': return `${s(d.device)}: mode ${s(d.verb)} closed`
     case 'measure_recorded': return `${s(d.stream)} = ${s(d.value)}`
+    case 'binding_computed': return `${s(d.name)} = ${s(d.value)}`
+    case 'sample_recorded': return `${s(d.stream)} = ${s(d.value)}`
     case 'input_requested': return `operator input requested: '${s(d.name)}'`
     case 'input_bound': return `${s(d.name)} = ${s(d.value)}`
     case 'finalize_started': return 'finalize started'
