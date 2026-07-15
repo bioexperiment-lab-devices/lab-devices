@@ -429,7 +429,28 @@ relative to its payoff.
 
 ---
 
-## 4. Groups are not parametrized
+## 4. Groups are not parametrized — **SHIPPED (2026-07-15)**
+
+**Shipped as `for_each` + parametrized groups** (Increment 7). Design:
+[`superpowers/specs/2026-07-15-experiment-orchestrator-7-parametrized-repetition-design.md`](superpowers/specs/2026-07-15-experiment-orchestrator-7-parametrized-repetition-design.md).
+`{for_each: {var, in, body}}` (or object items, `in: [{tube:1}, ...]`) is a splicing macro: it
+copies `body` once per item, interpolates every `{name}` hole in every string, and splices the
+copies into the **enclosing** block list — `len(in) × len(body)` siblings, so a `for_each` as the
+sole child of a `parallel` becomes N concurrent lanes, and inside a `serial` becomes an N-step
+sequence. `groups` gain `params` and `group_ref` gains `args`: a parametrized `group_ref` copies
+the group body with `args` substituted and inlines it as a single `Serial` carrying the ref's own
+block-level keys (one call, not iteration); a plain param-less group is unchanged. Substitution is
+order-independent — a hole not in the running substitution's own env passes through untouched
+rather than erroring, and a single post-expansion scan catches anything still unbound — which is
+what lets a parametrized group's body contain a nested `for_each`. Both macros are first-class in
+the authored AST (they round-trip unchanged through save/reload), but `validate()` and
+`ExperimentRun` run every existing check against an internally expanded copy, so affinity,
+mode-lifetime, and read-before-write analysis see concrete names (`od_1`, `od_2`, `od_3`) for
+free, with no new analysis logic. `examples/morbidostat.json`'s three near-identical tube-service
+subtrees are now one `service(tube)` group, invoked once per tube by a `for_each`; the OD-read
+lanes and the accumulator seeds are `for_each` too. The control law lives in one place instead of
+three. (Stream declarations are still explicit, hand-written per tube — templating them is out of
+scope.)
 
 **What.** `groups` + `group_ref` exist, but a group takes no arguments. Its body hard-codes its
 device roles and stream names.
@@ -666,7 +687,7 @@ that a `parallel` block of state-persisting verbs is unsafe on such a roster.
 | 1 | ~~No computed bindings~~ | ~~Any stateful controller; drug tracking; escalation rules~~ | **SHIPPED 2026-07-15** — `compute` block (number or boolean; seeded accumulator) |
 | 2 | No math functions | `ln`-based growth rate; median filtering | `slope`, `median`, `stddev`, `ln`, `abs` |
 | 3 | ~~Streams can't hold computed values~~ | ~~Charting growth rate / drug concentration~~ | **SHIPPED 2026-07-15** — `record` block (computed sample into a declared stream) |
-| 4 | Groups not parametrized | Scaling past ~3 vials | Group params / `for_each` |
+| 4 | ~~Groups not parametrized~~ | ~~Scaling past ~3 vials~~ | **SHIPPED 2026-07-15** — `for_each` (splicing macro) + parametrized groups (`params`/`args`, inlined as a `Serial`) |
 | 5 | `enum` inputs unusable in expressions | Operator-selectable modes | String comparison in expressions |
 | 6 | Durations/counts are literals | Cycle time as an operator input; adaptive timing | Expressions in duration/count slots |
 | 7 | No abort/assert block | Contamination guards on long runs | `abort` / `alarm` block |
@@ -687,11 +708,18 @@ morbidostat now runs its drug-concentration recursion inside the workflow, recor
 as a first-class stream, and names its growth rate once instead of inlining a magic constant in
 every branch — which is exactly why they **made #2's `slope` optional rather than essential**, as
 predicted. `record` also collapsed part of #2: the growth rate is a named `compute`, so the unit
-constant lives in one place. Of what remains, **#4** is what the 15-vial version of this
-experiment needs before it can be written at all; `defaults.retry` bought that scale for *retry
-policy* specifically, and nothing else. And **#7 (abort/alarm)** is still the natural sequel to
-#0: a run can now survive a dead sensor and even record its frozen state, but it still cannot
-*flag* one and halt.
+constant lives in one place.
+
+**#4 (parametrized groups) is now done too** (Increment 7, 2026-07-15). `for_each` (a splicing
+macro over an item list) and parametrized groups (`params`/`args`, inlined as a `Serial`) share
+one substitution engine, and together they make the 15-vial version of this experiment expressible
+for the first time: the tube-service control law is written once, as a `service(tube)` group, and
+`for_each` invokes it per tube, seeds its accumulators, and lanes its OD reads. `defaults.retry`
+had already bought this example its scale for *retry policy* — one clause instead of ~60
+hand-copied ones; **#4 now buys that same scale for the *control law* itself** — one law instead
+of fifteen hand-copied, byte-identical subtrees. Of what remains, **#7 (abort/alarm)** is still
+the natural sequel to #0: a run can now survive a dead sensor and even record its frozen state,
+but it still cannot *flag* one and halt.
 
 Separately, the **duplicate-serial collision** above is not an engine issue at all, and it has a
 one-line fix: give the simulated test devices distinct serials. Until then, a `parallel` block of

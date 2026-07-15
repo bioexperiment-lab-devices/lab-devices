@@ -157,6 +157,19 @@ later windowed read of it unless it is **guarded** — and the guard must use a 
 predicate over an append-only stream and stays true forever once written. See §5.2/§5.3 of the
 fault-tolerance design.
 
+### 5.2b `for_each` — a splicing macro, not a container (amendment 2026-07-15)
+
+Added by [`2026-07-15-experiment-orchestrator-7-parametrized-repetition-design.md`](2026-07-15-experiment-orchestrator-7-parametrized-repetition-design.md).
+
+| Block | Fields | Notes |
+|---|---|---|
+| `ForEach` | `var?`, `in`, `body` | Not a runtime container: for each item in `in`, `body` is copied with every `{name}` hole substituted, and the copies are **spliced into the enclosing block list** — `len(in) × len(body)` siblings. Mode is inherited from the enclosing container: sole child of a `Parallel` → N concurrent lanes; inside a `Serial`/loop `body` → N in sequence. `retry`/`on_error`/`gap_after`/`start_offset` are not legal on a `for_each` itself (no single runtime identity to attach them to — put them on the body blocks); `label` is documentation-only, discarded on expansion. |
+
+`for_each` and a parametrized `GroupRef` (§10.1) are first-class in the authored AST — they
+round-trip unchanged through save/reload — but `validate()` and `ExperimentRun` run every existing
+static/path check against an **internally expanded copy** (`expand.py`), so a `for_each` over
+`[1,2,3]` is checked and executed as three concrete blocks with no new analysis logic (§12).
+
 ### 5.3 Data plane (declarations + expressions, not flow)
 
 - **`Stream`** declarations at top level: `{name, units?, persistence-override?}`.
@@ -253,14 +266,41 @@ Optional sugar: a `Wait(duration)` leaf inside serial flow that compiles to a
 
 ## 10. Groups, branching, operator input
 
-- **Groups** are non-parametrized in v1: a named `body` invoked by `GroupRef`.
-  (Parametrized "macro" groups are deferred — §16.)
+- **Groups** were non-parametrized in v1: a named `body` invoked by `GroupRef`.
+  **Amended 2026-07-15 (Increment 7, §10.1 below):** a group may now declare `params`, and a
+  `group_ref` carrying matching `args` invokes it as a parametrized call. A param-less group
+  invoked without `args` keeps the original lazy-inline semantics unchanged — zero back-compat
+  break.
 - **Branch**: `if <condition> then <block> [else <block>]`. Condition is a boolean
   expression (§6).
 - **OperatorInput**: typed (`float`/`int`/`enum`/`bool`), validated against
   constraints, surfaced to the operator as a pending-input request. The block (and
   only its lane) blocks until the value is entered; the value is bound for later
   reference.
+
+### 10.1 Parametrized groups and `for_each` (amendment 2026-07-15)
+
+Added by [`2026-07-15-experiment-orchestrator-7-parametrized-repetition-design.md`](2026-07-15-experiment-orchestrator-7-parametrized-repetition-design.md),
+closing the "parametrized/macro groups" deferral of §16.
+
+- **`Group.params: list[str]`, `GroupRef.args: dict[str, ValueExpr]`.** A `group_ref`'s `args`
+  keys must equal the group's declared `params` exactly (no missing, no extra) — a static error
+  otherwise. A parametrized `group_ref` copies the group body with `args` substituted into every
+  string it contains (§5.2b's `{name}` interpolation) and inlines it as a single `Serial` carrying
+  the ref's own block-level keys (`label`, `on_error`, `gap_after`, `start_offset`) — one call, not
+  iteration.
+- **`for_each`** (§5.2b) supplies the iteration a parametrized group lacks on its own: a `for_each`
+  whose `body` is a single `group_ref(args)`, threading the loop variable through `args`, splices N
+  calls — the canonical composition, and how `examples/morbidostat.json`'s `service(tube)` group is
+  invoked once per tube.
+- **Expand-then-validate.** Both macros are first-class in the authored AST (§5.2b) but never
+  reach the executor or the concrete validation checks directly: `validate(w)` runs a small set of
+  pre-expansion gates on the authored tree (unknown/recursive group refs, `for_each` shape,
+  arity), then `expand_workflow(w)` — splice `for_each`, inline parametrized `group_ref`s,
+  interpolate every `{name}` hole — and every rule in §12 runs against the expanded, concrete
+  tree. `ExperimentRun` expands the same way before assigning block ids. This is why affinity,
+  mode-lifetime, and data-flow analysis needed no new logic for repetition: they only ever see
+  concrete names.
 
 ## 11. Execution model — lifecycle
 
@@ -272,6 +312,13 @@ Optional sugar: a `Wait(duration)` leaf inside serial flow that compiles to a
 ## 12. Static validation rules
 
 Proven at load, before any hardware is touched:
+
+**Amendment 2026-07-15 (Increment 7, §10.1).** For a workflow containing `for_each` or a
+parametrized `group_ref`, `validate(w)` runs a small set of pre-expansion gates on the authored
+tree first (unknown/recursive group refs, `for_each` shape, arity), then expands
+(`expand_workflow`) and runs every rule below against the expanded, concrete tree — so affinity,
+mode-lifetime, and data-flow analysis need no macro-aware logic. A workflow with neither macro is
+unaffected; expansion is the identity on it.
 
 - **Registry** — every `(device-type, verb)` is known; params type-check against
   the verb's param specs (unknown or missing-required params, kind mismatches, and
@@ -553,6 +600,30 @@ Full design:
   is not legal on either block; `on_error` is (a tolerated `compute` leaves its binding at its
   previous value, which the path analyzer models as a may-write).
 
+### 15.4 `for_each` and parametrized groups (amendment 2026-07-15, Increment 7)
+
+Two new serialized forms. Full design:
+[`superpowers/specs/2026-07-15-experiment-orchestrator-7-parametrized-repetition-design.md`](superpowers/specs/2026-07-15-experiment-orchestrator-7-parametrized-repetition-design.md).
+
+```json
+{ "for_each": { "var": "tube", "in": [1, 2, 3],
+                "body": [ { "group_ref": { "name": "service", "args": { "tube": "{tube}" } } } ] } }
+```
+
+- **`for_each`**: `var` (string, required with scalar `in`) + `in` as a non-empty list of
+  scalars (desugared to single-field objects keyed by `var`) **or** `in` as a non-empty list of
+  objects sharing one key set (`var` then forbidden — mixing the two forms is an error). `body`
+  is a non-empty block list. `retry`, `on_error`, `gap_after`, `start_offset` are not legal on a
+  `for_each` itself; `label` is documentation-only.
+- **`groups.<name>.params`**: `["tube"]` — a list of identifier names the group's body may
+  reference as `{tube}`.
+- **`group_ref.args`**: `{"tube": 2}` (or an expression string, e.g. `"{tube}"` inside an
+  enclosing `for_each`) — must match the referenced group's `params` exactly. A param-less group
+  referenced without `args` keeps today's plain `group_ref` form unchanged.
+- **Round-trip.** Both forms are first-class: `workflow_to_dict(workflow_from_dict(d)) == d` for a
+  doc containing `for_each`, `params`, or `args` — the authored document is never expanded on
+  disk, only internally (§10.1, §12).
+
 ## 16. Package structure, testing, deferred work
 
 - **Package**: a **`lab_devices.experiment` submodule** within the existing
@@ -562,6 +633,7 @@ Full design:
 - **Conventions**: Python ≥3.11, async, strict mypy, ruff (line length 100),
   hermetic pytest. The existing `tests/fakelab.py` fake makes the engine testable
   end-to-end with no hardware.
-- **Deferred to v2**: parametrized/macro groups; closed-loop recovery
-  (device-drop → finalize → `rediscover` → resume); a friendlier authoring surface
-  (YAML/DSL) that emits the same JSON; validator warnings for pre-test cold-start.
+- **Deferred to v2**: ~~parametrized/macro groups~~ (**shipped Increment 7, 2026-07-15** —
+  §5.2b/§10.1); closed-loop recovery (device-drop → finalize → `rediscover` → resume); a
+  friendlier authoring surface (YAML/DSL) that emits the same JSON; validator warnings for
+  pre-test cold-start.

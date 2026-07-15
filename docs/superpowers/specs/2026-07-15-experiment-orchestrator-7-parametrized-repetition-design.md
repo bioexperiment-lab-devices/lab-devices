@@ -1,7 +1,11 @@
 # Experiment engine — parametrized repetition (`for_each` + parametrized groups)
 
 - **Date:** 2026-07-15
-- **Status:** Design. Approved forks settled in §2 (both primitives), §3 (item + substitution
+- **Status:** **Implemented** (2026-07-15). §3 and §4.1 carry a post-implementation amendment
+  each, where the draft undersold the model: substitution is **order-independent** (a hole not in
+  the running pass's own env passes through untouched instead of raising; a single post-expansion
+  scan catches anything left unbound), not a fixed expand-then-substitute pipeline. Both are
+  marked in place. Approved forks settled in §2 (both primitives), §3 (item + substitution
   model), §4 (first-class + expand-internally), §9 (Studio at the Increment-6 boundary).
 - **Implements:** `docs/experiment-engine-limitations.md` **#4** ("Groups are not
   parametrized"). The limitations doc's own recommendation: *"A `for_each` block over a list of
@@ -110,6 +114,24 @@ subtree, replacing every `{name}` occurrence in **every string** it contains wit
   `{name}` is unambiguous inside expression text: `mean(od_{tube}, last=5)` → `mean(od_1, last=5)`
   parses only after substitution.
 
+> **Amendment, 2026-07-15 (post-implementation).** Rule 2 in §4.1, as drafted, described a
+> parametrized `group_ref`'s substitution as `substitute(expand(group.body), args)` — a fixed
+> expand-then-substitute order. **That is not what shipped, and the actual model is stronger.**
+> `substitute` leaves any `{name}` hole not in its own `env` untouched instead of raising, so an
+> `args` pass and a nested `for_each`'s own pass can run in **either order** without tripping over
+> each other's holes — which is what lets a parametrized group's body contain a nested `for_each`
+> (`substitute` alone cannot tell "unbound" from "somebody else's hole, still to come"). What
+> actually proves the document sound is a single **post-expansion residual-hole scan**: once every
+> `for_each`/`group_ref(args)` pass has run, anything still shaped `{name}` is an unbound hole and
+> raises `WorkflowLoadError` — the same failure mode the draft's per-pass raise was protecting,
+> now checked once instead of once per pass. §4.1 rule 2 below is corrected to match.
+>
+> **The trade-off this buys, stated once here: once any macro fires, `{name}` becomes reserved
+> syntax for the whole document.** A stray literal `{identifier}` anywhere in that document — even
+> in an unrelated sibling block's `label` — is indistinguishable from an unbound hole and is
+> rejected by the residual scan. A document with no `for_each` and no parametrized `group_ref`
+> never runs `substitute` at all, so a literal `{` in such a document is inert.
+
 ## 4. Expand-then-everything (settled fork: first-class AST, expand internally)
 
 `for_each` and parametrized `group_ref`s are **first-class in the authored AST** — they serialize
@@ -140,10 +162,14 @@ Expansion rules:
    a `for_each`** — it has no single runtime identity to attach them to; put them on the body
    blocks. `label` is allowed (documentation only; discarded on expansion). `retry` is already
    rejected by `_check_retry` (command/measure only); the others get a targeted diagnostic (§6).
-2. **Parametrized `group_ref`** (group has `params`) → `Serial(children=substitute(expand(
-   group.body), args), label=ref.label, on_error=ref.on_error, gap_after=ref.gap_after,
-   start_offset=ref.start_offset)`. A `Serial` wrapper is transparent to `_footprint` and path
-   analysis, and it preserves the call's block-level semantics.
+2. **Parametrized `group_ref`** (group has `params`) → `Serial(children=expand(substitute(
+   group.body, args)), label=ref.label, on_error=ref.on_error, gap_after=ref.gap_after,
+   start_offset=ref.start_offset)`. *(Corrected, §3's amendment: `substitute` runs against `args`
+   first and leaves every other `{name}` hole untouched — not raising — so the subsequent `expand`
+   still sees a nested `for_each`'s own holes intact. The composition is order-independent in
+   practice; what actually proves nothing was left unbound is the one post-expansion
+   residual-hole scan in §3, not this ordering.)* A `Serial` wrapper is transparent to
+   `_footprint` and path analysis, and it preserves the call's block-level semantics.
 3. **Plain `group_ref`** (group has no `params`) → left as a `GroupRef` node (today's lazy inline).
    Its target group's body **is** for_each-expanded in the expanded workflow, so the lazy inline at
    exec/analysis never meets a `for_each`.
