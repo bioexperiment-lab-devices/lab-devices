@@ -247,3 +247,58 @@ def test_defaults_unknown_key_rejected_at_load():
             "defaults": {"bogus": True},
             "blocks": [{"wait": {"duration": "1s"}}],
         })
+
+
+def test_compute_roundtrip_expression():
+    d = {"compute": {"into": "c", "value": "c * 0.5 + 1"}}
+    b = block_from_dict(d)
+    assert isinstance(b, B.Compute)
+    assert b.into == "c" and b.value == "c * 0.5 + 1"
+    assert block_to_dict(b) == d
+
+
+def test_compute_roundtrip_literal_and_timing():
+    d = {"compute": {"into": "seed", "value": 0}, "label": "seed c"}
+    b = block_from_dict(d)
+    assert isinstance(b, B.Compute)
+    assert b.value == 0 and b.label == "seed c"
+    assert block_to_dict(b) == d
+
+
+def test_record_roundtrip():
+    d = {"record": {"into": "r_series", "value": "r_1"}}
+    b = block_from_dict(d)
+    assert isinstance(b, B.Record)
+    assert b.into == "r_series" and b.value == "r_1"
+    assert block_to_dict(b) == d
+
+
+def test_compute_requires_into_and_value():
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"compute": {"value": "1"}})
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"compute": {"into": "c"}})
+
+
+def test_record_value_bad_expression_rejected_at_load():
+    from lab_devices.experiment.errors import ExpressionError
+    with pytest.raises(ExpressionError):
+        block_from_dict({"record": {"into": "r", "value": "1 +"}})
+
+
+def test_compute_value_object_rejected():
+    with pytest.raises(WorkflowLoadError):
+        block_from_dict({"compute": {"into": "c", "value": {"nope": 1}}})
+
+
+def test_workflow_roundtrip_with_compute_and_record():
+    doc = {
+        "schema_version": 1,
+        "persistence": {"default": "in_memory", "format": "jsonl"},
+        "streams": {"r_series": {"units": "per_hour"}},
+        "blocks": [
+            {"compute": {"into": "r_1", "value": "2 * 3"}},
+            {"record": {"into": "r_series", "value": "r_1"}},
+        ],
+    }
+    assert workflow_to_dict(workflow_from_dict(doc)) == doc
