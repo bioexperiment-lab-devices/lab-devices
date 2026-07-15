@@ -19,6 +19,7 @@ from lab_devices.experiment import (
     verb_catalog,
     workflow_from_dict,
 )
+from lab_devices.experiment.expand import expand_dict
 
 from experiment_studio import roles as roles_mod
 from experiment_studio.db import Database
@@ -145,8 +146,12 @@ def validate_doc(doc: ExperimentDoc) -> list[dict[str, str]]:
     """§4.3: doc-level role checks, placeholder substitution, engine parse + validate."""
     role_types = {name: role.type for name, role in doc.roles.items()}
     diags = roles_mod.role_diagnostics(role_types, set(verb_catalog()))
+    try:
+        expanded = expand_dict(doc.workflow)  # for_each/group(tube) -> concrete roles (§9)
+    except WorkflowLoadError as exc:
+        return diags + [{"category": "expansion", "path": "workflow", "message": str(exc)}]
     substituted, ref_diags = roles_mod.substitute(
-        doc.workflow, roles_mod.placeholder_ids(role_types)
+        expanded, roles_mod.placeholder_ids(role_types)
     )
     diags += ref_diags
     if diags:

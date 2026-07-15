@@ -25,6 +25,7 @@ from lab_devices.experiment import (
     WorkflowLoadError,
     workflow_from_dict,
 )
+from lab_devices.experiment.expand import expand_dict
 
 from experiment_studio.db import Database
 from experiment_studio.docs_store import ExperimentDoc, ExperimentsStore
@@ -284,7 +285,13 @@ class RunManager:
         ]
         if roster_diags:
             raise PreflightError(roster_diags)
-        substituted, ref_diags = substitute(doc.workflow, role_mapping)
+        try:
+            expanded = expand_dict(doc.workflow)  # for_each/group(tube) -> concrete roles (§9)
+        except WorkflowLoadError as exc:
+            raise PreflightError(
+                [{"category": "expansion", "path": "workflow", "message": str(exc)}]
+            ) from exc
+        substituted, ref_diags = substitute(expanded, role_mapping)
         if ref_diags:
             raise PreflightError(ref_diags)
         _force_disk_persistence(substituted)

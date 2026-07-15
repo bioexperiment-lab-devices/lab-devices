@@ -30,6 +30,7 @@ class StreamDecl:
 class Group:
     name: str
     body: list[Block] = field(default_factory=list)
+    params: list[str] = field(default_factory=list)
 
 
 @dataclass

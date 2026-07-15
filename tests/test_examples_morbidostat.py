@@ -19,6 +19,7 @@ import pytest
 
 from lab_devices.client import LabClient
 from lab_devices.experiment import ExperimentRun, RunOptions
+from lab_devices.experiment.expand import expand_dict
 from lab_devices.experiment.inputs import InputRequest
 from lab_devices.experiment.serialize import workflow_from_dict
 from lab_devices.experiment.state import BindingValue
@@ -198,6 +199,7 @@ class Answers:
 def load(name: str) -> Any:
     doc = json.loads((EXAMPLES / name).read_text())
     workflow = json.loads(json.dumps(doc["workflow"]))
+    workflow = expand_dict(workflow)  # for_each / service(tube) -> concrete roles
     _substitute(workflow["blocks"])
     return doc, workflow_from_dict(workflow)
 
@@ -244,16 +246,31 @@ def test_example_declares_its_fault_tolerance(name: str) -> None:
     assert [b["measure"]["verb"] for b in blanks] == ["measure_blank"] * 3
     assert all("on_error" not in b for b in blanks), "a failed blank must stop the run"
 
-    ratchet = setup[14]["loop"]  # after the four compute seeds (V, c_1, c_2, c_3)
-    reads = ratchet["body"][0]["loop"]["body"][0]["parallel"]["children"]
-    assert [r["on_error"] for r in reads] == ["continue"] * 3
-    for i, service in enumerate(ratchet["body"][1:4], start=1):
-        # Short-circuit guard: no FRESH reading, no decision — and no empty-window
-        # EvaluationError. The window is what makes it a freshness guard: the whole-stream
-        # form `count(od_N) > 0` latches true forever over an append-only stream, and a
-        # latched guard is an open-loop drug injector (test_a_dead_sensor_does_not_latch).
-        window = FRESHNESS[name]
-        assert service["branch"]["if"].startswith(f"count(od_{i}, last={window}) > 0 and ")
+    ratchet = setup[12]["loop"]  # after the working-volume compute + one for_each(c_tube) seed
+    # The OD reads are now ONE for_each lane, spliced to 3 concrete reads at expand time
+    # (already proven equivalent to the old 3-lane parallel by test_morbidostat_closes_the_loop,
+    # which reads od_1/2/3 120*10 times each on the expanded doc).
+    reads_for_each = ratchet["body"][0]["loop"]["body"][0]["parallel"]["children"][0]["for_each"]
+    assert reads_for_each["in"] == [1, 2, 3]
+    (read,) = reads_for_each["body"]
+    assert read["on_error"] == "continue"
+    assert read["measure"] == {
+        "device": "od_meter_{tube}", "verb": "measure", "into": "od_{tube}"
+    }
+
+    # The three tube-service branches are now one `service(tube)` group, called once per tube
+    # by a for_each. Short-circuit guard: no FRESH reading, no decision — and no empty-window
+    # EvaluationError. The window is what makes it a freshness guard: the whole-stream
+    # form `count(od_N) > 0` latches true forever over an append-only stream, and a
+    # latched guard is an open-loop drug injector (test_a_dead_sensor_does_not_latch).
+    service_call = ratchet["body"][1]["for_each"]
+    assert service_call["in"] == [1, 2, 3]
+    (call,) = service_call["body"]
+    assert call["group_ref"] == {"name": "service", "args": {"tube": "{tube}"}}
+
+    window = FRESHNESS[name]
+    group_guard = doc["workflow"]["groups"]["service"]["body"][0]["branch"]["if"]
+    assert group_guard.startswith(f"count(od_{{tube}}, last={window}) > 0 and ")
 
     # The thermostat setup is parallel again; retry is what makes that safe on a roster whose
     # devices share a serial (docs/experiment-engine-limitations.md, final section). Six
@@ -265,8 +282,12 @@ def test_example_declares_its_fault_tolerance(name: str) -> None:
     assert all("on_error" not in t for t in thermostats), "an unset thermostat must stop the run"
 
     # No pump may ever be retried: volume_ml is relative, so a retried dispense double-doses.
+    # Pump commands now live inside the `service` group body, so walk group bodies too.
+    group_blocks = [
+        b for g in doc["workflow"].get("groups", {}).values() for b in _walk(g["body"])
+    ]
     assert not any(
-        "retry" in b for b in _walk(doc["workflow"]["blocks"]) if "command" in b
+        "retry" in b for b in _walk(doc["workflow"]["blocks"]) + group_blocks if "command" in b
         and doc["roles"].get(b["command"]["device"], {}).get("type") == "pump"
     )
 

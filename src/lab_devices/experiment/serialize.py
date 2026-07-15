@@ -57,7 +57,11 @@ def _str(value: Any, ctx: str) -> str:
 
 
 def _checked_expr(value: Any, ctx: str) -> str:
+    # A for_each/group-arg hole: the expression grammar never uses '{' (design §3), so this
+    # parses only after substitution — mirrors the device-lookup skip in _command/_measure.
     text = _str(value, ctx)
+    if "{" in text:
+        return text
     try:
         parse_expression(text)
     except ExpressionError as exc:
@@ -123,14 +127,16 @@ def _no_misplaced_block_keys(body: Any, ctx: str) -> None:
 def _command(body: Any, timing: dict[str, Any]) -> B.Block:
     device = _str(_req(body, "device", "command"), "command device")
     verb = _req(body, "verb", "command")
-    lookup(device, verb)
+    if "{" not in device:
+        lookup(device, verb)
     return B.Command(device=device, verb=verb, params=_checked_params(body, "command"), **timing)
 
 
 def _measure(body: Any, timing: dict[str, Any]) -> B.Block:
     device = _str(_req(body, "device", "measure"), "measure device")
     verb = body.get("verb", "measure")
-    lookup(device, verb)
+    if "{" not in device:
+        lookup(device, verb)
     return B.Measure(
         device=device, verb=verb, into=_req(body, "into", "measure"),
         params=_checked_params(body, "measure"), **timing,
@@ -203,7 +209,25 @@ def _branch(body: Any, timing: dict[str, Any]) -> B.Block:
 
 
 def _group_ref(body: Any, timing: dict[str, Any]) -> B.Block:
-    return B.GroupRef(name=_req(body, "name", "group_ref"), **timing)
+    if not isinstance(body, dict):
+        raise WorkflowLoadError("group_ref requires an object body")
+    args = body.get("args", {})
+    if not isinstance(args, dict):
+        raise WorkflowLoadError("group_ref args must be an object")
+    return B.GroupRef(name=_req(body, "name", "group_ref"), args=dict(args), **timing)
+
+
+def _for_each(body: Any, timing: dict[str, Any]) -> B.Block:
+    if not isinstance(body, dict):
+        raise WorkflowLoadError("for_each requires an object body")
+    items = _req(body, "in", "for_each")
+    if not isinstance(items, list):
+        raise WorkflowLoadError("for_each 'in' must be a list")
+    children = _children(_req(body, "body", "for_each"), "for_each.body")
+    var = body.get("var")
+    if var is not None and not isinstance(var, str):
+        raise WorkflowLoadError(f"for_each 'var' must be a string, got {var!r}")
+    return B.ForEach(var=var, items=items, body=children, **timing)
 
 
 _BUILDERS: dict[str, Callable[[Any, dict[str, Any]], B.Block]] = {
@@ -216,6 +240,7 @@ _BUILDERS: dict[str, Callable[[Any, dict[str, Any]], B.Block]] = {
     "loop": _loop,
     "branch": _branch,
     "group_ref": _group_ref,
+    "for_each": _for_each,
     "compute": _compute,
     "record": _record,
 }
@@ -286,7 +311,17 @@ def _dump_body(b: B.Block) -> tuple[str, dict[str, Any]]:
             body["else"] = [block_to_dict(c) for c in b.else_]
         return "branch", body
     if isinstance(b, B.GroupRef):
-        return "group_ref", {"name": b.name}
+        body = {"name": b.name}
+        if b.args:
+            body["args"] = dict(b.args)
+        return "group_ref", body
+    if isinstance(b, B.ForEach):
+        body = {}
+        if b.var is not None:
+            body["var"] = b.var
+        body["in"] = list(b.items)
+        body["body"] = [block_to_dict(c) for c in b.body]
+        return "for_each", body
     if isinstance(b, B.Compute):
         return "compute", {"into": b.into, "value": b.value}
     if isinstance(b, B.Record):
@@ -355,7 +390,13 @@ def workflow_from_dict(d: Any) -> Workflow:
     groups: dict[str, Group] = {}
     for name, gv in _obj(d.get("groups", {}), "groups").items():
         g = _obj(gv, f"group {name!r}")
-        groups[name] = Group(name=name, body=_children(g.get("body", []), f"groups.{name}.body"))
+        params = g.get("params", [])
+        if not isinstance(params, list) or not all(isinstance(p, str) for p in params):
+            raise WorkflowLoadError(f"group {name!r} params must be a list of strings")
+        groups[name] = Group(
+            name=name, body=_children(g.get("body", []), f"groups.{name}.body"),
+            params=list(params),
+        )
     return Workflow(
         schema_version=version,
         blocks=_children(d.get("blocks", []), "blocks"),
@@ -385,7 +426,9 @@ def workflow_to_dict(w: Workflow) -> dict[str, Any]:
         }
     if w.groups:
         out["groups"] = {
-            name: {"body": [block_to_dict(c) for c in g.body]} for name, g in w.groups.items()
+            name: ({"params": list(g.params)} if g.params else {})
+                  | {"body": [block_to_dict(c) for c in g.body]}
+            for name, g in w.groups.items()
         }
     out["blocks"] = [block_to_dict(c) for c in w.blocks]
     return out

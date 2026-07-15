@@ -605,8 +605,12 @@ async def _execute_inner(block: B.Block, ctx: RunContext) -> None:
         await _run_compute(block, ctx)
     elif isinstance(block, B.Record):
         await _run_record(block, ctx)
-    else:
+    elif isinstance(block, B.GroupRef):
         await execute_blocks(ctx.workflow.groups[block.name].body, ctx)
+    else:
+        # ForEach is spliced away before a workflow reaches the executor (Increment 7);
+        # reaching here means expansion was skipped.
+        raise AssertionError(f"unreachable: unexpanded {type(block).__name__}")  # pragma: no cover
 
 
 async def _run_measure(block: B.Measure, ctx: RunContext) -> None:

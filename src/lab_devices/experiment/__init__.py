@@ -15,6 +15,7 @@ from lab_devices.experiment.blocks import (
     Branch,
     Command,
     Compute,
+    ForEach,
     GroupRef,
     Loop,
     Measure,
@@ -105,8 +106,8 @@ from lab_devices.experiment.workflow import (
 __all__ = [
     "BindingType", "Diagnostic", "ExprRefs", "ExprType", "TypeReport",
     "ValidationError", "infer_type", "load_and_validate", "references", "validate",
-    "Block", "Branch", "Command", "Compute", "GroupRef", "Loop", "Measure", "OperatorInput",
-    "Parallel", "Record", "Retry", "Serial", "Wait",
+    "Block", "Branch", "Command", "Compute", "ForEach", "GroupRef", "Loop", "Measure",
+    "OperatorInput", "Parallel", "Record", "Retry", "Serial", "Wait",
     "EvaluationError", "ExperimentError", "ExpressionError", "UnknownVerbError",
     "WorkflowLoadError",
     "block_from_dict", "block_to_dict", "load_workflow", "save_workflow",
