@@ -145,14 +145,16 @@ serial
 ├─ serial           measure_blank → blank_1..3   ← every later OD is relative to this
 ├─ operator_input   cultures_ready?  (valves physically parked at 0?)
 ├─ serial           home + configure the 3 valves
+├─ for_each tube in [1,2,3]   compute c_tube = 0
 └─ loop ×120, pace 12min                          ← one 24 h "day"
    ├─ loop ×10, pace 1min                         ← growth phase
-   │  └─ parallel   read tube 1 | tube 2 | tube 3   ← each read tolerated; lanes are isolated
-   ├─ tube 1 service ─┐  each guarded by count(od_N, last=11min) > 0
-   ├─ tube 2 service  ├─ serial — see below
-   ├─ tube 3 service ─┘
+   │  └─ parallel   for_each tube in [1,2,3]  measure od_tube  ← each read tolerated; lanes isolated
+   ├─ for_each tube in [1,2,3]  group_ref service(tube)   ← guarded by count(od_tube, last=11min) > 0
    └─ parallel        park all 3 valves closed
 ```
+
+The `groups.service` body — a single `branch` on the freshness guard, written **once** — is what
+the `for_each` calls three times. See [The `service(tube)` macro](#the-servicetube-macro) below.
 
 **Why the OD readings are `parallel` but the dilution pass is `serial`** — this is the most
 useful thing in the example. The three densitometers are independent devices, so they can read
@@ -191,6 +193,51 @@ none of this arises; details and the real fix in
 
 `pace` is a floor, not a deadline: the 10 min growth phase plus a ~1.4 min dilution pass fits
 inside the 12 min cycle, so cycles start exactly 12 min apart.
+
+## The `service(tube)` macro
+
+Earlier revisions of this example wrote the tube-1, tube-2, and tube-3 service logic out three
+times — three copies of the freshness guard, the growth-rate `compute`, the drug/medium
+`branch`, and the waste restore, differing only in a digit. That was flagged as an engine
+limitation: groups existed but were not *parametrized*, so a single reusable macro could not
+close over "which tube". It now can. The control law is written **once**, as a group taking a
+`tube` parameter, and a `for_each` calls it once per tube:
+
+```json
+"groups": {
+  "service": {
+    "params": ["tube"],
+    "body": [
+      { "branch": {
+          "if": "count(od_{tube}, last=11min) > 0 and last(od_{tube}) >= od_min",
+          "then": [ "...growth rate, drug/medium branch, waste restore, all keyed by {tube}..." ]
+      } }
+    ]
+  }
+}
+```
+
+```json
+{ "for_each": { "var": "tube", "in": [1, 2, 3],
+    "body": [ { "group_ref": { "name": "service", "args": { "tube": "{tube}" } } } ] } }
+```
+
+`expand_dict` (design 2026-07-15 §4) splices this before the workflow ever executes: each
+`for_each` iteration substitutes `{tube}` textually (`od_{tube}` → `od_1`, `od_2`, `od_3`; a
+valve's `"position": "{tube}"` → the *string* `"1"`, which the engine evaluates as the expression
+`1` — identical to the literal integer the old doc wrote by hand), and each parametrized
+`group_ref` inlines as a `serial` wrapper around the substituted body. The expanded tree — what
+actually runs — is behaviorally identical to the old doc's three hand-written copies;
+`tests/test_examples_morbidostat.py` expands before executing and is the proof (same IC₅₀
+fixed point, same recorded `c_series`, to 1e-9).
+
+The same treatment collapses the seed `compute c_t = 0` steps and the OD-read `parallel`'s three
+lanes into one `for_each` each — see [The shape of the run](#the-shape-of-the-run) above.
+
+**This is what makes the design scale.** Going from 3 vials to 15 is now `"in": [1, 2, ..., 15]`
+on three `for_each` blocks, plus 15× the stream declarations (`od_t`, `r_series_t`, `c_series_t`)
+— the `service` group, the growth-rate formula, and the drug/medium decision are not touched, and
+there is exactly one freshness-window constant to get right, not fifteen.
 
 ## Surviving a flaky device
 
@@ -438,8 +485,8 @@ run**. Each tube's concentration is a `compute` binding `c_t`, seeded to 0 befor
 and updated on whichever arm fired:
 
 ```
-drug   → compute c_1 = c_1 * V/(V+dV) + drug_stock_x_mic * dV/(V+dV)
-medium → compute c_1 = c_1 * V/(V+dV)
+drug   → compute c_tube = c_tube * V/(V+dV) + drug_stock_x_mic * dV/(V+dV)
+medium → compute c_tube = c_tube * V/(V+dV)
 ```
 
 `V` (the working volume held by the waste needle) is itself a named `compute` constant; `dV` is
@@ -452,8 +499,6 @@ dead sensor freezes `c_t` rather than latching it toward the stock.
 
 ## What the example deliberately does not do
 
-- **The three tube-service subtrees are near-copies.** Groups exist but are not parametrized,
-  so a single reusable `service(tube)` macro is not yet expressible.
 - **There is no Stock A → Stock B escalation.** It needs a second drug line, and the
   escalation predicate is cross-cycle state the engine cannot hold.
 - **It cannot raise the alarm.** The guard means a tube whose sensor has died is *skipped*
