@@ -142,6 +142,24 @@ def test_substitute_handles_blocks_with_retry_and_on_error() -> None:
     assert out["blocks"][0]["on_error"] == "continue"
 
 
+def test_substitute_passes_compute_and_record_through() -> None:
+    workflow = {
+        "schema_version": 1,
+        "streams": {"c_series": {}},
+        "blocks": [
+            {"measure": {"device": "od_meter", "verb": "measure", "into": "OD"}},
+            {"compute": {"into": "c", "value": "last(OD)"}},
+            {"record": {"into": "c_series", "value": "c"}},
+        ],
+    }
+    out, diags = roles.substitute(workflow, {"od_meter": "densitometer_1"})
+    assert diags == []
+    assert out["blocks"][0]["measure"]["device"] == "densitometer_1"
+    # compute/record carry no device and are returned byte-identical
+    assert out["blocks"][1] == {"compute": {"into": "c", "value": "last(OD)"}}
+    assert out["blocks"][2] == {"record": {"into": "c_series", "value": "c"}}
+
+
 def test_walker_grammar_matches_engine_serializer() -> None:
     assert roles._BLOCK_KEYS == serialize._BLOCK_KEYS
     covered = (

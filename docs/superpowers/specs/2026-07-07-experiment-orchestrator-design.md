@@ -122,6 +122,8 @@ arrives with the executor in Increment 4, not in the serialized AST.)
 | `Command` | `device`, `verb`, `params: {name → ValueExpr}` | Traits looked up from the registry. Covers job commands, instant config, mode-starts, and mode-stops (e.g. `stop`) alike. |
 | `Measure` | `device`, `verb`, `into: <stream>` | A job-`Command` whose `(timestamp, value)` result is appended to a named stream. |
 | `OperatorInput` | `name`, `type`, `prompt`, constraints | Binds a scalar the operator enters mid-run. Blocks its own lane until entered; other parallel lanes keep running. |
+| `Compute` | `into: <binding>`, `value: ValueExpr` | Evaluates `value` and binds a number **or** boolean into the binding namespace (overwrite → accumulator across loop iterations). No hardware. Added Increment 6 (2026-07-15). |
+| `Record` | `into: <stream>`, `value: ValueExpr` | Evaluates `value` and appends the number to a **declared** stream via the same data path `Measure` uses (charted/exported for free). A stream is `Measure`-written XOR `Record`-written. Added Increment 6. |
 
 ### 5.2 Container blocks
 
@@ -167,9 +169,10 @@ fault-tolerance design.
 
 Two kinds of shared workflow state:
 
-- **Streams** — append-only, timestamped series produced by `Measure`, consumed
-  by statistics. Named, optional units.
-- **Bindings** — scalars produced by `OperatorInput`, referenced by name.
+- **Streams** — append-only, timestamped series produced by `Measure` **or `Record`**
+  (Increment 6), consumed by statistics. Named, optional units.
+- **Bindings** — scalars produced by `OperatorInput` **or `Compute`** (Increment 6),
+  referenced by name. A name is either a scalar binding or a stream, never both.
 
 **One expression sublanguage** serves everything (this is why "condition" and
 "parameter" stopped being two concepts): a condition is a *boolean* expression, a
@@ -527,6 +530,28 @@ Reading the 2026-07-14 keys in it (amendment):
   loop cannot outlive the sensor it feeds back from.** The guard's job is not to make it survive;
   it is to make the failure *inert* — the difference between a run you have to kill and a run that
   kills the culture.
+
+### 15.3 Computed values — `compute` / `record` (amendment 2026-07-15, Increment 6)
+
+Two leaf blocks that evaluate a `value` expression and store the result; neither touches hardware.
+Full design:
+[`superpowers/specs/2026-07-15-experiment-orchestrator-6-computed-values-design.md`](superpowers/specs/2026-07-15-experiment-orchestrator-6-computed-values-design.md).
+
+```json
+{ "compute": { "into": "c", "value": "c * V/(V+dV) + C * dV/(V+dV)" } }
+{ "record":  { "into": "c_series", "value": "c" } }
+```
+
+- `compute` binds a **number or boolean** into the binding namespace (§6). Assignment overwrites,
+  so the same `compute` inside a loop is an accumulator; its value persists across iterations. A
+  self-referential accumulator must be **seeded** by a prior `compute` — an unseeded one is a
+  read-before-write load error.
+- `record` appends a **number** to a **declared** stream (§5.3) through the same path a `Measure`
+  writes, so the value is charted, CSV-exported, and readable by later stats. A stream is written
+  by `Measure` **or** `record`, never both; no name is both a scalar binding and a stream.
+- `value` is an infix string (or a literal), evaluated at dispatch on one `clock.now()`. `retry`
+  is not legal on either block; `on_error` is (a tolerated `compute` leaves its binding at its
+  previous value, which the path analyzer models as a may-write).
 
 ## 16. Package structure, testing, deferred work
 

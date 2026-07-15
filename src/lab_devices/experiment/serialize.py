@@ -65,6 +65,17 @@ def _checked_expr(value: Any, ctx: str) -> str:
     return text
 
 
+def _value(value: Any, ctx: str) -> B.ValueExpr:
+    """A scalar slot: a string is an expression (checked now), a number/bool is a literal."""
+    if isinstance(value, str):
+        return _checked_expr(value, ctx)
+    if isinstance(value, bool) or isinstance(value, (int, float)):
+        return value
+    raise WorkflowLoadError(
+        f"{ctx} must be a number, boolean, or expression string, got {value!r}"
+    )
+
+
 def _checked_duration(value: Any, ctx: str) -> str:
     text = _str(value, ctx)
     try:
@@ -124,6 +135,18 @@ def _measure(body: Any, timing: dict[str, Any]) -> B.Block:
         device=device, verb=verb, into=_req(body, "into", "measure"),
         params=_checked_params(body, "measure"), **timing,
     )
+
+
+def _compute(body: Any, timing: dict[str, Any]) -> B.Block:
+    into = _str(_req(body, "into", "compute"), "compute into")
+    value = _value(_req(body, "value", "compute"), "compute value")
+    return B.Compute(into=into, value=value, **timing)
+
+
+def _record(body: Any, timing: dict[str, Any]) -> B.Block:
+    into = _str(_req(body, "into", "record"), "record into")
+    value = _value(_req(body, "value", "record"), "record value")
+    return B.Record(into=into, value=value, **timing)
 
 
 def _operator_input(body: Any, timing: dict[str, Any]) -> B.Block:
@@ -193,6 +216,8 @@ _BUILDERS: dict[str, Callable[[Any, dict[str, Any]], B.Block]] = {
     "loop": _loop,
     "branch": _branch,
     "group_ref": _group_ref,
+    "compute": _compute,
+    "record": _record,
 }
 
 
@@ -262,6 +287,10 @@ def _dump_body(b: B.Block) -> tuple[str, dict[str, Any]]:
         return "branch", body
     if isinstance(b, B.GroupRef):
         return "group_ref", {"name": b.name}
+    if isinstance(b, B.Compute):
+        return "compute", {"into": b.into, "value": b.value}
+    if isinstance(b, B.Record):
+        return "record", {"into": b.into, "value": b.value}
     raise WorkflowLoadError(f"cannot serialize {type(b).__name__}")
 
 

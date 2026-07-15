@@ -22,6 +22,10 @@ describe('describeEvent', () => {
     expect(d('input_requested', { name: 'target' })).toBe("operator input requested: 'target'")
     expect(d('input_bound', { name: 'target', value: 5 })).toBe('target = 5')
   })
+  it('describes binding_computed and sample_recorded', () => {
+    expect(d('binding_computed', { name: 'c_1', value: 3.14 })).toBe('c_1 = 3.14')
+    expect(d('sample_recorded', { stream: 'c_series_1', value: 3.14 })).toBe('c_series_1 = 3.14')
+  })
   it('covers fault tolerance', () => {
     expect(d('block_retried', { attempt: 1, of: 3, error: 'flaky' }))
       .toBe('retrying (attempt 1/3): flaky')

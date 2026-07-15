@@ -66,6 +66,24 @@
       },
       "blank_3": {
         "units": "AU/s"
+      },
+      "c_series_1": {
+        "units": "x_MIC"
+      },
+      "r_series_1": {
+        "units": "per_hour"
+      },
+      "c_series_2": {
+        "units": "x_MIC"
+      },
+      "r_series_2": {
+        "units": "per_hour"
+      },
+      "c_series_3": {
+        "units": "x_MIC"
+      },
+      "r_series_3": {
+        "units": "per_hour"
       }
     },
     "blocks": [
@@ -282,6 +300,34 @@
               "label": "home + configure each valve (serial: `home` persists device state too)"
             },
             {
+              "compute": {
+                "into": "working_volume_ml",
+                "value": "12"
+              },
+              "label": "culture working volume V in ml, held constant by the waste needle"
+            },
+            {
+              "compute": {
+                "into": "c_1",
+                "value": "0"
+              },
+              "label": "tube 1: drug concentration starts at 0 (no drug in a fresh culture)"
+            },
+            {
+              "compute": {
+                "into": "c_2",
+                "value": "0"
+              },
+              "label": "tube 2: drug concentration starts at 0 (no drug in a fresh culture)"
+            },
+            {
+              "compute": {
+                "into": "c_3",
+                "value": "0"
+              },
+              "label": "tube 3: drug concentration starts at 0 (no drug in a fresh culture)"
+            },
+            {
               "loop": {
                 "count": 25,
                 "pace": "60s",
@@ -334,8 +380,22 @@
                       "if": "count(od_1, last=45s) > 0 and last(od_1) >= od_min",
                       "then": [
                         {
+                          "compute": {
+                            "into": "r_1",
+                            "value": "480 * (mean(od_1, last=5) - mean(od_1, last=10)) / last(od_1)"
+                          },
+                          "label": "tube 1: specific growth rate (1/h)"
+                        },
+                        {
+                          "record": {
+                            "into": "r_series_1",
+                            "value": "r_1"
+                          },
+                          "label": "tube 1: chart the growth rate"
+                        },
+                        {
                           "branch": {
-                            "if": "last(od_1) > od_thr and 480 * (mean(od_1, last=5) - mean(od_1, last=10)) / last(od_1) > r_dil",
+                            "if": "last(od_1) > od_thr and r_1 > r_dil",
                             "then": [
                               {
                                 "command": {
@@ -359,6 +419,13 @@
                                   }
                                 },
                                 "label": "INJECT DRUG into tube 1"
+                              },
+                              {
+                                "compute": {
+                                  "into": "c_1",
+                                  "value": "c_1 * working_volume_ml/(working_volume_ml + dose_ml) + drug_stock_x_mic * dose_ml/(working_volume_ml + dose_ml)"
+                                },
+                                "label": "tube 1: drug raised concentration"
                               }
                             ],
                             "else": [
@@ -384,6 +451,13 @@
                                   }
                                 },
                                 "label": "INJECT MEDIUM into tube 1"
+                              },
+                              {
+                                "compute": {
+                                  "into": "c_1",
+                                  "value": "c_1 * working_volume_ml/(working_volume_ml + dose_ml)"
+                                },
+                                "label": "tube 1: medium diluted concentration"
                               }
                             ]
                           },
@@ -411,6 +485,13 @@
                             }
                           },
                           "label": "restore tube 1 to V (over-draw; needle is at the V line)"
+                        },
+                        {
+                          "record": {
+                            "into": "c_series_1",
+                            "value": "c_1"
+                          },
+                          "label": "tube 1: chart the drug-concentration sawtooth"
                         }
                       ]
                     },
@@ -421,8 +502,22 @@
                       "if": "count(od_2, last=45s) > 0 and last(od_2) >= od_min",
                       "then": [
                         {
+                          "compute": {
+                            "into": "r_2",
+                            "value": "480 * (mean(od_2, last=5) - mean(od_2, last=10)) / last(od_2)"
+                          },
+                          "label": "tube 2: specific growth rate (1/h)"
+                        },
+                        {
+                          "record": {
+                            "into": "r_series_2",
+                            "value": "r_2"
+                          },
+                          "label": "tube 2: chart the growth rate"
+                        },
+                        {
                           "branch": {
-                            "if": "last(od_2) > od_thr and 480 * (mean(od_2, last=5) - mean(od_2, last=10)) / last(od_2) > r_dil",
+                            "if": "last(od_2) > od_thr and r_2 > r_dil",
                             "then": [
                               {
                                 "command": {
@@ -446,6 +541,13 @@
                                   }
                                 },
                                 "label": "INJECT DRUG into tube 2"
+                              },
+                              {
+                                "compute": {
+                                  "into": "c_2",
+                                  "value": "c_2 * working_volume_ml/(working_volume_ml + dose_ml) + drug_stock_x_mic * dose_ml/(working_volume_ml + dose_ml)"
+                                },
+                                "label": "tube 2: drug raised concentration"
                               }
                             ],
                             "else": [
@@ -471,6 +573,13 @@
                                   }
                                 },
                                 "label": "INJECT MEDIUM into tube 2"
+                              },
+                              {
+                                "compute": {
+                                  "into": "c_2",
+                                  "value": "c_2 * working_volume_ml/(working_volume_ml + dose_ml)"
+                                },
+                                "label": "tube 2: medium diluted concentration"
                               }
                             ]
                           },
@@ -498,6 +607,13 @@
                             }
                           },
                           "label": "restore tube 2 to V (over-draw; needle is at the V line)"
+                        },
+                        {
+                          "record": {
+                            "into": "c_series_2",
+                            "value": "c_2"
+                          },
+                          "label": "tube 2: chart the drug-concentration sawtooth"
                         }
                       ]
                     },
@@ -508,8 +624,22 @@
                       "if": "count(od_3, last=45s) > 0 and last(od_3) >= od_min",
                       "then": [
                         {
+                          "compute": {
+                            "into": "r_3",
+                            "value": "480 * (mean(od_3, last=5) - mean(od_3, last=10)) / last(od_3)"
+                          },
+                          "label": "tube 3: specific growth rate (1/h)"
+                        },
+                        {
+                          "record": {
+                            "into": "r_series_3",
+                            "value": "r_3"
+                          },
+                          "label": "tube 3: chart the growth rate"
+                        },
+                        {
                           "branch": {
-                            "if": "last(od_3) > od_thr and 480 * (mean(od_3, last=5) - mean(od_3, last=10)) / last(od_3) > r_dil",
+                            "if": "last(od_3) > od_thr and r_3 > r_dil",
                             "then": [
                               {
                                 "command": {
@@ -533,6 +663,13 @@
                                   }
                                 },
                                 "label": "INJECT DRUG into tube 3"
+                              },
+                              {
+                                "compute": {
+                                  "into": "c_3",
+                                  "value": "c_3 * working_volume_ml/(working_volume_ml + dose_ml) + drug_stock_x_mic * dose_ml/(working_volume_ml + dose_ml)"
+                                },
+                                "label": "tube 3: drug raised concentration"
                               }
                             ],
                             "else": [
@@ -558,6 +695,13 @@
                                   }
                                 },
                                 "label": "INJECT MEDIUM into tube 3"
+                              },
+                              {
+                                "compute": {
+                                  "into": "c_3",
+                                  "value": "c_3 * working_volume_ml/(working_volume_ml + dose_ml)"
+                                },
+                                "label": "tube 3: medium diluted concentration"
                               }
                             ]
                           },
@@ -585,6 +729,13 @@
                             }
                           },
                           "label": "restore tube 3 to V (over-draw; needle is at the V line)"
+                        },
+                        {
+                          "record": {
+                            "into": "c_series_3",
+                            "value": "c_3"
+                          },
+                          "label": "tube 3: chart the drug-concentration sawtooth"
                         }
                       ]
                     },

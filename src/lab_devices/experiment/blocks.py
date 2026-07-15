@@ -90,6 +90,18 @@ class GroupRef(BlockBase):
     name: str
 
 
+@dataclass(kw_only=True)
+class Compute(BlockBase):
+    into: str
+    value: ValueExpr  # scalar bound into RunState.bindings (number or boolean)
+
+
+@dataclass(kw_only=True)
+class Record(BlockBase):
+    into: str
+    value: ValueExpr  # numeric sample appended to a declared stream
+
+
 Block = (
     Command
     | Measure
@@ -100,4 +112,6 @@ Block = (
     | Loop
     | Branch
     | GroupRef
+    | Compute
+    | Record
 )

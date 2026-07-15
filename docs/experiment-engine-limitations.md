@@ -326,7 +326,17 @@ is in the run log.
 
 ---
 
-## 1. No computed bindings (no accumulator)
+## 1. No computed bindings (no accumulator) — **SHIPPED (2026-07-15)**
+
+**Shipped as the `compute` block** (Increment 6), together with #3. Design:
+[`superpowers/specs/2026-07-15-experiment-orchestrator-6-computed-values-design.md`](superpowers/specs/2026-07-15-experiment-orchestrator-6-computed-values-design.md).
+`{compute: {into: "c", value: "<expr>"}}` evaluates an expression and binds the result (a number
+**or** a boolean) into the same namespace `operator_input` writes; the binding survives across
+loop iterations, so the same `compute` run each cycle **is** the accumulator. An unseeded
+self-referential accumulator is a read-before-write load error, so the seed (a plain `compute`
+before the loop) is checked, not assumed. `examples/morbidostat.json` now runs the concentration
+recursion below inside the workflow and knows the dose it is administering; the escalation counter
+is now expressible too. The original problem statement is kept below as motivation.
 
 **What.** Bindings are written only by `operator_input`. Streams are written only by a
 `measure` on a real device. There is no block that computes a value and names it. Nothing in a
@@ -388,7 +398,17 @@ sharp edge pointed straight at the user.
 
 ---
 
-## 3. Streams cannot hold computed values
+## 3. Streams cannot hold computed values — **SHIPPED (2026-07-15)**
+
+**Shipped as the `record` block** (Increment 6), together with #1. Design:
+[`superpowers/specs/2026-07-15-experiment-orchestrator-6-computed-values-design.md`](superpowers/specs/2026-07-15-experiment-orchestrator-6-computed-values-design.md).
+`{record: {into: "r_1", value: "<expr>"}}` appends a computed number to a **declared** stream via
+the identical data path a `measure` uses — same in-memory stream, same disk sink — so a computed
+quantity is charted, CSV-exported, and readable by later expressions for free. A stream is
+written by `measure` **or** `record`, never both. `examples/morbidostat.json` now records both the
+growth rate (`r_series_t`) and the drug concentration (`c_series_t`), so the characteristic
+drug-concentration sawtooth is a first-class chartable stream. The original problem statement is
+kept below as motivation.
 
 **What.** `measure.into` requires a device verb whose trait is a measurement. There is no way
 to append a derived number to a stream.
@@ -643,9 +663,9 @@ that a `parallel` block of state-persisting verbs is unsafe on such a roster.
 | # | Limitation | Blocks | Suggested feature |
 |---|---|---|---|
 | 0 | ~~No retry / no fault tolerance~~ | ~~Any unattended run~~ | **SHIPPED 2026-07-14** — `retry`, `on_error`, `defaults.retry`, resilient job polling |
-| 1 | No computed bindings | Any stateful controller; drug tracking; escalation rules | `compute`/`let` block |
+| 1 | ~~No computed bindings~~ | ~~Any stateful controller; drug tracking; escalation rules~~ | **SHIPPED 2026-07-15** — `compute` block (number or boolean; seeded accumulator) |
 | 2 | No math functions | `ln`-based growth rate; median filtering | `slope`, `median`, `stddev`, `ln`, `abs` |
-| 3 | Streams can't hold computed values | Charting growth rate / drug concentration | `record` block |
+| 3 | ~~Streams can't hold computed values~~ | ~~Charting growth rate / drug concentration~~ | **SHIPPED 2026-07-15** — `record` block (computed sample into a declared stream) |
 | 4 | Groups not parametrized | Scaling past ~3 vials | Group params / `for_each` |
 | 5 | `enum` inputs unusable in expressions | Operator-selectable modes | String comparison in expressions |
 | 6 | Durations/counts are literals | Cycle time as an operator input; adaptive timing | Expressions in duration/count slots |
@@ -661,11 +681,17 @@ cannot check. That is not a complaint about the feature; it is the honest shape 
 tolerance buys you, and it is why **#7 (abort/alarm)** now reads to me as the natural sequel to
 #0 rather than a nice-to-have.
 
-Of what remains, if only two were built, **#1 (computed bindings)** and **#3 (computed
-streams)** together turn the engine from a sequencer that reacts into a controller that
-reasons — and they make #2's `slope` optional rather than essential. **#4** is what the 15-vial
-version of this experiment needs before it can be written at all; `defaults.retry` bought that
-scale for *retry policy* specifically, and nothing else.
+**#1 (computed bindings) and #3 (computed streams) are now done too** (Increment 6, 2026-07-15).
+Together they turned the engine from a sequencer that reacts into a controller that reasons: the
+morbidostat now runs its drug-concentration recursion inside the workflow, records the sawtooth
+as a first-class stream, and names its growth rate once instead of inlining a magic constant in
+every branch — which is exactly why they **made #2's `slope` optional rather than essential**, as
+predicted. `record` also collapsed part of #2: the growth rate is a named `compute`, so the unit
+constant lives in one place. Of what remains, **#4** is what the 15-vial version of this
+experiment needs before it can be written at all; `defaults.retry` bought that scale for *retry
+policy* specifically, and nothing else. And **#7 (abort/alarm)** is still the natural sequel to
+#0: a run can now survive a dead sensor and even record its frozen state, but it still cannot
+*flag* one and halt.
 
 Separately, the **duplicate-serial collision** above is not an engine issue at all, and it has a
 one-line fix: give the simulated test devices distinct serials. Until then, a `parallel` block of

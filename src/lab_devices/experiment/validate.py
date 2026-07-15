@@ -229,6 +229,86 @@ def _check_condition(
     _check_streams_declared(text, ctx, w, out)
 
 
+def _check_compute_value(
+    value: object,
+    ctx: str,
+    w: Workflow,
+    binding_types: Mapping[str, BindingType],
+    out: list[Diagnostic],
+) -> None:
+    """compute stores a number OR a boolean; accept either, surface enum-string refs."""
+    if not isinstance(value, str):
+        if isinstance(value, bool) or isinstance(value, (int, float)):
+            return
+        out.append(Diagnostic(
+            "type", ctx, f"compute value must be a number, boolean, or expression, got {value!r}"
+        ))
+        return
+    try:
+        expr = parse_expression(value)
+    except ExpressionError as exc:
+        out.append(Diagnostic("type", ctx, f"invalid expression: {exc}"))
+        return
+    for problem in infer_type(expr, binding_types).problems:
+        out.append(Diagnostic("type", ctx, problem))
+    _check_streams_declared(value, ctx, w, out)
+
+
+def _check_record_value(
+    value: object,
+    ctx: str,
+    w: Workflow,
+    binding_types: Mapping[str, BindingType],
+    out: list[Diagnostic],
+) -> None:
+    """record stores a number; a boolean literal or a boolean expression is an error."""
+    if not isinstance(value, str):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            out.append(Diagnostic(
+                "type", ctx, f"record value must be a number or expression, got {value!r}"
+            ))
+        return
+    _check_expr_type(value, "number", ctx, binding_types, out)
+    _check_streams_declared(value, ctx, w, out)
+
+
+def _check_compute(
+    b: B.Compute,
+    path: str,
+    w: Workflow,
+    binding_types: Mapping[str, BindingType],
+    out: list[Diagnostic],
+) -> None:
+    usable = (
+        isinstance(b.into, str)
+        and _IDENT_RE.fullmatch(b.into) is not None
+        and b.into not in _RESERVED_NAMES
+    )
+    if not usable:
+        out.append(Diagnostic(
+            "block", path, f"compute into {b.into!r} is not a usable binding name"
+        ))
+    _check_compute_value(b.value, f"{path} compute value", w, binding_types, out)
+
+
+def _check_record(
+    b: B.Record,
+    path: str,
+    w: Workflow,
+    binding_types: Mapping[str, BindingType],
+    out: list[Diagnostic],
+) -> None:
+    if not isinstance(b.into, str):
+        out.append(Diagnostic(
+            "block", path, f"record into must be a stream name, got {b.into!r}"
+        ))
+    elif b.into not in w.streams:
+        out.append(Diagnostic(
+            "declaration", path, f"record writes undeclared stream {b.into!r}"
+        ))
+    _check_record_value(b.value, f"{path} record value", w, binding_types, out)
+
+
 def _check_measure(b: B.Measure, path: str, w: Workflow, out: list[Diagnostic]) -> None:
     try:
         trait = lookup(b.device, b.verb)
@@ -375,6 +455,42 @@ def _check_defaults(w: Workflow, out: list[Diagnostic]) -> None:
         ))
 
 
+def _check_namespaces(w: Workflow, out: list[Diagnostic]) -> None:
+    """Disjointness across the binding and stream namespaces (design §6)."""
+    measure_streams: set[str] = set()
+    record_streams: set[str] = set()
+    input_names: set[str] = set()
+    compute_names: set[str] = set()
+    for _, b in _iter_all_blocks(w):
+        if isinstance(b, B.Measure) and isinstance(b.into, str):
+            measure_streams.add(b.into)
+        elif isinstance(b, B.Record) and isinstance(b.into, str):
+            record_streams.add(b.into)
+        elif isinstance(b, B.OperatorInput) and isinstance(b.name, str):
+            input_names.add(b.name)
+        elif isinstance(b, B.Compute) and isinstance(b.into, str):
+            compute_names.add(b.into)
+    binding_names = input_names | compute_names
+    declared = set(w.streams)
+    for s in sorted(measure_streams & record_streams):
+        out.append(Diagnostic(
+            "declaration", "streams",
+            f"stream {s!r} is written by both measure and record; a stream is measured "
+            f"or computed, never both",
+        ))
+    for n in sorted(binding_names & declared):
+        out.append(Diagnostic(
+            "declaration", "names",
+            f"name {n!r} is used as both a scalar binding and a stream",
+        ))
+    for n in sorted(compute_names & input_names):
+        out.append(Diagnostic(
+            "declaration", "bindings",
+            f"name {n!r} is written by both operator_input and compute; a binding has "
+            f"one kind of writer",
+        ))
+
+
 def _check_block(
     block: B.Block,
     path: str,
@@ -396,6 +512,10 @@ def _check_block(
         _check_loop(block, path, w, binding_types, out)
     elif isinstance(block, B.Branch):
         _check_condition(block.if_, f"{path} branch if", w, binding_types, out)
+    elif isinstance(block, B.Compute):
+        _check_compute(block, path, w, binding_types, out)
+    elif isinstance(block, B.Record):
+        _check_record(block, path, w, binding_types, out)
 
 
 @dataclass
@@ -684,6 +804,14 @@ def _visit_body(b: B.Block, path: str, state: _PathState, c: _Ctx) -> _PathState
         then_state = _visit_blocks(b.then, f"{path}.then", then_state, c)
         else_state = _visit_blocks(b.else_ or [], f"{path}.else", state.copy(), c)
         state = _merge(then_state, else_state)
+    elif isinstance(b, B.Compute):
+        _expr_reads(b.value, f"{path} compute value", state, c)
+        if isinstance(b.into, str):
+            state.bindings.add(b.into)
+    elif isinstance(b, B.Record):
+        _expr_reads(b.value, f"{path} record value", state, c)
+        if isinstance(b.into, str):
+            state.streams.add(b.into)
     elif isinstance(b, B.GroupRef):
         group = c.workflow.groups.get(b.name)
         if group is not None:  # unknown refs are diagnosed globally; phase is gated anyway
@@ -711,6 +839,7 @@ def validate(workflow: Workflow) -> None:
     out: list[Diagnostic] = []
     expandable = _check_groups(workflow, out)
     _check_defaults(workflow, out)
+    _check_namespaces(workflow, out)
     binding_types = _collect_binding_types(workflow)
     for path, block in _iter_all_blocks(workflow):
         _check_block(block, path, workflow, binding_types, out)

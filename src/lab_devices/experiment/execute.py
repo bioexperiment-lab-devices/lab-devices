@@ -4,6 +4,7 @@ See design 4-exec §7-9."""
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -600,6 +601,10 @@ async def _execute_inner(block: B.Block, ctx: RunContext) -> None:
         await _run_loop(block, ctx)
     elif isinstance(block, B.Branch):
         await _run_branch(block, ctx)
+    elif isinstance(block, B.Compute):
+        await _run_compute(block, ctx)
+    elif isinstance(block, B.Record):
+        await _run_record(block, ctx)
     else:
         await execute_blocks(ctx.workflow.groups[block.name].body, ctx)
 
@@ -625,6 +630,50 @@ async def _run_measure(block: B.Measure, ctx: RunContext) -> None:
     if sink is not None:
         sink.write(Sample(ts, fvalue))
     ctx.emit("measure_recorded", block.id, stream=block.into, value=fvalue)
+
+
+def _eval_value(value: B.ValueExpr, ctx: RunContext, now: float) -> Value:
+    """Shared value-slot evaluation for compute/record (design §3)."""
+    return resolve(value, ctx.state, now)
+
+
+async def _run_compute(block: B.Compute, ctx: RunContext) -> None:
+    """Evaluate and bind a derived scalar; number or boolean (design §3.1)."""
+    result = _eval_value(block.value, ctx, ctx.clock.now())
+    if isinstance(result, float) and not math.isfinite(result):
+        raise EvaluationError(
+            f"compute into {block.into!r} got a non-finite value {result!r}"
+        )
+    ctx.state.bind(block.into, result)
+    ctx.emit("binding_computed", block.id, name=block.into, value=result)
+
+
+async def _run_record(block: B.Record, ctx: RunContext) -> None:
+    """Evaluate and append a derived number to a declared stream (design §3.2)."""
+    now = ctx.clock.now()  # single evaluation instant: value expr and sample share it
+    result = _eval_value(block.value, ctx, now)
+    if isinstance(result, bool) or not isinstance(result, (int, float)):
+        raise EvaluationError(
+            f"record into {block.into!r} requires a number, got {result!r}"
+        )
+    # A direct int/float literal (ValueExpr) reaches here unchecked by resolve(); an oversized
+    # int (e.g. 10**400) overflows both math.isfinite and float(), so guard the conversion and
+    # normalize BOTH failures to EvaluationError rather than leaking a raw OverflowError.
+    try:
+        value = float(result)
+    except OverflowError as exc:
+        raise EvaluationError(
+            f"record into {block.into!r} got a non-finite value {result!r}"
+        ) from exc
+    if not math.isfinite(value):
+        raise EvaluationError(
+            f"record into {block.into!r} got a non-finite value {result!r}"
+        )
+    ctx.state.record(block.into, now, value)
+    sink = ctx.stream_sinks.get(block.into)
+    if sink is not None:
+        sink.write(Sample(now, value))
+    ctx.emit("sample_recorded", block.id, stream=block.into, value=value)
 
 
 async def _run_operator_input(block: B.OperatorInput, ctx: RunContext) -> None:
