@@ -922,15 +922,16 @@ def _validate_macro_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
     them; `_validate_workflow` below only ever sees the macro-free `expanded` doc."""
     expandable = _check_groups(workflow, out)
     expandable = _check_for_each_and_arity(workflow, out) and expandable
-    _check_defaults(workflow, out)
     if not expandable:
+        _check_defaults(workflow, out)
         return
     try:
         expanded = expand_workflow(workflow)
     except WorkflowLoadError as exc:
+        _check_defaults(workflow, out)
         out.append(Diagnostic("expansion", "blocks", str(exc)))
         return
-    _validate_workflow(expanded, out)
+    _validate_workflow(expanded, out)  # this covers _check_defaults on the success path
 
 
 def load_and_validate(path: str | Path) -> Workflow:

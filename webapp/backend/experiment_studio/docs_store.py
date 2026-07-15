@@ -149,7 +149,7 @@ def validate_doc(doc: ExperimentDoc) -> list[dict[str, str]]:
     try:
         expanded = expand_dict(doc.workflow)  # for_each/group(tube) -> concrete roles (§9)
     except WorkflowLoadError as exc:
-        return [{"category": "expansion", "path": "workflow", "message": str(exc)}]
+        return diags + [{"category": "expansion", "path": "workflow", "message": str(exc)}]
     substituted, ref_diags = roles_mod.substitute(
         expanded, roles_mod.placeholder_ids(role_types)
     )

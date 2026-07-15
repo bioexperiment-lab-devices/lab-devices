@@ -209,6 +209,8 @@ def _branch(body: Any, timing: dict[str, Any]) -> B.Block:
 
 
 def _group_ref(body: Any, timing: dict[str, Any]) -> B.Block:
+    if not isinstance(body, dict):
+        raise WorkflowLoadError("group_ref requires an object body")
     args = body.get("args", {})
     if not isinstance(args, dict):
         raise WorkflowLoadError("group_ref args must be an object")

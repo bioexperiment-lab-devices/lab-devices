@@ -1,4 +1,7 @@
+import pytest
+
 from lab_devices.experiment import blocks as B
+from lab_devices.experiment.errors import WorkflowLoadError
 from lab_devices.experiment.serialize import (
     block_from_dict, block_to_dict, workflow_from_dict, workflow_to_dict,
 )
@@ -40,6 +43,11 @@ def test_plain_group_ref_has_empty_args():
     d = {"group_ref": {"name": "setup"}}
     _roundtrip_block(d)
     assert block_from_dict(d).args == {}
+
+
+def test_non_object_group_ref_body_raises_workflow_load_error():
+    with pytest.raises(WorkflowLoadError, match="group_ref requires an object body"):
+        block_from_dict({"group_ref": 42})
 
 
 def test_group_params_roundtrip_in_workflow():

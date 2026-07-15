@@ -100,3 +100,15 @@ def test_recursive_parametrized_group_is_caught():
                                     "body": [{"group_ref": {"name": "a", "args": {"t": "{t}"}}}]}},
                    "blocks": [{"group_ref": {"name": "a", "args": {"t": 1}}}]})
     assert any("recursive group" in m for m in _messages(exc))
+
+
+def test_macro_doc_defaults_diagnostic_not_duplicated():
+    with pytest.raises(ValidationError) as exc:
+        _validate({
+            "schema_version": 1,
+            "defaults": {"retry": {"attempts": 3, "allow_repeat": True}},
+            "blocks": [{"for_each": {"var": "t", "in": [1],
+                        "body": [{"wait": {"duration": "1s"}}]}}],
+        })
+    hits = [m for m in _messages(exc) if "allow_repeat" in m]
+    assert len(hits) == 1, hits

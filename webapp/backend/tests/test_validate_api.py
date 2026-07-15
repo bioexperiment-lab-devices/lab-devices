@@ -197,3 +197,21 @@ async def test_malformed_for_each_yields_expansion_diagnostic(
             "message": "for_each 'in' must be a non-empty list",
         }
     ]
+
+
+async def test_non_object_group_ref_body_yields_diagnostic_not_500(
+    client: httpx.AsyncClient,
+) -> None:
+    """A malformed group_ref (non-object body) must not 500 — it surfaces as a
+    validation diagnostic, same shape as the schema/engine diagnostics."""
+    workflow = {
+        "schema_version": 1,
+        "blocks": [
+            {"group_ref": 42},
+        ],
+    }
+    resp = await client.post("/api/validate", json=_doc(workflow, {}))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["diagnostics"]
