@@ -88,6 +88,7 @@ class Branch(BlockBase):
 @dataclass(kw_only=True)
 class GroupRef(BlockBase):
     name: str
+    args: dict[str, ValueExpr] = field(default_factory=dict)
 
 
 @dataclass(kw_only=True)
@@ -102,6 +103,13 @@ class Record(BlockBase):
     value: ValueExpr  # numeric sample appended to a declared stream
 
 
+@dataclass(kw_only=True)
+class ForEach(BlockBase):
+    body: list[Block] = field(default_factory=list)
+    var: str | None = None
+    items: list[ValueExpr | dict[str, ValueExpr]] = field(default_factory=list)
+
+
 Block = (
     Command
     | Measure
@@ -114,4 +122,5 @@ Block = (
     | GroupRef
     | Compute
     | Record
+    | ForEach
 )
