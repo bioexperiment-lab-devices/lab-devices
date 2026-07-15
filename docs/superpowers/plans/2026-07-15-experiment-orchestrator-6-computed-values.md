@@ -18,11 +18,16 @@
 - Gate after every task (from repo root, `.venv` has the deps — bare `python` does not):
   ```bash
   .venv/bin/python -m pytest -q
-  .venv/bin/python -m mypy src/lab_devices/experiment tests
+  .venv/bin/python -m mypy          # uses pyproject files=["src/lab_devices"]; do NOT add `tests`
   .venv/bin/python -m ruff check .
   awk 'length>100{print FILENAME":"NR}' src/lab_devices/experiment/*.py tests/test_experiment_*.py
   ```
-  All four clean (the `awk` prints nothing).
+  All four clean (the `awk` prints nothing). Note: mypy's declared scope is `src/lab_devices`
+  only — the test files are deliberately untyped, so never pass `tests` to mypy. **Known
+  transitional state:** after Task 1, mypy reports 2 `union-attr` errors at `execute.py:604`
+  (the `Block` union now includes `Compute`/`Record` but `_execute_inner`'s `else` still assumes
+  `GroupRef`). Task 2 closes both by adding the two `_execute_inner` arms. Every task from Task 2
+  onward must end with mypy fully clean.
 - `value` slot type: `ValueExpr = str | int | float | bool` (a string is an expression; a literal passes through).
 - **compute** result: finite `number` **or** `bool`. **record** result: finite `number` only (boolean rejected at runtime — a `Stream` sample is a `float`).
 - Event kinds: `binding_computed` (`{name, value}`), `sample_recorded` (`{stream, value}`) — the latter is distinct from `measure_recorded` for provenance.
