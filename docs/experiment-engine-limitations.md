@@ -13,8 +13,10 @@ derived state or *abstract over* repetition.
 Ranked by what they would actually unlock.
 
 **Update, 2026-07-14: #0 shipped.** It was the one with no workaround, and the only one that
-made the example unusable for its actual purpose. It is now closed, and it is the only one that
-is. #1–#8 are all still open, and everything I wrote about them still holds.
+made the example unusable for its actual purpose. It is now closed. **Update, 2026-07-15:** #1 and
+#3 (computed bindings/streams, Increment 6) and #4 (parametrized groups, Increment 7) have since
+shipped too — see their sections; #2 and #5–#8 remain open, and everything written about those
+still holds.
 
 ---
 

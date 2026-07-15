@@ -13,8 +13,9 @@ executes it against real hardware (pumps, valves, densitometers) with
 device-safe scheduling and guaranteed safe shutdown.
 
 Non-goals for v1: a GUI, a bespoke authoring language, closed-loop recovery
-(auto-resume after a device drops), and parametrized/macro groups. Each is called
-out in §16 as a deferred extension.
+(auto-resume after a device drops), and parametrized/macro groups. Each was called
+out in §16 as a deferred extension (parametrized/macro groups have since shipped in
+Increment 7 — see §10.1/§16).
 
 ## 2. Core principle: everything is blocks, across two planes
 
@@ -446,7 +447,7 @@ A top-level `defaults` section, sibling of `persistence`, resolved at load:
   blanket policy must never start retrying `pump.dispense`.
 
 Without this, a 15-vial workflow would need ~60 hand-copied `retry` clauses while parametrized
-groups (§16, deferred) remain unbuilt.
+groups remained unbuilt (they have since shipped in Increment 7, §10.1; this clause predates them).
 
 ### 15.2 Full example
 
