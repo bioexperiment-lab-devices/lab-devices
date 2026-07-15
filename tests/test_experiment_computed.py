@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from lab_devices.experiment import blocks as B
@@ -141,14 +143,37 @@ async def test_record_rejects_oversized_int(fake_client):
     assert len(state.streams["r"].samples) == 0
 
 
-async def test_record_timestamp_equals_evaluation_instant(fake_client):
+class _TickingClock:
+    """now() advances 1.0 on every read, so a *second* clock read is observable — a
+    two-call `now()` would stamp the sample one tick after the value was evaluated."""
+
+    def __init__(self, start: float = 100.0) -> None:
+        self._t = start
+        self.reads = 0
+
+    def now(self) -> float:
+        self.reads += 1
+        t = self._t
+        self._t += 1.0
+        return t
+
+    async def sleep(self, seconds: float) -> None:  # pragma: no cover - record never sleeps
+        await asyncio.sleep(0)
+
+
+async def test_record_timestamp_is_the_single_evaluation_instant(fake_client):
     _, client = fake_client
-    clock, state = FakeClock(start=100.0), RunState()
+    clock = _TickingClock(start=100.0)
+    state = RunState()
     state.streams["src"] = Stream()
-    state.streams["src"].append(100.0, 2.0)
+    state.streams["src"].append(50.0, 2.0)
     state.streams["r"] = Stream()
-    ctx = _ctx(client, clock, state)
+    ctx = RunContext(client=client, workflow=Workflow(schema_version=1), state=state,
+                     options=RunOptions(clock=clock))
     # A duration-window expr is evaluated at exactly one `now`; the sample it produces
-    # must be stamped with that same instant, not a slightly later clock read.
-    await drive(clock, _run_record(_block(B.Record, into="r", value="last(src)"), ctx))
+    # must be stamped with that SAME instant (the block's first clock read, 100.0). A
+    # two-call form — one now() for the value, a later now() for the timestamp — would stamp
+    # the sample at 101.0 instead. The ticking clock makes that regression observable (the
+    # trailing `emit` reads the clock once more for the event timestamp, which is unrelated).
+    await _run_record(_block(B.Record, into="r", value="last(src)"), ctx)
     assert state.streams["r"].samples[0].timestamp == 100.0

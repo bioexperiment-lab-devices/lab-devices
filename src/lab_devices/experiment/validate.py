@@ -480,12 +480,12 @@ def _check_namespaces(w: Workflow, out: list[Diagnostic]) -> None:
         ))
     for n in sorted(binding_names & declared):
         out.append(Diagnostic(
-            "declaration", "streams",
+            "declaration", "names",
             f"name {n!r} is used as both a scalar binding and a stream",
         ))
     for n in sorted(compute_names & input_names):
         out.append(Diagnostic(
-            "declaration", "streams",
+            "declaration", "bindings",
             f"name {n!r} is written by both operator_input and compute; a binding has "
             f"one kind of writer",
         ))
