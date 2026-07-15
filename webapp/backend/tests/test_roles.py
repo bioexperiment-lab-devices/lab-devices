@@ -172,4 +172,15 @@ def test_walker_grammar_matches_engine_serializer() -> None:
         "parallel": ("children",),
         "loop": ("body",),
         "branch": ("then", "else"),
+        "for_each": ("body",),
     }
+
+
+def test_substitute_recurses_for_each_bodies() -> None:
+    wf = {"blocks": [{"for_each": {"var": "t", "in": [1],
+                                   "body": [{"measure": {"device": "od", "verb": "measure",
+                                                         "into": "x"}}]}}]}
+    out, diags = roles.substitute(wf, {"od": "densitometer_1"})
+    lane = out["blocks"][0]["for_each"]["body"][0]
+    assert lane["measure"]["device"] == "densitometer_1"
+    assert diags == []

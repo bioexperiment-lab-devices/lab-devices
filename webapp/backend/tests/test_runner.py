@@ -200,6 +200,34 @@ async def test_construction_validation_failure_finalizes_failed_record(
     assert env.manager.active_payload() is None
 
 
+async def test_for_each_templated_roles_expand_before_run_substitution(
+    env: SimpleNamespace,
+) -> None:
+    """A for_each body with a templated role must be expanded to concrete roles
+    (meter_1, meter_2) BEFORE role substitution at the run call site too — the same
+    for_each -> role-substitution ordering the validate path relies on (design §9)."""
+    env.fake.add_device("densitometer_2", "densitometer")
+    blocks = [
+        {"for_each": {"var": "t", "in": [1, 2], "body": [
+            {"measure": {"device": "meter_{t}", "verb": "measure", "into": "od"}},
+        ]}},
+    ]
+    roles = {"meter_1": {"type": "densitometer"}, "meter_2": {"type": "densitometer"}}
+    mapping = {"meter_1": "densitometer_1", "meter_2": "densitometer_2"}
+    experiment_id = await _create_doc(env, blocks, roles=roles)
+    run_id = await env.manager.start(experiment_id, runsupport.LAB, mapping)
+    await _finish(env)
+
+    record = await RecordsStore(env.db, env.data_dir).get(run_id)
+    assert record["status"] == "completed"
+    art = env.data_dir / f"runs/{run_id}"
+    workflow = json.loads((art / "workflow.json").read_text())
+    assert [b["measure"]["device"] for b in workflow["blocks"]] == [
+        "densitometer_1",
+        "densitometer_2",
+    ]
+
+
 async def test_unexpected_start_failure_finalizes_failed_record(
     env: SimpleNamespace,
 ) -> None:

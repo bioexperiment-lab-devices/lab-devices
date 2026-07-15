@@ -153,3 +153,47 @@ async def test_same_role_in_parallel_lanes_hits_engine_affinity_check(
 async def test_malformed_doc_is_422(client: httpx.AsyncClient) -> None:
     resp = await client.post("/api/validate", json={"doc_version": 1, "name": "x"})
     assert resp.status_code == 422
+
+
+async def test_for_each_templated_roles_expand_before_substitution(
+    client: httpx.AsyncClient,
+) -> None:
+    """A for_each body with a templated role (od_meter_{t}) must be expanded into
+    concrete roles (od_meter_1, od_meter_2) BEFORE role substitution, or the mapping
+    misses it (design §9)."""
+    workflow = {
+        "schema_version": 1,
+        "streams": {"od_1": {"units": "AU"}, "od_2": {"units": "AU"}},
+        "blocks": [
+            {"for_each": {"var": "t", "in": [1, 2], "body": [
+                {"measure": {"device": "od_meter_{t}", "verb": "measure", "into": "od_{t}"}},
+            ]}},
+        ],
+    }
+    roles = {"od_meter_1": {"type": "densitometer"}, "od_meter_2": {"type": "densitometer"}}
+    resp = await client.post("/api/validate", json=_doc(workflow, roles))
+    assert resp.json() == {"ok": True, "diagnostics": []}
+
+
+async def test_malformed_for_each_yields_expansion_diagnostic(
+    client: httpx.AsyncClient,
+) -> None:
+    """A malformed macro (empty for_each 'in') must not 500 — it surfaces as a
+    validation diagnostic, same shape as the schema/engine diagnostics."""
+    workflow = {
+        "schema_version": 1,
+        "blocks": [
+            {"for_each": {"var": "t", "in": [], "body": [{"wait": {"duration": "1s"}}]}},
+        ],
+    }
+    resp = await client.post("/api/validate", json=_doc(workflow, {}))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["diagnostics"] == [
+        {
+            "category": "expansion",
+            "path": "workflow",
+            "message": "for_each 'in' must be a non-empty list",
+        }
+    ]

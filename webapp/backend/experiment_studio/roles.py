@@ -17,6 +17,7 @@ _CHILD_LISTS: dict[str, tuple[str, ...]] = {
     "parallel": ("children",),
     "loop": ("body",),
     "branch": ("then", "else"),
+    "for_each": ("body",),
 }
 # Engine block types the walker deliberately treats as leaves (no device field, no children).
 _LEAF_BLOCKS = ("wait", "operator_input", "group_ref", "compute", "record")
