@@ -65,6 +65,15 @@ describe('docToTree', () => {
     doc2.workflow.blocks = [{ group_ref: { name: 'prep' } }]
     expect(() => docToTree(doc2)).toThrow(/group_ref/)
   })
+
+  it('reports for_each as a specific unsupported-in-builder message, not the generic one', () => {
+    const doc = fixture('valid-od-growth')
+    doc.workflow.blocks = [
+      { for_each: { var: 't', in: [1, 2], body: [{ wait: { duration: '1s' } }] } },
+    ] as unknown as BlockJson[]
+    expect(() => docToTree(doc)).toThrow(DocConvertError)
+    expect(() => docToTree(doc)).toThrow(/for_each is not yet supported in the builder/)
+  })
 })
 
 describe('treeToDoc', () => {

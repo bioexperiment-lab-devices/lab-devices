@@ -144,6 +144,10 @@ function blockToNode(block: BlockJson): BlockNode {
         else: b.else !== undefined ? b.else.map(blockToNode) : null,
       }
     }
+    case 'for_each':
+      throw new DocConvertError(
+        'for_each is not yet supported in the builder (author it as JSON; it runs and charts)',
+      )
     default:
       throw new DocConvertError(`unsupported block type '${kind}' in the builder`)
   }
