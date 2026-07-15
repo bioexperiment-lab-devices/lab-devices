@@ -57,7 +57,11 @@ def _str(value: Any, ctx: str) -> str:
 
 
 def _checked_expr(value: Any, ctx: str) -> str:
+    # A for_each/group-arg hole: the expression grammar never uses '{' (design §3), so this
+    # parses only after substitution — mirrors the device-lookup skip in _command/_measure.
     text = _str(value, ctx)
+    if "{" in text:
+        return text
     try:
         parse_expression(text)
     except ExpressionError as exc:

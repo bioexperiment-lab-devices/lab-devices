@@ -24,7 +24,9 @@ from lab_devices.experiment.errors import (
     ExpressionError,
     UnknownVerbError,
     ValidationError,
+    WorkflowLoadError,
 )
+from lab_devices.experiment.expand import expand_workflow
 from lab_devices.experiment.expr import (
     AllWindow,
     BinaryOp,
@@ -52,6 +54,8 @@ def _iter_blocks(blocks: list[B.Block], prefix: str) -> Iterator[tuple[str, B.Bl
             yield from _iter_blocks(b.then, f"{path}.then")
             if b.else_ is not None:
                 yield from _iter_blocks(b.else_, f"{path}.else")
+        elif isinstance(b, B.ForEach):
+            yield from _iter_blocks(b.body, f"{path}.body")
 
 
 def _iter_all_blocks(w: Workflow) -> Iterator[tuple[str, B.Block]]:
@@ -93,6 +97,59 @@ def _check_groups(w: Workflow, out: list[Diagnostic]) -> bool:
 
     for name in w.groups:
         visit(name, ())
+    return ok
+
+
+def _uses_macros(w: Workflow) -> bool:
+    if any(g.params for g in w.groups.values()):
+        return True
+    for _, b in _iter_all_blocks(w):
+        if isinstance(b, B.ForEach):
+            return True
+        if isinstance(b, B.GroupRef) and b.args:
+            return True
+    return False
+
+
+def _check_for_each_and_arity(w: Workflow, out: list[Diagnostic]) -> bool:
+    ok = True
+    for path, b in _iter_all_blocks(w):
+        if isinstance(b, B.ForEach):
+            for key, present in (("retry", b.retry is not None), ("on_error", b.on_error != "fail"),
+                                 ("gap_after", b.gap_after is not None),
+                                 ("start_offset", b.start_offset is not None)):
+                if present:
+                    out.append(Diagnostic(
+                        "for_each", path,
+                        f"for_each may not carry block-level {key!r}; put it on the body blocks",
+                    ))
+                    ok = False
+            if not b.body:
+                out.append(Diagnostic("for_each", path, "for_each 'body' must be non-empty"))
+                ok = False
+            if not b.items:
+                out.append(Diagnostic("for_each", path, "for_each 'in' must be non-empty"))
+                ok = False
+            scalar = [i for i in b.items if not isinstance(i, dict)]
+            objects = [i for i in b.items if isinstance(i, dict)]
+            if b.var is not None and objects:
+                out.append(Diagnostic(
+                    "for_each", path, "for_each with 'var' requires scalar items"))
+                ok = False
+            if b.var is None and scalar:
+                out.append(Diagnostic(
+                    "for_each", path, "for_each without 'var' requires object items"))
+                ok = False
+        elif isinstance(b, B.GroupRef):
+            group = w.groups.get(b.name)
+            params = set(group.params) if group is not None else set()
+            if group is not None and set(b.args) != params:
+                out.append(Diagnostic(
+                    "group", path,
+                    f"group_ref {b.name!r}: args {sorted(b.args)} must match params "
+                    f"{sorted(params)}",
+                ))
+                ok = False
     return ok
 
 
@@ -832,11 +889,22 @@ def _analyze_paths(w: Workflow, out: list[Diagnostic]) -> None:
 def validate(workflow: Workflow) -> None:
     """Statically validate a loaded workflow (design §11 phase 2, rules §12).
 
-    Collects every violation and raises one ValidationError; returns None when clean.
-    The path-sensitive phase is skipped when group references cannot be resolved
-    (unknown or recursive groups) — the tree cannot be soundly expanded.
+    Macro docs (for_each / parametrized groups) are expanded first and every concrete
+    check runs on the expansion; legacy docs validate in place, unchanged.
     """
     out: list[Diagnostic] = []
+    if not _uses_macros(workflow):
+        _validate_workflow(workflow, out)
+    else:
+        _validate_macro_workflow(workflow, out)
+    if out:
+        raise ValidationError(out)
+
+
+def _validate_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
+    """Collects every violation into `out`. The path-sensitive phase is skipped when
+    group references cannot be resolved (unknown or recursive groups) — the tree cannot
+    be soundly expanded."""
     expandable = _check_groups(workflow, out)
     _check_defaults(workflow, out)
     _check_namespaces(workflow, out)
@@ -845,8 +913,24 @@ def validate(workflow: Workflow) -> None:
         _check_block(block, path, workflow, binding_types, out)
     if expandable:
         _analyze_paths(workflow, out)
-    if out:
-        raise ValidationError(out)
+
+
+def _validate_macro_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
+    """Gate the authored (templated) doc, then expand and run every concrete check on
+    the expansion. The authored blocks (holes, for_each, parametrized group_refs) never
+    reach the concrete checks — only `_check_groups` and `_check_for_each_and_arity` see
+    them; `_validate_workflow` below only ever sees the macro-free `expanded` doc."""
+    expandable = _check_groups(workflow, out)
+    expandable = _check_for_each_and_arity(workflow, out) and expandable
+    _check_defaults(workflow, out)
+    if not expandable:
+        return
+    try:
+        expanded = expand_workflow(workflow)
+    except WorkflowLoadError as exc:
+        out.append(Diagnostic("expansion", "blocks", str(exc)))
+        return
+    _validate_workflow(expanded, out)
 
 
 def load_and_validate(path: str | Path) -> Workflow:
