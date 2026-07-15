@@ -90,15 +90,21 @@ carries the decision, not the sign. That matters when the trace loses a sample; 
 [Surviving a flaky device](#surviving-a-flaky-device).
 
 The growth phase samples every tube 10 times (`dt = 1 min`, so `n = 5`), which collapses the
-whole thing to one line the engine evaluates natively:
+whole thing to one line the engine evaluates natively. The example gives that line a name — it
+`compute`s the specific growth rate into a binding `r_1` once per cycle, and the decision reads
+the binding:
 
 ```
-24 * (mean(od_1, last=5) - mean(od_1, last=10)) / last(od_1)  >  r_dil
+compute r_1 = 24 * (mean(od_1, last=5) - mean(od_1, last=10)) / last(od_1)
+branch  if  last(od_1) > od_thr and r_1 > r_dil   → drug, else medium
 ```
 
-The `24` is just `60·2/(n·dt_min)` — the unit conversion into "per hour". **If you change the
-sampling interval, you must change this constant.** In `morbidostat-demo-speed.json` the trace
-is sampled every 3 s, so it is 480.
+Naming it means the pace-coupled slope constant appears **once**, not inline in every branch —
+and `r_1` is also `record`ed into a chartable `r_series_1` stream, so the growth rate the
+controller is actually acting on is visible, not just inferred. The `24` is `60·2/(n·dt_min)`,
+the unit conversion into "per hour". **If you change the sampling interval, you must change this
+constant** (now in the one `compute`). In `morbidostat-demo-speed.json` the trace is sampled
+every 3 s, so it is 480.
 
 The windows are trailing slices, and the monitor sub-loop writes exactly 10 samples
 immediately before the decision — so `last=10` is precisely this cycle's growth phase, with no
@@ -425,11 +431,27 @@ cannot be operator inputs — **and recompute BOTH pace-coupled constants: the s
 slope constant wrong biases the decision; getting the freshness window wrong can latch a drug
 pump open on a dead sensor.
 
+## What the example now tracks — the drug concentration
+
+Every serviced cycle, the workflow runs the algorithm §1 concentration recursion **inside the
+run**. Each tube's concentration is a `compute` binding `c_t`, seeded to 0 before the cycle loop
+and updated on whichever arm fired:
+
+```
+drug   → compute c_1 = c_1 * V/(V+dV) + drug_stock_x_mic * dV/(V+dV)
+medium → compute c_1 = c_1 * V/(V+dV)
+```
+
+`V` (the working volume held by the waste needle) is itself a named `compute` constant; `dV` is
+`dose_ml`. The value is `record`ed into a `c_series_t` stream each cycle, so the characteristic
+**drug-concentration sawtooth is a first-class chartable stream** — no longer reconstructed
+offline from the run log. The workflow now *knows the dose it is administering*, which is what
+any dose-ramp or "stop when c exceeds X" controller needs. (See limitations #1 and #3, both
+shipped.) The concentration update sits inside the freshness guard with everything else, so a
+dead sensor freezes `c_t` rather than latching it toward the stock.
+
 ## What the example deliberately does not do
 
-- **It does not track the drug concentration.** The engine has no accumulator variable, so the
-  concentration recursion of algorithm §1 cannot run inside the workflow. It does not need to:
-  every injection is in the run log, so `c_k` is reconstructed offline. Nothing is faked.
 - **The three tube-service subtrees are near-copies.** Groups exist but are not parametrized,
   so a single reusable `service(tube)` macro is not yet expressible.
 - **There is no Stock A → Stock B escalation.** It needs a second drug line, and the

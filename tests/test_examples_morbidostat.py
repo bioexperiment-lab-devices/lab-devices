@@ -244,7 +244,7 @@ def test_example_declares_its_fault_tolerance(name: str) -> None:
     assert [b["measure"]["verb"] for b in blanks] == ["measure_blank"] * 3
     assert all("on_error" not in b for b in blanks), "a failed blank must stop the run"
 
-    ratchet = setup[10]["loop"]
+    ratchet = setup[14]["loop"]  # after the four compute seeds (V, c_1, c_2, c_3)
     reads = ratchet["body"][0]["loop"]["body"][0]["parallel"]["children"]
     assert [r["on_error"] for r in reads] == ["continue"] * 3
     for i, service in enumerate(ratchet["body"][1:4], start=1):
@@ -353,6 +353,22 @@ async def test_morbidostat_closes_the_loop(tmp_path: Path) -> None:
     for t, culture in ((1, t1), (3, t3)):
         assert 0.5 * IC50 < culture.drug < 2.0 * IC50, f"tube {t}: drug {culture.drug:.3f}"
 
+    # --- the controller now KNOWS its own drug concentration (limitations #1) and RECORDS it
+    # (limitations #3). The workflow's `compute c_t` walks the §1 recursion on the same V, dV,
+    # and stock the simulator does, so the recorded c_series must track the simulated drug to
+    # floating-point — the sawtooth is no longer reconstructed offline, it is a first-class
+    # stream. r_series carries the named growth rate the decision now reads. ---
+    for t, culture in ((1, t1), (3, t3)):
+        c_series = report.state.streams[f"c_series_{t}"].samples
+        r_series = report.state.streams[f"r_series_{t}"].samples
+        assert len(c_series) == 120 and len(r_series) == 120, f"tube {t}: a serviced cycle records"
+        assert abs(c_series[-1].value - culture.drug) < 1e-9, (
+            f"tube {t}: recorded c {c_series[-1].value:.6f} != simulated drug {culture.drug:.6f}"
+        )
+    # Tube 2 (NOTHING arm on its early cycles) records only the cycles it was serviced on.
+    assert 0 < len(report.state.streams["c_series_2"].samples) < 120
+    assert abs(report.state.streams["c_series_2"].samples[-1].value - t2.drug) < 1e-9
+
     # --- valves were left parked closed at the end of every cycle ---
     assert lab.valve_pos == {"valve_1": 0, "valve_2": 0, "valve_3": 0}
 
@@ -400,7 +416,7 @@ async def test_morbidostat_survives_a_transient_device_fault(tmp_path: Path) -> 
     assert len(report.state.streams["od_2"]) == 25 * 10
 
     # --- and the run says so: a run that dropped 10 samples must not look like a clean one ---
-    od_3_read = "blocks[0].children[10].body[0].body[0].children[2]"
+    od_3_read = "blocks[0].children[14].body[0].body[0].children[2]"
     assert [t.block_id for t in report.tolerated_errors] == [od_3_read] * 10
     assert all(FLAKE in t.error for t in report.tolerated_errors)
 
@@ -471,5 +487,5 @@ async def test_a_dead_sensor_does_not_latch_an_open_loop_injector(tmp_path: Path
         assert 0.2 <= rate <= 0.6, f"tube {t}: growth rate {rate:.3f} not pinned near r_dil"
 
     # --- the abandonment is loud, not silent: every lost read is in the report ---
-    od_3_read = "blocks[0].children[10].body[0].body[0].children[2]"
+    od_3_read = "blocks[0].children[14].body[0].body[0].children[2]"
     assert [t.block_id for t in report.tolerated_errors] == [od_3_read] * (119 * 10)
