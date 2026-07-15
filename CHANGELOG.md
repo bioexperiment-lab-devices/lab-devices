@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.5.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.4.0...v0.5.0) (2026-07-15)
+
+
+### Features
+
+* **examples:** morbidostat computes drug concentration and growth rate ([4c7a3dd](https://github.com/bioexperiment-lab-devices/lab-devices/commit/4c7a3dd416b6147f92aa87db4f3074fcbc1ce827))
+* **experiment:** compute and record block AST + serialization ([59253e5](https://github.com/bioexperiment-lab-devices/lab-devices/commit/59253e500ea4f5b44a571f0484e98c80c59f2f25))
+* **experiment:** computed bindings and computed streams (compute + record) ([9867809](https://github.com/bioexperiment-lab-devices/lab-devices/commit/9867809be4e35267a7c7d1d06045e75e7ed1aa67))
+* **experiment:** execute compute and record blocks ([ad460b8](https://github.com/bioexperiment-lab-devices/lab-devices/commit/ad460b8f390f423a0704c6be019ea9e361481004))
+* **experiment:** validate compute and record (paths, types, disjointness) ([aff9088](https://github.com/bioexperiment-lab-devices/lab-devices/commit/aff90884060a5c3f3fa4cab47f3b78bab85cff13))
+* **studio:** event-log arms for binding_computed and sample_recorded ([5f6dfe6](https://github.com/bioexperiment-lab-devices/lab-devices/commit/5f6dfe65a0b61d05bb2fbb6061564da0d098560c))
+
+
+### Documentation
+
+* computed bindings and computed streams shipped ([#1](https://github.com/bioexperiment-lab-devices/lab-devices/issues/1), [#3](https://github.com/bioexperiment-lab-devices/lab-devices/issues/3)) ([6a013a6](https://github.com/bioexperiment-lab-devices/lab-devices/commit/6a013a641db022311abe496addb84c30f6fac733))
+* correct mypy gate scope in plan (src/lab_devices, not tests) ([7ffa0d4](https://github.com/bioexperiment-lab-devices/lab-devices/commit/7ffa0d4c6ae29709d0864c61b074af8c4841a029))
+* design spec for computed bindings and computed streams ([#1](https://github.com/bioexperiment-lab-devices/lab-devices/issues/1), [#3](https://github.com/bioexperiment-lab-devices/lab-devices/issues/3)) ([917f965](https://github.com/bioexperiment-lab-devices/lab-devices/commit/917f96507388de40ed1472c05934db9b99a37f0f))
+* TDD implementation plan for computed bindings and streams ([#1](https://github.com/bioexperiment-lab-devices/lab-devices/issues/1), [#3](https://github.com/bioexperiment-lab-devices/lab-devices/issues/3)) ([d9fd286](https://github.com/bioexperiment-lab-devices/lab-devices/commit/d9fd286a796e9d5aff6060ece4cf691dbe67e141))
+
 ## [0.4.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.3.0...v0.4.0) (2026-07-14)
 
 
