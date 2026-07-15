@@ -17,6 +17,7 @@ from lab_devices.experiment.errors import (
     ToleratedError,
 )
 from lab_devices.experiment.execute import execute_blocks
+from lab_devices.experiment.expand import expand_workflow
 from lab_devices.experiment.finalize import run_finalizer
 from lab_devices.experiment.persist import SinkSet
 from lab_devices.experiment.runlog import RunLogSink
@@ -69,6 +70,7 @@ class ExperimentRun:
         self, client: LabClient, workflow: Workflow, options: RunOptions | None = None
     ) -> None:
         validate(workflow)  # the runtime's safety model IS the static proof (D6)
+        workflow = expand_workflow(workflow)  # run the concrete tree (design 2026-07-15 §4.4)
         assign_block_ids(workflow)
         self._workflow = workflow
         self._options = options or RunOptions()
