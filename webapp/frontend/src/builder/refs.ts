@@ -2,14 +2,26 @@
  * renaming rewrites referencing blocks; deleting is refused while references exist. */
 import { childSlots, replaceSlot, visitNodes, type BlockNode } from './tree'
 
+/** Preserves array identity when `fn` touches nothing in `tree` (recursively): a no-op rename
+ * must return the SAME array reference it was given, not a structurally-equal new one.
+ * `Array.prototype.map` always allocates, so a naive rewrite makes every rename "change" `tree`
+ * even when it has zero matching refs — and `followUndoScope` (docStore.ts) relies on `tree`'s
+ * reference staying stable across a no-op to find which scope an undo/redo actually touched. */
 function mapNodes(tree: BlockNode[], fn: (node: BlockNode) => BlockNode): BlockNode[] {
-  return tree.map((node) => {
+  let changed = false
+  const next = tree.map((node) => {
     let out = fn(node)
+    if (out !== node) changed = true
     for (const [slot, children] of childSlots(out)) {
-      out = replaceSlot(out, slot, mapNodes(children, fn))
+      const mapped = mapNodes(children, fn)
+      if (mapped !== children) {
+        out = replaceSlot(out, slot, mapped)
+        changed = true
+      }
     }
     return out
   })
+  return changed ? next : tree
 }
 
 export function countRoleRefs(tree: BlockNode[], role: string): number {

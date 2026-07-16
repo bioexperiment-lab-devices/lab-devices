@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { docToTree } from '../builder/convert'
-import { newPaletteNode, type GroupRefNode } from '../builder/tree'
+import {
+  newPaletteNode,
+  type CommandNode,
+  type GroupRefNode,
+  type MeasureNode,
+} from '../builder/tree'
 import type { ExperimentDocJson } from '../types/doc'
 import {
   loadDoc,
@@ -20,6 +25,16 @@ const store = () => useDocStore.getState()
 
 const groupRef = (uid: string, name: string): GroupRefNode => ({
   uid, kind: 'group_ref', name, args: {}, label: null, gapAfter: null, startOffset: null,
+})
+
+const cmd = (uid: string, device: string): CommandNode => ({
+  uid, kind: 'command', device, verb: 'stop', params: {},
+  label: null, gapAfter: null, startOffset: null,
+})
+
+const meas = (uid: string, device: string, into: string): MeasureNode => ({
+  uid, kind: 'measure', device, verb: 'measure', into, params: {},
+  label: null, gapAfter: null, startOffset: null,
 })
 
 beforeEach(() => {
@@ -383,6 +398,104 @@ describe('docStore', () => {
       store().setScope('svc')
       expect(store().removeGroup('svc')).toBeNull()
       expect(store().scope).toBeNull()
+    })
+
+    // Task 9 review, Finding 1: removeRole/renameRole/removeStream/renameStream counted and
+    // rewrote refs against `tree` only, never `groups` — the exact bug class Task 6 just
+    // closed for `groups` itself, one namespace over. A role/stream used exclusively inside a
+    // group body (e.g. morbidostat.json's `drug_pump`, cited only from `groups.service.body`)
+    // could be deleted with zero warning, or renamed while the group body kept citing the old,
+    // now-nonexistent name — and Save never gates on validation, so that silently persisted.
+    describe('role/stream ops must span group bodies, not just the main tree (Finding 1)', () => {
+      it('refuses to delete a role referenced only from a group body', () => {
+        store().addRole('drug_pump', 'pump')
+        store().addGroup('service')
+        store().setScope('service')
+        store().insertBlock(cmd('c1', 'drug_pump'), { parentUid: null, slot: 'blocks', index: 0 })
+        store().setScope(null)
+        expect(store().tree).toEqual([]) // the only reference lives inside the group body
+        expect(store().removeRole('drug_pump')).toMatch(/1 block/)
+        expect(store().roles).toHaveProperty('drug_pump')
+      })
+
+      it('renaming a role rewrites a reference that lives only inside a group body', () => {
+        store().addRole('drug_pump', 'pump')
+        store().addGroup('service')
+        store().setScope('service')
+        store().insertBlock(cmd('c1', 'drug_pump'), { parentUid: null, slot: 'blocks', index: 0 })
+        store().setScope(null)
+        expect(store().renameRole('drug_pump', 'drug_pump_v2')).toBeNull()
+        expect(store().roles).toHaveProperty('drug_pump_v2')
+        expect(store().roles).not.toHaveProperty('drug_pump')
+        expect((store().groups.service.body[0] as CommandNode).device).toBe('drug_pump_v2')
+      })
+
+      it('refuses to delete a stream referenced only from a group body (synthetic — the reviewer ' +
+        'had no live repro on morbidostat.json specifically, but the code path is identical)', () => {
+        store().addStream('od', 'AU')
+        store().addGroup('service')
+        store().setScope('service')
+        store().insertBlock(meas('m1', 'od_meter', 'od'), { parentUid: null, slot: 'blocks', index: 0 })
+        store().setScope(null)
+        expect(store().tree).toEqual([])
+        expect(store().removeStream('od')).toMatch(/1 block/)
+        expect(store().streams).toHaveProperty('od')
+      })
+
+      it('renaming a stream rewrites a reference that lives only inside a group body', () => {
+        store().addStream('od', 'AU')
+        store().addGroup('service')
+        store().setScope('service')
+        store().insertBlock(meas('m1', 'od_meter', 'od'), { parentUid: null, slot: 'blocks', index: 0 })
+        store().setScope(null)
+        expect(store().renameStream('od', 'od600')).toBeNull()
+        expect((store().groups.service.body[0] as MeasureNode).into).toBe('od600')
+      })
+    })
+
+    // Task 9 review, Finding 2: mapNodes (refs.ts) used Array.prototype.map unconditionally,
+    // which always allocates — so `renameGroupRefs(s.tree, ...)` changed `tree`'s identity on
+    // EVERY renameGroup call, even one with zero refs in the main tree. followUndoScope checks
+    // `before.tree !== after.tree` FIRST, so that spurious identity change always won, forcing
+    // scope to `null` and never reaching the per-group diff — even when the reverted edit lived
+    // entirely inside a group body. Reproduced here with the main tree empty throughout.
+    it('undo follows an edit that lives only inside a group body, not the empty main tree ' +
+      'renameGroup also happens to touch (Finding 2)', () => {
+      store().addGroup('outer')
+      store().setScope('outer')
+      store().insertBlock(groupRef('r1', 'svc'), { parentUid: null, slot: 'blocks', index: 0 })
+      store().setScope(null) // main tree is empty and stays empty throughout
+      expect(store().tree).toEqual([])
+
+      expect(store().renameGroup('svc', 'ctrl')).toBeNull()
+      expect((store().groups.outer.body[0] as GroupRefNode).name).toBe('ctrl')
+      expect(store().scope).toBeNull() // 'svc' wasn't the active scope, so nothing to follow yet
+
+      undo()
+      expect((store().groups.outer.body[0] as GroupRefNode).name).toBe('svc') // reverted
+      expect(store().scope).toBe('outer') // and the store followed the undo there to show it
+    })
+
+    // Task 9 review, Finding 3 (test hygiene): nothing pinned `groups` being part of the
+    // dirty-check hash — mutation-tested by removing `groups: content.groups,` from
+    // `snapshotOf` and confirming the full suite stayed green without this test.
+    it('the dirty-check covers groups — editing inside a group scope must not read clean', () => {
+      loadDoc(
+        docToTree({
+          doc_version: 1, name: 'macro', description: null, roles: {},
+          workflow: {
+            schema_version: 1,
+            streams: {},
+            groups: { service: { params: [], body: [] } },
+            blocks: [],
+          },
+        }),
+        'id-1',
+      )
+      expect(selectDirty(store())).toBe(false)
+      store().setScope('service')
+      store().insertBlock(newPaletteNode('wait'), { parentUid: null, slot: 'blocks', index: 0 })
+      expect(selectDirty(store())).toBe(true)
     })
   })
 })

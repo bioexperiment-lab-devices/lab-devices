@@ -47,9 +47,11 @@ export interface DocContent {
   // save would silently erase a document's authorship and its entire scientific description.
   metadata?: WorkflowJson['metadata']
   // Reusable group bodies invoked via group_ref (design §2.2/§5). Optional, like persistence/
-  // defaults above: the builder has no authoring UI or store scope for groups yet (that lands
-  // in a later W9 task), so a DocContent built directly by a caller that predates this field
-  // (docStore.ts's emptyContent/selectContent) simply omits it. docToTree always populates it.
+  // defaults above, for the same structural reason: docStore.ts's store now has a full
+  // authoring API for groups (addGroup/renameGroup/removeGroup/setGroupParams/setScope) and
+  // treats `groups` as a required field there, like `tree` — this type just stays permissive
+  // for any DocContent built directly by a caller that predates this field. docToTree always
+  // populates it.
   groups?: Record<string, { params: string[]; body: BlockNode[] }>
 }
 

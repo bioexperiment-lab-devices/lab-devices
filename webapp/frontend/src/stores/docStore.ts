@@ -148,6 +148,24 @@ const renameKey = <V>(rec: Record<string, V>, from: string, to: string): Record<
 const removeKey = <V>(rec: Record<string, V>, key: string): Record<string, V> =>
   Object.fromEntries(Object.entries(rec).filter(([k]) => k !== key))
 
+/** Applies one of the renameXRefs helpers (refs.ts) to every group's body — groups are real,
+ * editable containers of command/measure/record blocks (design §5.2), so a role/stream/group
+ * rename must reach references inside them, exactly as it already reaches the main tree.
+ * `rename` preserves array identity when a body has no matching ref (refs.ts's mapNodes), so
+ * this keeps that property one level up: a group untouched by the rename gets back the SAME
+ * object, not a structurally-equal new one — followUndoScope (below) depends on that identity
+ * staying meaningful. */
+const renameRefsInGroups = (
+  groups: Record<string, { params: string[]; body: BlockNode[] }>,
+  rename: (body: BlockNode[]) => BlockNode[],
+): Record<string, { params: string[]; body: BlockNode[] }> =>
+  Object.fromEntries(
+    Object.entries(groups).map(([name, g]) => {
+      const body = rename(g.body)
+      return [name, body === g.body ? g : { ...g, body }]
+    }),
+  )
+
 /** The Palette/Inspector/drag-drop operate on "the current tree" (design §5.2) — a selector
  * over whichever list `scope` names, not a fixed field. These two helpers are the single
  * place that resolves it, so the five block ops below need not each re-derive the scope
@@ -222,6 +240,11 @@ export const useDocStore = create<EditorState>()(
         return null
       },
 
+      // A role can be referenced from inside a group body, not just the main tree (a group
+      // is a real, editable container of command/measure/record blocks, exactly like the
+      // main tree) — so rename must cascade into every group body, the same way renameGroup
+      // already cascades group_refs there. Leaving groups un-cascaded would let a rename
+      // orphan a role reference that lives only inside a group (Task 9 review, Finding 1).
       renameRole: (from, to) => {
         if (from === to) return null
         if (!ROLE_NAME_RE.test(to)) return `role name must match [a-z][a-z0-9_]*`
@@ -229,12 +252,19 @@ export const useDocStore = create<EditorState>()(
         set((s) => ({
           roles: renameKey(s.roles, from, to),
           tree: renameRoleRefs(s.tree, from, to),
+          groups: renameRefsInGroups(s.groups, (body) => renameRoleRefs(body, from, to)),
         }))
         return null
       },
 
+      // Counting only the main tree let a role used exclusively inside a group body (e.g. a
+      // `command.device` in `groups.service.body`) be deleted with zero warning — Save never
+      // gates on validation (Toolbar.tsx), so that silently persisted a doc whose group body
+      // cited a role that no longer existed in `roles` (Task 9 review, Finding 1).
       removeRole: (name) => {
-        const refs = countRoleRefs(get().tree, name)
+        const { tree, groups } = get()
+        let refs = countRoleRefs(tree, name)
+        for (const g of Object.values(groups)) refs += countRoleRefs(g.body, name)
         if (refs > 0) return `role '${name}' is used by ${refs} block${refs === 1 ? '' : 's'}`
         set((s) => ({ roles: removeKey(s.roles, name) }))
         return null
@@ -247,6 +277,9 @@ export const useDocStore = create<EditorState>()(
         return null
       },
 
+      // Same reasoning as renameRole above: a measure/record block writing into this stream
+      // can live inside a group body, not just the main tree, so the rename must cascade there
+      // too (Task 9 review, Finding 1 — code-identical to the role half).
       renameStream: (from, to) => {
         if (from === to) return null
         if (!STREAM_NAME_RE.test(to)) return `stream name must be an identifier`
@@ -254,12 +287,17 @@ export const useDocStore = create<EditorState>()(
         set((s) => ({
           streams: renameKey(s.streams, from, to),
           tree: renameStreamRefs(s.tree, from, to),
+          groups: renameRefsInGroups(s.groups, (body) => renameStreamRefs(body, from, to)),
         }))
         return null
       },
 
+      // Same reasoning as removeRole above: counting only the main tree let a stream used
+      // exclusively inside a group body be deleted with zero warning (Task 9 review, Finding 1).
       removeStream: (name) => {
-        const refs = countStreamRefs(get().tree, name)
+        const { tree, groups } = get()
+        let refs = countStreamRefs(tree, name)
+        for (const g of Object.values(groups)) refs += countStreamRefs(g.body, name)
         if (refs > 0) return `stream '${name}' is used by ${refs} block${refs === 1 ? '' : 's'}`
         set((s) => ({ streams: removeKey(s.streams, name) }))
         return null
@@ -292,11 +330,8 @@ export const useDocStore = create<EditorState>()(
           // the exact "unknown group" dangling reference this task's START HERE bug produced
           // on save, just triggered here instead.
           const renamed = renameKey(s.groups, from, to)
-          const groups = Object.fromEntries(
-            Object.entries(renamed).map(([n, g]) => [n, { ...g, body: renameGroupRefs(g.body, from, to) }]),
-          )
           return {
-            groups,
+            groups: renameRefsInGroups(renamed, (body) => renameGroupRefs(body, from, to)),
             tree: renameGroupRefs(s.tree, from, to),
             // Follow the rename if it targets the group currently being viewed — otherwise
             // scope would keep naming a key that no longer exists in `groups`, and the next
