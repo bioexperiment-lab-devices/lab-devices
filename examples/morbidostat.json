@@ -93,126 +93,162 @@
         ],
         "body": [
           {
+            "compute": {
+              "into": "od_high_{tube}",
+              "value": "count(od_{tube}, last=11min) > 0 and mean(od_{tube}, last=11min) > 2.0"
+            },
+            "label": "tube {tube}: OD stuck high this cycle (contamination leg 1/2, freshness-guarded)"
+          },
+          {
+            "compute": {
+              "into": "contaminated_{tube}",
+              "value": "contaminated_{tube} or (od_high_{tube} and c_{tube} >= drug_stock_x_mic * 0.99)"
+            },
+            "label": "tube {tube}: contamination latch - drug maxed AND OD still high -> stays contaminated forever"
+          },
+          {
+            "alarm": {
+              "if": "contaminated_{tube} and not alarmed_{tube}",
+              "message": "tube {tube} contaminated - dropped from service"
+            },
+            "label": "tube {tube}: fire once, on the contamination edge"
+          },
+          {
+            "compute": {
+              "into": "alarmed_{tube}",
+              "value": "alarmed_{tube} or contaminated_{tube}"
+            },
+            "label": "tube {tube}: latch the alarm so it never refires"
+          },
+          {
             "branch": {
-              "if": "count(od_{tube}, last=11min) > 0 and last(od_{tube}) >= od_min",
+              "if": "not contaminated_{tube}",
               "then": [
                 {
-                  "compute": {
-                    "into": "r_{tube}",
-                    "value": "24 * (mean(od_{tube}, last=5) - mean(od_{tube}, last=10)) / last(od_{tube})"
-                  },
-                  "label": "tube {tube}: specific growth rate (1/h)"
-                },
-                {
-                  "record": {
-                    "into": "r_series_{tube}",
-                    "value": "r_{tube}"
-                  },
-                  "label": "tube {tube}: chart the growth rate"
-                },
-                {
                   "branch": {
-                    "if": "last(od_{tube}) > od_thr and r_{tube} > r_dil",
+                    "if": "count(od_{tube}, last=11min) > 0 and last(od_{tube}) >= od_min",
                     "then": [
                       {
+                        "compute": {
+                          "into": "r_{tube}",
+                          "value": "24 * (mean(od_{tube}, last=5) - mean(od_{tube}, last=10)) / last(od_{tube})"
+                        },
+                        "label": "tube {tube}: specific growth rate (1/h)"
+                      },
+                      {
+                        "record": {
+                          "into": "r_series_{tube}",
+                          "value": "r_{tube}"
+                        },
+                        "label": "tube {tube}: chart the growth rate"
+                      },
+                      {
+                        "branch": {
+                          "if": "last(od_{tube}) > od_thr and r_{tube} > r_dil",
+                          "then": [
+                            {
+                              "command": {
+                                "device": "drug_valve",
+                                "verb": "set_position",
+                                "params": {
+                                  "position": "{tube}",
+                                  "rotation": "direct"
+                                }
+                              },
+                              "label": "drug line -> tube {tube}"
+                            },
+                            {
+                              "command": {
+                                "device": "drug_pump",
+                                "verb": "dispense",
+                                "params": {
+                                  "volume_ml": "dose_ml",
+                                  "speed_ml_min": 6.0,
+                                  "direction": "forward"
+                                }
+                              },
+                              "label": "INJECT DRUG into tube {tube}"
+                            },
+                            {
+                              "compute": {
+                                "into": "c_{tube}",
+                                "value": "c_{tube} * working_volume_ml/(working_volume_ml + dose_ml) + drug_stock_x_mic * dose_ml/(working_volume_ml + dose_ml)"
+                              },
+                              "label": "tube {tube}: drug raised concentration"
+                            }
+                          ],
+                          "else": [
+                            {
+                              "command": {
+                                "device": "medium_valve",
+                                "verb": "set_position",
+                                "params": {
+                                  "position": "{tube}",
+                                  "rotation": "direct"
+                                }
+                              },
+                              "label": "medium line -> tube {tube}"
+                            },
+                            {
+                              "command": {
+                                "device": "medium_pump",
+                                "verb": "dispense",
+                                "params": {
+                                  "volume_ml": "dose_ml",
+                                  "speed_ml_min": 6.0,
+                                  "direction": "forward"
+                                }
+                              },
+                              "label": "INJECT MEDIUM into tube {tube}"
+                            },
+                            {
+                              "compute": {
+                                "into": "c_{tube}",
+                                "value": "c_{tube} * working_volume_ml/(working_volume_ml + dose_ml)"
+                              },
+                              "label": "tube {tube}: medium diluted concentration"
+                            }
+                          ]
+                        },
+                        "label": "tube {tube}: growing above threshold -> drug, else medium"
+                      },
+                      {
                         "command": {
-                          "device": "drug_valve",
+                          "device": "waste_valve",
                           "verb": "set_position",
                           "params": {
                             "position": "{tube}",
                             "rotation": "direct"
                           }
                         },
-                        "label": "drug line -> tube {tube}"
+                        "label": "waste line -> tube {tube}"
                       },
                       {
                         "command": {
-                          "device": "drug_pump",
+                          "device": "waste_pump",
                           "verb": "dispense",
                           "params": {
-                            "volume_ml": "dose_ml",
+                            "volume_ml": "dose_ml * 1.5",
                             "speed_ml_min": 6.0,
                             "direction": "forward"
                           }
                         },
-                        "label": "INJECT DRUG into tube {tube}"
+                        "label": "restore tube {tube} to V (over-draw; needle is at the V line)"
                       },
                       {
-                        "compute": {
-                          "into": "c_{tube}",
-                          "value": "c_{tube} * working_volume_ml/(working_volume_ml + dose_ml) + drug_stock_x_mic * dose_ml/(working_volume_ml + dose_ml)"
+                        "record": {
+                          "into": "c_series_{tube}",
+                          "value": "c_{tube}"
                         },
-                        "label": "tube {tube}: drug raised concentration"
-                      }
-                    ],
-                    "else": [
-                      {
-                        "command": {
-                          "device": "medium_valve",
-                          "verb": "set_position",
-                          "params": {
-                            "position": "{tube}",
-                            "rotation": "direct"
-                          }
-                        },
-                        "label": "medium line -> tube {tube}"
-                      },
-                      {
-                        "command": {
-                          "device": "medium_pump",
-                          "verb": "dispense",
-                          "params": {
-                            "volume_ml": "dose_ml",
-                            "speed_ml_min": 6.0,
-                            "direction": "forward"
-                          }
-                        },
-                        "label": "INJECT MEDIUM into tube {tube}"
-                      },
-                      {
-                        "compute": {
-                          "into": "c_{tube}",
-                          "value": "c_{tube} * working_volume_ml/(working_volume_ml + dose_ml)"
-                        },
-                        "label": "tube {tube}: medium diluted concentration"
+                        "label": "tube {tube}: chart the drug-concentration sawtooth"
                       }
                     ]
                   },
-                  "label": "tube {tube}: growing above threshold -> drug, else medium"
-                },
-                {
-                  "command": {
-                    "device": "waste_valve",
-                    "verb": "set_position",
-                    "params": {
-                      "position": "{tube}",
-                      "rotation": "direct"
-                    }
-                  },
-                  "label": "waste line -> tube {tube}"
-                },
-                {
-                  "command": {
-                    "device": "waste_pump",
-                    "verb": "dispense",
-                    "params": {
-                      "volume_ml": "dose_ml * 1.5",
-                      "speed_ml_min": 6.0,
-                      "direction": "forward"
-                    }
-                  },
-                  "label": "restore tube {tube} to V (over-draw; needle is at the V line)"
-                },
-                {
-                  "record": {
-                    "into": "c_series_{tube}",
-                    "value": "c_{tube}"
-                  },
-                  "label": "tube {tube}: chart the drug-concentration sawtooth"
+                  "label": "tube {tube}: service (skipped entirely if this cycle produced NO reading - a dead sensor must never latch an open-loop injector - or while too dilute to read)"
                 }
               ]
             },
-            "label": "tube {tube}: service (skipped entirely if this cycle produced NO reading - a dead sensor must never latch an open-loop injector - or while too dilute to read)"
+            "label": "tube {tube}: service only while not contaminated (a contaminated tube receives no further drug or medium)"
           }
         ]
       }
@@ -452,8 +488,29 @@
                       "value": "0"
                     },
                     "label": "tube {tube}: drug concentration starts at 0 (no drug in a fresh culture)"
+                  },
+                  {
+                    "compute": {
+                      "into": "contaminated_{tube}",
+                      "value": "false"
+                    },
+                    "label": "tube {tube}: not contaminated (yet) - contamination-latch seed"
+                  },
+                  {
+                    "compute": {
+                      "into": "alarmed_{tube}",
+                      "value": "false"
+                    },
+                    "label": "tube {tube}: contamination alarm not yet fired - alarm-latch seed"
                   }
                 ]
+              }
+            },
+            {
+              "operator_input": {
+                "name": "emergency_stop",
+                "type": "bool",
+                "prompt": "Emergency stop the run?"
               }
             },
             {
@@ -461,6 +518,20 @@
                 "count": 120,
                 "pace": "12min",
                 "body": [
+                  {
+                    "abort": {
+                      "if": "emergency_stop",
+                      "message": "operator emergency stop"
+                    },
+                    "label": "whole-run abort: operator flagged emergency_stop at setup"
+                  },
+                  {
+                    "abort": {
+                      "if": "contaminated_1 and contaminated_2 and contaminated_3",
+                      "message": "all vials contaminated - nothing left to run"
+                    },
+                    "label": "whole-run abort: every tube has been dropped from service"
+                  },
                   {
                     "loop": {
                       "count": 10,

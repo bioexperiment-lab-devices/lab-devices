@@ -18,7 +18,8 @@ import httpx
 import pytest
 
 from lab_devices.client import LabClient
-from lab_devices.experiment import ExperimentRun, RunOptions
+from lab_devices.experiment import ExperimentRun, InMemoryRunLog, RunOptions
+from lab_devices.experiment.errors import AbortSignalError
 from lab_devices.experiment.expand import expand_dict
 from lab_devices.experiment.inputs import InputRequest
 from lab_devices.experiment.serialize import workflow_from_dict
@@ -51,6 +52,7 @@ ANSWERS: dict[str, BindingValue] = {
     "drug_stock_x_mic": 10.0,
     "blanks_ready": True,
     "cultures_ready": True,
+    "emergency_stop": False,
 }
 
 V_ML = 12.0  # culture volume held constant by the waste needle
@@ -141,6 +143,36 @@ class CultureLab(FakeLab):
             job.result = {"absorbance": round(max(reading, 0.0), 6), "temperature_c": 30.0}
 
 
+class ResistantCulture(Culture):
+    """A contamination organism: growth is NEVER quenched by drug (rate is always r0), the
+    physical signature of a strain the algorithm's drug cannot touch. `inject` (inherited)
+    still dilutes it on every injection - a contaminant is not immune to being diluted, only
+    to being killed - so it keeps out-growing its dilution rather than sitting still."""
+
+    def grow_to(self, now: float) -> None:
+        dt_h = max(0.0, now - self.t) / 3600.0
+        self.t = now
+        self.od *= math.exp(R0_PER_H * dt_h)
+
+
+class ContaminatedLab(CultureLab):
+    """A CultureLab whose tube 3 is contaminated with a drug-resistant organism.
+
+    Tube 3 never stops out-growing its dilution (ResistantCulture, above), so the controller's
+    OWN decision tree - unaware anything is wrong - keeps choosing DRUG every cycle exactly as
+    it would for a healthy vial fighting to stay at IC50. That walks the workflow's *believed*
+    concentration `c_3` up the `c_k = c_(k-1)*V/(V+dV) + C*dV/(V+dV)` recursion toward its fixed
+    point (drug_stock_x_mic), while tube 3's OD - genuinely growing, not latched on stale data -
+    stays far above the healthy steady-state band. Both legs of the contamination predicate
+    (`c_3 >= drug_stock_x_mic*0.99 and mean(od_3) > od_ceiling`) become true from real,
+    independently-arrived-at evidence: this is what the FakeLab CAN prove that the preprod sim
+    (which reads OD 0.0) cannot."""
+
+    def __init__(self, clock: FakeClock, start_od: dict[int, float]) -> None:
+        super().__init__(clock, start_od)
+        self.cultures[3] = ResistantCulture(start_od[3])
+
+
 FLAKE = "intensity array: record header/index mismatch (button interference?)"
 
 
@@ -188,12 +220,13 @@ class DeadSensorLab(FlakyLab):
 
 
 class Answers:
-    def __init__(self) -> None:
+    def __init__(self, overrides: dict[str, BindingValue] | None = None) -> None:
         self.asked: list[str] = []
+        self._answers = {**ANSWERS, **(overrides or {})}
 
     async def request(self, request: InputRequest) -> BindingValue:
         self.asked.append(request.name)
-        return ANSWERS[request.name]
+        return self._answers[request.name]
 
 
 def load(name: str) -> Any:
@@ -246,11 +279,20 @@ def test_example_declares_its_fault_tolerance(name: str) -> None:
     assert [b["measure"]["verb"] for b in blanks] == ["measure_blank"] * 3
     assert all("on_error" not in b for b in blanks), "a failed blank must stop the run"
 
-    ratchet = setup[12]["loop"]  # after the working-volume compute + one for_each(c_tube) seed
+    # after the working-volume compute, one for_each(c_tube/contaminated_tube/alarmed_tube)
+    # seed, and the emergency_stop operator_input
+    ratchet = setup[13]["loop"]
+    # The two whole-run aborts (operator emergency_stop; all three tubes contaminated) sit
+    # at the very top of the cycle, before anything else happens this cycle.
+    assert ratchet["body"][0]["abort"]["if"] == "emergency_stop"
+    assert (
+        ratchet["body"][1]["abort"]["if"]
+        == "contaminated_1 and contaminated_2 and contaminated_3"
+    )
     # The OD reads are now ONE for_each lane, spliced to 3 concrete reads at expand time
     # (already proven equivalent to the old 3-lane parallel by test_morbidostat_closes_the_loop,
     # which reads od_1/2/3 120*10 times each on the expanded doc).
-    reads_for_each = ratchet["body"][0]["loop"]["body"][0]["parallel"]["children"][0]["for_each"]
+    reads_for_each = ratchet["body"][2]["loop"]["body"][0]["parallel"]["children"][0]["for_each"]
     assert reads_for_each["in"] == [1, 2, 3]
     (read,) = reads_for_each["body"]
     assert read["on_error"] == "continue"
@@ -263,13 +305,23 @@ def test_example_declares_its_fault_tolerance(name: str) -> None:
     # EvaluationError. The window is what makes it a freshness guard: the whole-stream
     # form `count(od_N) > 0` latches true forever over an append-only stream, and a
     # latched guard is an open-loop drug injector (test_a_dead_sensor_does_not_latch).
-    service_call = ratchet["body"][1]["for_each"]
+    service_call = ratchet["body"][3]["for_each"]
     assert service_call["in"] == [1, 2, 3]
     (call,) = service_call["body"]
     assert call["group_ref"] == {"name": "service", "args": {"tube": "{tube}"}}
 
+    # The service group now leads with contamination bookkeeping (freshness-guarded OD-high
+    # latch, sticky `contaminated` latch, fire-once alarm, sticky `alarmed` latch) and only
+    # THEN the pre-existing freshness branch, now wrapped so a contaminated tube is dropped.
     window = FRESHNESS[name]
-    group_guard = doc["workflow"]["groups"]["service"]["body"][0]["branch"]["if"]
+    service_body = doc["workflow"]["groups"]["service"]["body"]
+    assert service_body[0]["compute"]["into"] == "od_high_{tube}"
+    assert service_body[1]["compute"]["into"] == "contaminated_{tube}"
+    assert service_body[2]["alarm"]["if"] == "contaminated_{tube} and not alarmed_{tube}"
+    assert service_body[3]["compute"]["into"] == "alarmed_{tube}"
+    drop_branch = service_body[4]["branch"]
+    assert drop_branch["if"] == "not contaminated_{tube}"
+    group_guard = drop_branch["then"][0]["branch"]["if"]
     assert group_guard.startswith(f"count(od_{{tube}}, last={window}) > 0 and ")
 
     # The thermostat setup is parallel again; retry is what makes that safe on a roster whose
@@ -338,7 +390,7 @@ async def test_morbidostat_closes_the_loop(tmp_path: Path) -> None:
     assert report.status == "completed"
     assert answers.asked == [
         "od_min", "od_thr", "r_dil", "dose_ml", "drug_stock_x_mic",
-        "blanks_ready", "cultures_ready",
+        "blanks_ready", "cultures_ready", "emergency_stop",
     ]
 
     # Every tube was read on every cycle: 120 cycles x 10 samples.
@@ -437,7 +489,7 @@ async def test_morbidostat_survives_a_transient_device_fault(tmp_path: Path) -> 
     assert len(report.state.streams["od_2"]) == 25 * 10
 
     # --- and the run says so: a run that dropped 10 samples must not look like a clean one ---
-    od_3_read = "blocks[0].children[14].body[0].body[0].children[2]"
+    od_3_read = "blocks[0].children[21].body[2].body[0].children[2]"
     assert [t.block_id for t in report.tolerated_errors] == [od_3_read] * 10
     assert all(FLAKE in t.error for t in report.tolerated_errors)
 
@@ -508,5 +560,102 @@ async def test_a_dead_sensor_does_not_latch_an_open_loop_injector(tmp_path: Path
         assert 0.2 <= rate <= 0.6, f"tube {t}: growth rate {rate:.3f} not pinned near r_dil"
 
     # --- the abandonment is loud, not silent: every lost read is in the report ---
-    od_3_read = "blocks[0].children[14].body[0].body[0].children[2]"
+    od_3_read = "blocks[0].children[21].body[2].body[0].children[2]"
     assert [t.block_id for t in report.tolerated_errors] == [od_3_read] * (119 * 10)
+
+
+async def test_operator_emergency_stop_aborts_and_finalizes(tmp_path: Path) -> None:
+    """The workflow-declared safety switch (design 2026-07-16 §2.1, task 7): the operator
+    answers `emergency_stop=true` at setup, and the whole-run `abort` at the top of the very
+    first cycle must stop the run before a single OD is read, with the finalizer still
+    sweeping the thermostats back off. This is the FakeLab half of the demonstrator; the
+    honest gap is that the preprod sim reads OD 0.0, so only the operator switch — not the
+    contamination latch below — can be proven on that hardware (task 9).
+    """
+    _, workflow = load("morbidostat.json")
+    clock = FakeClock()
+    lab = CultureLab(clock, {1: 0.05, 2: 0.05, 3: 0.05})
+    run = ExperimentRun(
+        LabClient("lab", 9000, http=_http(lab)),
+        workflow,
+        options=RunOptions(
+            clock=clock,
+            input_provider=Answers({"emergency_stop": True}),
+            output_dir=tmp_path,
+            job_poll_interval=0.05,
+            job_poll_max=0.2,
+            log_sink=InMemoryRunLog(),  # override the doc's disk log sink to inspect events
+        ),
+    )
+    with pytest.raises(AbortSignalError):
+        await drive(clock, run.execute(), max_steps=1_000_000)
+
+    report = run.report
+    assert report is not None
+    assert report.status == "aborted"
+    kinds = [e.kind for e in report.log.events]
+    assert "abort_raised" in kinds
+    assert "finalize_finished" in kinds
+
+    # the abort fires before the very first OD read: nothing was ever serviced. Setup's
+    # one-shot blanks DID run (they precede the loop entirely); od_N never got a chance to.
+    assert all(len(c.injections) == 0 for c in lab.cultures.values())
+    assert all(len(report.state.streams[f"od_{t}"]) == 0 for t in (1, 2, 3))
+    assert all(len(report.state.streams[f"blank_{t}"]) == 1 for t in (1, 2, 3))
+
+    # the finalizer still reached safe state: thermostats set up, then swept back off
+    thermostats = [c[2] for c in lab.calls if c[1] == "set_thermostat"]
+    assert {"enabled": True, "target_c": 30.0} in thermostats
+    assert {"enabled": False} in thermostats
+
+
+async def test_contaminated_tube_is_alarmed_and_dropped_from_service(tmp_path: Path) -> None:
+    """The contamination story task 7 exists for: a drug-resistant contaminant in tube 3
+    keeps out-growing its dilution no matter how much drug it gets (`ResistantCulture`), so
+    the controller's OWN decision tree - unaware anything is wrong - keeps choosing DRUG,
+    walking the workflow's *believed* concentration `c_3` up to the stock ceiling while OD
+    stays far above the healthy band. Both contamination-predicate legs become true from
+    real, independently-arrived-at evidence (not a stale/latched read): the tube is alarmed
+    exactly once (fire-once idiom: alarm on the edge, then a sticky `compute` latch) and
+    dropped from service for the rest of the run, while its healthy neighbours are serviced
+    on every one of the 120 cycles, unaffected.
+    """
+    _, workflow = load("morbidostat.json")
+    clock = FakeClock()
+    lab = ContaminatedLab(clock, {1: 0.05, 2: 0.05, 3: 0.2})
+    run = ExperimentRun(
+        LabClient("lab", 9000, http=_http(lab)),
+        workflow,
+        options=RunOptions(
+            clock=clock,
+            input_provider=Answers(),
+            output_dir=tmp_path,
+            job_poll_interval=0.05,
+            job_poll_max=0.2,
+        ),
+    )
+    report = await drive(clock, run.execute(), max_steps=2_000_000)
+
+    assert report.status == "completed", "one contaminated tube must not abort the whole run"
+
+    t1, t2, t3 = (lab.cultures[t] for t in (1, 2, 3))
+
+    # --- the healthy neighbours are untouched: serviced every one of the 120 cycles ---
+    assert len(t1.injections) == 120 and len(t2.injections) == 120
+
+    # --- tube 3 is dropped from service partway through, and never dosed again ---
+    assert 0 < len(t3.injections) < 120, "tube 3 must be serviced for a while, then dropped"
+    assert set(t3.injections) == {"drug"}, "tube 3 never dipped below od_thr, so only DRUG fired"
+    assert report.state.bindings["contaminated_3"] is True
+    assert report.state.bindings["contaminated_1"] is False
+    assert report.state.bindings["contaminated_2"] is False
+
+    # --- one c_series sample per serviced cycle: recording stops exactly when service does ---
+    assert len(report.state.streams["c_series_3"].samples) == len(t3.injections)
+
+    # --- fired once (latched), and only for the contaminated tube ---
+    msgs = [a.message for a in report.alarms]
+    tube_3_msgs = [m for m in msgs if "tube 3" in m]
+    assert len(tube_3_msgs) == 1, "the alarm must latch, not refire every remaining cycle"
+    assert "contaminated" in tube_3_msgs[0] and "dropped from service" in tube_3_msgs[0]
+    assert not any("tube 1" in m or "tube 2" in m for m in msgs), "healthy tubes never alarm"
