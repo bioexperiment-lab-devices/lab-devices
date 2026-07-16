@@ -68,16 +68,27 @@ verified — is already exactly the Pydantic field order of `ExperimentDoc` (`do
 integers: `"speed_ml_min": 6.0` comes back out as `"speed_ml_min": 6` (11 such literals in
 `morbidostat.json`). This is JavaScript's number model, not a defect we can engineer away —
 `JSON.parse` collapses `6.0` and `6` onto the same double, and *any* client-side export inherits it.
-It is semantically nil: JSON has one number type, the engine's Pydantic coerces `6` to `6.0` for a
-float param, and `validate_doc` returns **0 diagnostics on both forms** (verified against the real
-`morbidostat.json`). So an export re-imports, validates, and runs identically — but committing one
-back over its source example would show a numeric-formatting diff. The **stored** round-trip is
-byte-exact (§8, verified: zero repr-level differences through Pydantic); this is a property of the
-browser, not of the store.
+It is semantically nil: JSON has one number type, and the engine's `"number"` kind
+(`registry.py:64`'s `ParamSpec("speed_ml_min", "number")`) accepts `int | float` and passes it
+through untouched — `_check_kind` (`execute.py:144`) falls straight to `return value` for
+`"number"`, with no coercion anywhere. Nothing downstream distinguishes `6` from `6.0` either: the
+expression language exposes only `+ - * /`, no `//` or `%`, so int/float duality is inert wherever a
+workflow can observe it, and `validate_doc` returns **0 diagnostics on both forms** (verified
+against the real `morbidostat.json`). So an export re-imports, validates, and runs identically —
+but committing one back over its source example would show a numeric-formatting diff. The
+**stored** round-trip is byte-exact (§8, verified: zero repr-level differences through Pydantic);
+this is a property of the browser, not of the store.
 
 **No envelope.** No `exported_at`, no studio version, no id, no timestamps. `id`/`created_at`/
 `updated_at` are row state grafted on at serialization (`_summary()`, `docs_store.py:54`) — they
 describe a database row, not an experiment, and re-importing must mint fresh ones.
+
+**Unknown top-level keys are silently dropped, not preserved.** `ExperimentDoc` has no
+`extra="forbid"`, so Pydantic's default `extra="ignore"` discards any top-level key it doesn't
+know on `create`/`replace`/import alike — this is pre-existing behavior, not new here. `workflow`
+is the exception: it is typed `dict[str, Any]`, opaque to Pydantic, and survives verbatim — which
+is where §5.2's "a doc from a newer engine" forward-compatibility actually lives. A future reader
+should not assume the top level is extensible the same way.
 
 **No device mappings.** Deliberate, and load-bearing. Role→device mapping lives in the `mappings`
 table keyed `experiment+lab`, and is meaningless on another rig with different device ids. The doc
