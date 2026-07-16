@@ -389,4 +389,18 @@ describe('repetition blocks', () => {
     const out = treeToDoc(docToTree(doc({ blocks: [{ wait: { duration: '1s' } }] })))
     expect('groups' in out.workflow).toBe(false)
   })
+
+  it('opens examples/morbidostat.json and round-trips it byte-for-byte', () => {
+    // The W9 acceptance (spec §8): the flagship uses groups + for_each and has never been
+    // openable in the builder. Byte comparison, not toEqual — deep-equal is blind to key order
+    // and to 6.0 vs 6 (the W7 trap).
+    const input = JSON.parse(
+      readFileSync(new URL('../../../../examples/morbidostat.json', import.meta.url), 'utf8'),
+    ) as ExperimentDocJson
+    const content = docToTree(input)
+    // DocContent.groups is typed optional for callers that predate the field, but docToTree
+    // always populates it (convert.ts:53) — `?? {}` satisfies the type without a `!` assertion.
+    expect(Object.keys(content.groups ?? {})).toContain('service')
+    expect(JSON.stringify(treeToDoc(content))).toBe(JSON.stringify(input))
+  })
 })

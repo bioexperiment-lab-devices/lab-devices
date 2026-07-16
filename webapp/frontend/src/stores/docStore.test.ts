@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { docToTree } from '../builder/convert'
 import {
@@ -309,6 +310,21 @@ describe('docStore', () => {
           ],
         },
       }
+      loadDoc(docToTree(input), 'id-1')
+      expect(JSON.stringify(selectDoc(useDocStore.getState()))).toBe(JSON.stringify(input))
+    })
+
+    it('round-trips examples/morbidostat.json through the store (what Save actually calls) ' +
+      '— the W9 acceptance (spec §8): the flagship uses groups + for_each and has never been ' +
+      'openable in the builder. loadDoc is a module-level export, not a store method; a pure ' +
+      'docToTree/treeToDoc round-trip (convert.test.ts) proves nothing about what Save does, ' +
+      'because Save goes through this path and Task 4\'s pure-function check passed byte-' +
+      'perfectly while this path silently deleted groups.service.', () => {
+      const input = JSON.parse(
+        readFileSync(new URL('../../../../examples/morbidostat.json', import.meta.url), 'utf8'),
+      ) as ExperimentDocJson
+      // loadDoc is a module-level export, not a store method — store().loadDoc(...) does not
+      // exist and would not compile.
       loadDoc(docToTree(input), 'id-1')
       expect(JSON.stringify(selectDoc(useDocStore.getState()))).toBe(JSON.stringify(input))
     })

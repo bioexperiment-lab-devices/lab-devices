@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
+EXAMPLES = Path(__file__).resolve().parents[3] / "examples"
 
 
 def load_fixture(name: str) -> dict[str, Any]:
@@ -22,6 +23,21 @@ async def test_valid_doc_is_clean(client: httpx.AsyncClient) -> None:
 
 async def test_valid_control_blocks_doc_is_clean(client: httpx.AsyncClient) -> None:
     resp = await client.post("/api/validate", json=load_fixture("valid-control-blocks.json"))
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "diagnostics": []}
+
+
+async def test_morbidostat_example_is_clean(client: httpx.AsyncClient) -> None:
+    """W9 acceptance (spec §8): the flagship example uses `groups` AND `for_each` and must
+    validate with zero diagnostics through the real backend. Pins the source map's
+    remap/dedup behaviour (one diagnostic per authored block, not one per for_each/group_ref
+    expansion copy) against the real flagship, not just synthetic fixtures.
+
+    Uses the real file, not a fixture copy — so this also pins that examples/morbidostat.json
+    stays valid as the engine/backend evolve.
+    """
+    doc = json.loads((EXAMPLES / "morbidostat.json").read_text())
+    resp = await client.post("/api/validate", json=doc)
     assert resp.status_code == 200
     assert resp.json() == {"ok": True, "diagnostics": []}
 
