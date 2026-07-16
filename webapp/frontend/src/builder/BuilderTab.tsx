@@ -32,12 +32,19 @@ const STRUCTURE_TITLES: Record<string, string> = {
   record: 'Record',
   abort: 'Abort',
   alarm: 'Alarm',
+  for_each: 'For each',
+  group_ref: 'Group ref',
 }
 
 function dragLabel(payload: DragPayload): string {
   if (payload.source === 'palette-structure') return STRUCTURE_TITLES[payload.kind] ?? payload.kind
   if (payload.source === 'palette-verb') return `${payload.role} · ${payload.verb}`
-  const node = findNode(useDocStore.getState().tree, payload.uid)
+  // A canvas drag can originate from a group's body, not just the main tree (design §5.2's
+  // scope switcher) — look the dragged uid up in whichever list `scope` currently names, or
+  // the overlay silently falls back to the generic 'block' label for every in-group drag.
+  const { scope, tree, groups } = useDocStore.getState()
+  const activeTree = scope === null ? tree : (groups[scope]?.body ?? [])
+  const node = findNode(activeTree, payload.uid)
   return node ? blockSummary(node) : 'block'
 }
 

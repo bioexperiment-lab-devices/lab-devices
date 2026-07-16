@@ -22,6 +22,8 @@ import {
   type BranchNode,
   type CommandNode,
   type ComputeNode,
+  type ForEachNode,
+  type GroupRefNode,
   type InputType,
   type LoopNode,
   type MeasureNode,
@@ -43,16 +45,69 @@ const KIND_TITLES: Record<BlockNode['kind'], string> = {
   record: 'Record',
   abort: 'Abort',
   alarm: 'Alarm',
+  for_each: 'For each',
+  group_ref: 'Group ref',
+}
+
+/** "The current tree" is a selector over `scope`, not a fixed field (design §5.2) — a
+ * selected uid can live in a group's body, not just the main tree, once the scope switcher
+ * (Canvas.tsx) has a group active. Mirrors Canvas's identical read and docStore's internal
+ * `activeList` (not exported; store ops resolve it themselves for writes). */
+function useActiveTree(): BlockNode[] {
+  const scope = useDocStore((s) => s.scope)
+  const tree = useDocStore((s) => s.tree)
+  const groups = useDocStore((s) => s.groups)
+  return scope === null ? tree : (groups[scope]?.body ?? [])
 }
 
 export function Inspector() {
   const selectedUid = useDocStore((s) => s.selectedUid)
-  const tree = useDocStore((s) => s.tree)
-  const node = selectedUid ? findNode(tree, selectedUid) : null
+  const scope = useDocStore((s) => s.scope)
+  const activeTree = useActiveTree()
+  const node = selectedUid ? findNode(activeTree, selectedUid) : null
   return (
     <aside className="w-80 shrink-0 overflow-y-auto border-l border-slate-200 bg-slate-50 p-3">
-      {node ? <BlockForm key={node.uid} node={node} /> : <DocProperties />}
+      {node ? (
+        <BlockForm key={node.uid} node={node} />
+      ) : scope === null ? (
+        <DocProperties />
+      ) : (
+        <GroupProperties key={scope} name={scope} />
+      )}
     </aside>
+  )
+}
+
+/** Shown when a group scope is active and no block is selected — the group-level analogue of
+ * DocProperties. `params` is the ONLY thing that belongs to the group itself rather than to a
+ * block inside it (design §5.2): group_ref's args are keyed by this list (expand.py:190), so
+ * editing it here, in the scope it declares, is what keeps every call site's arity correct by
+ * construction rather than by a second validation pass. */
+function GroupProperties({ name }: { name: string }) {
+  const group = useDocStore((s) => s.groups[name])
+  const setGroupParams = useDocStore((s) => s.setGroupParams)
+  const params = group?.params ?? []
+  return (
+    <div>
+      <h2 className="mb-2 text-sm font-semibold text-slate-700">Group: {name}</h2>
+      <FieldRow label="Params (one per line)">
+        <TextAreaField
+          mono
+          value={params.join('\n')}
+          onCommit={(v) =>
+            setGroupParams(
+              name,
+              v
+                .split('\n')
+                .map((line) => line.trim())
+                .filter((line) => line !== ''),
+            )
+          }
+        />
+      </FieldRow>
+      <p className="mt-2 text-xs text-slate-400">{group?.body.length ?? 0} top-level blocks.</p>
+      <p className="mt-4 text-xs text-slate-400">Select a block to edit its parameters.</p>
+    </div>
   )
 }
 
@@ -78,12 +133,14 @@ function DocProperties() {
 }
 
 function BlockForm({ node }: { node: BlockNode }) {
-  const tree = useDocStore((s) => s.tree)
+  const activeTree = useActiveTree()
   const patchBlock = useDocStore((s) => s.patchBlock)
-  const loc = findLocation(tree, node.uid)
+  const loc = findLocation(activeTree, node.uid)
   const parentKind = loc?.parent?.kind ?? null
-  const showGapAfter = parentKind === null || parentKind === 'serial'
-  const showStartOffset = parentKind === 'parallel'
+  // for_each may not carry gap_after/start_offset at all (expand.py:26 _FOR_EACH_FORBIDDEN) —
+  // it is a splice, so there is no single runtime block for either key to attach to.
+  const showGapAfter = node.kind !== 'for_each' && (parentKind === null || parentKind === 'serial')
+  const showStartOffset = node.kind !== 'for_each' && parentKind === 'parallel'
   return (
     <div>
       <h2 className="mb-2 text-sm font-semibold text-slate-700">{KIND_TITLES[node.kind]}</h2>
@@ -119,8 +176,10 @@ function BlockForm({ node }: { node: BlockNode }) {
       {/* abort forbids on_error: "continue" — tolerating a safety stop is a contradiction
           (engine design 2026-07-16 §5.1), so the control is omitted rather than offered and
           rejected. The related rule (an abort may have no tolerant ANCESTOR) is the backend
-          validator's; it surfaces as a diagnostic, not as a second frontend opinion. */}
-      {node.kind !== 'abort' && (
+          validator's; it surfaces as a diagnostic, not as a second frontend opinion.
+          for_each forbids on_error outright (expand.py:26) for the same splice reason as
+          gap_after/start_offset above — same suppression pattern, different block-level key. */}
+      {node.kind !== 'abort' && node.kind !== 'for_each' && (
         <FieldRow label="On error">
           <select
             value={node.onError ?? 'fail'}
@@ -265,6 +324,10 @@ function KindBody({ node }: { node: BlockNode }) {
     case 'abort':
     case 'alarm':
       return <ConditionForm node={node} />
+    case 'for_each':
+      return <ForEachForm node={node} />
+    case 'group_ref':
+      return <GroupRefForm node={node} />
     case 'serial':
       return <p className="text-xs text-slate-400">{node.children.length} children — drag blocks on the canvas.</p>
     case 'parallel':
@@ -744,6 +807,135 @@ function ConditionForm({ node }: { node: AbortNode | AlarmNode }) {
           ? 'True stops the run: devices are swept safe and the run ends "aborted".'
           : 'True flags the run and continues. Fires every time it holds — latch it with a compute if you want it once.'}
       </p>
+    </div>
+  )
+}
+
+/** Fast-feedback mirror of expand.py:95-118 `_envs` (design §5.1): non-empty list; scalars
+ * when `var` is set; objects sharing one key set when it is not. This is NOT a second
+ * opinion — on ambiguity we still accept the input and let the backend diagnostic speak, so
+ * the return is only ever advisory text, never a reason to withhold the patch. */
+function forEachItemsWarning(items: unknown[], hasVar: boolean): string | null {
+  if (items.length === 0) return "for_each 'in' must be a non-empty list"
+  if (hasVar) {
+    return items.some((item) => item !== null && typeof item === 'object')
+      ? "for_each with 'var' requires scalar items"
+      : null
+  }
+  const keysets = items.map((item) =>
+    item !== null && typeof item === 'object' && !Array.isArray(item)
+      ? Object.keys(item as Record<string, unknown>).sort().join(',')
+      : null,
+  )
+  if (keysets.some((k) => k === null)) return 'for_each without \'var\' requires object items'
+  if (new Set(keysets).size > 1) return 'for_each object items must share one key set'
+  return null
+}
+
+/** for_each is a SPLICE, not a runtime block (design 2026-07-15 §2/2026-07-16 §5.1): it copies
+ * `body` once per item and splices the copies into the enclosing list, so retry/on_error/
+ * gap_after/start_offset are omitted here — BlockForm already suppresses all four for this
+ * kind (expand.py:26 `_FOR_EACH_FORBIDDEN`), and `label` is the one block-level key left. */
+function ForEachForm({ node }: { node: ForEachNode }) {
+  const patchBlock = useDocStore((s) => s.patchBlock)
+  const itemsText = JSON.stringify(node.items)
+  const [itemsError, setItemsError] = useState<string | null>(null)
+
+  const commitItems = (text: string) => {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      setItemsError('invalid JSON — expected an array, e.g. [1, 2, 3]')
+      return
+    }
+    if (!Array.isArray(parsed)) {
+      setItemsError('must be a JSON array')
+      return
+    }
+    setItemsError(forEachItemsWarning(parsed, node.var !== null))
+    // Accept regardless of the warning above (fast-feedback mirror, not a gate) — the
+    // backend's own for_each validation is authoritative and will speak as a diagnostic.
+    patchBlock(node.uid, { items: parsed as ForEachNode['items'] })
+  }
+
+  return (
+    <div>
+      <FieldRow label="Loop variable (var)">
+        <TextField
+          mono
+          value={node.var ?? ''}
+          onCommit={(v) => patchBlock(node.uid, { var: v || null })}
+          placeholder="unset: items are objects, spread as named holes"
+        />
+      </FieldRow>
+      <FieldRow label="Items (JSON array)" required>
+        <TextAreaField mono rows={4} value={itemsText} onCommit={commitItems} />
+      </FieldRow>
+      {itemsError && <p className="text-[10px] text-amber-600">{itemsError}</p>}
+      <p className="mt-2 text-xs text-slate-400">
+        {node.body.length} block{node.body.length === 1 ? '' : 's'} in the body — drag onto the
+        canvas to edit; each copy is spliced into the list for_each sits in.
+      </p>
+    </div>
+  )
+}
+
+/** `args` are keyed by the target group's declared `params` (design §5.2), so arity is right
+ * by construction (expand.py:190 `set(args) != set(params)` rejects a mismatch) — switching
+ * the picked group resets `args` to exactly that group's param set, carrying over any value
+ * already entered under a name the new group also declares. */
+function GroupRefForm({ node }: { node: GroupRefNode }) {
+  const patchBlock = useDocStore((s) => s.patchBlock)
+  const groups = useDocStore((s) => s.groups)
+  const groupNames = Object.keys(groups)
+  const params = groups[node.name]?.params ?? []
+
+  const setName = (name: string) => {
+    const nextParams = groups[name]?.params ?? []
+    const args: Record<string, ParamValue> = {}
+    for (const p of nextParams) if (node.args[p] !== undefined) args[p] = node.args[p]
+    patchBlock(node.uid, { name, args })
+  }
+
+  return (
+    <div>
+      <FieldRow label="Group" required>
+        <select
+          value={node.name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+        >
+          {node.name === '' && <option value="">— pick a group —</option>}
+          {node.name !== '' && !groupNames.includes(node.name) && (
+            <option value={node.name}>{node.name} (unknown)</option>
+          )}
+          {groupNames.map((g) => (
+            <option key={g} value={g}>
+              {g}
+            </option>
+          ))}
+        </select>
+      </FieldRow>
+      {params.length === 0 ? (
+        <p className="text-xs text-slate-400">
+          {node.name === '' ? 'pick a group above' : 'this group takes no params'}
+        </p>
+      ) : (
+        <>
+          <h3 className="mt-2 text-xs font-semibold uppercase text-slate-400">Args</h3>
+          {params.map((p) => (
+            <FieldRow key={p} label={p} required>
+              <ExpressionInput
+                value={paramInputText(node.args[p])}
+                onCommit={(v) =>
+                  patchBlock(node.uid, { args: { ...node.args, [p]: coerceValueInput(v) } })
+                }
+              />
+            </FieldRow>
+          ))}
+        </>
+      )}
     </div>
   )
 }
