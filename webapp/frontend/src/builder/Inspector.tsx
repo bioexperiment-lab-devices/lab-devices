@@ -16,13 +16,17 @@ import {
   findLocation,
   findNode,
   retryAfterVerbChange,
+  type AbortNode,
+  type AlarmNode,
   type BlockNode,
   type BranchNode,
   type CommandNode,
+  type ComputeNode,
   type InputType,
   type LoopNode,
   type MeasureNode,
   type OperatorInputNode,
+  type RecordNode,
   type WaitNode,
 } from './tree'
 
@@ -35,6 +39,10 @@ const KIND_TITLES: Record<BlockNode['kind'], string> = {
   parallel: 'Parallel',
   loop: 'Loop',
   branch: 'Branch',
+  compute: 'Compute',
+  record: 'Record',
+  abort: 'Abort',
+  alarm: 'Alarm',
 }
 
 export function Inspector() {
@@ -108,16 +116,22 @@ function BlockForm({ node }: { node: BlockNode }) {
           />
         </FieldRow>
       )}
-      <FieldRow label="On error">
-        <select
-          value={node.onError ?? 'fail'}
-          onChange={(e) => patchBlock(node.uid, { onError: e.target.value as 'fail' | 'continue' })}
-          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
-        >
-          <option value="fail">fail (stop the run)</option>
-          <option value="continue">continue (tolerate the failure)</option>
-        </select>
-      </FieldRow>
+      {/* abort forbids on_error: "continue" — tolerating a safety stop is a contradiction
+          (engine design 2026-07-16 §2.1), so the control is omitted rather than offered and
+          rejected. The related rule (an abort may have no tolerant ANCESTOR) is the backend
+          validator's; it surfaces as a diagnostic, not as a second frontend opinion. */}
+      {node.kind !== 'abort' && (
+        <FieldRow label="On error">
+          <select
+            value={node.onError ?? 'fail'}
+            onChange={(e) => patchBlock(node.uid, { onError: e.target.value as 'fail' | 'continue' })}
+            className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+          >
+            <option value="fail">fail (stop the run)</option>
+            <option value="continue">continue (tolerate the failure)</option>
+          </select>
+        </FieldRow>
+      )}
       {(node.kind === 'command' || node.kind === 'measure') && <RetrySection node={node} />}
     </div>
   )
@@ -245,6 +259,12 @@ function KindBody({ node }: { node: BlockNode }) {
       return <LoopForm node={node} />
     case 'branch':
       return <BranchForm node={node} />
+    case 'compute':
+    case 'record':
+      return <ValueForm node={node} />
+    case 'abort':
+    case 'alarm':
+      return <ConditionForm node={node} />
     case 'serial':
       return <p className="text-xs text-slate-400">{node.children.length} children — drag blocks on the canvas.</p>
     case 'parallel':
@@ -648,6 +668,82 @@ function BranchForm({ node }: { node: BranchNode }) {
           remove else lane
         </button>
       )}
+    </div>
+  )
+}
+
+/** compute writes a binding; record appends to a DECLARED stream — hence the picker rather
+ * than a text field: an undeclared name is a validation error the author would otherwise
+ * only meet at save time. */
+function ValueForm({ node }: { node: ComputeNode | RecordNode }) {
+  const patchBlock = useDocStore((s) => s.patchBlock)
+  const streams = useDocStore((s) => s.streams)
+  const streamNames = Object.keys(streams)
+  return (
+    <div>
+      {node.kind === 'compute' ? (
+        <FieldRow label="Into (binding)" required>
+          <TextField
+            mono
+            value={node.into}
+            onCommit={(v) => patchBlock(node.uid, { into: v })}
+            placeholder="c_1"
+          />
+        </FieldRow>
+      ) : (
+        <FieldRow label="Into (stream)" required>
+          <select
+            value={node.into}
+            onChange={(e) => patchBlock(node.uid, { into: e.target.value })}
+            className="w-full rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
+          >
+            <option value="">stream…</option>
+            {streamNames.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          {streamNames.length === 0 && (
+            <p className="mt-1 text-xs text-amber-600">
+              No streams declared — add one in the Streams panel.
+            </p>
+          )}
+        </FieldRow>
+      )}
+      <FieldRow label="Value" required>
+        <ExpressionInput
+          value={String(node.value)}
+          onCommit={(v) => patchBlock(node.uid, { value: v })}
+        />
+      </FieldRow>
+    </div>
+  )
+}
+
+function ConditionForm({ node }: { node: AbortNode | AlarmNode }) {
+  const patchBlock = useDocStore((s) => s.patchBlock)
+  return (
+    <div>
+      <FieldRow label="If" required>
+        <ExpressionInput
+          value={node.condition}
+          onCommit={(v) => patchBlock(node.uid, { condition: v })}
+          placeholder="contaminated_1"
+        />
+      </FieldRow>
+      <FieldRow label="Message" required>
+        <TextField
+          value={node.message}
+          onCommit={(v) => patchBlock(node.uid, { message: v })}
+          placeholder={node.kind === 'abort' ? 'why the run must stop' : 'what to flag'}
+        />
+      </FieldRow>
+      <p className="mt-1 text-xs text-slate-400">
+        {node.kind === 'abort'
+          ? 'True stops the run: devices are swept safe and the run ends "aborted".'
+          : 'True flags the run and continues. Fires every time it holds — latch it with a compute if you want it once.'}
+      </p>
     </div>
   )
 }
