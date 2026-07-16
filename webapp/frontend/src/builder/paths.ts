@@ -22,9 +22,15 @@
  *    path's first space (" branch if", " compute value", " param 'x'", ... — serialize.py,
  *    validate.py's `_expr_reads`/`_check_condition`/`_check_param_value`). docs_store.py's
  *    `_remap` splits on the FIRST space only ("no structural token contains a space"), so
- *    splitting there is exact, not a heuristic. Only `param 'x'` is parsed further, since
- *    `MappedDiagnostic.param` is consumed by the Inspector; every other suffix is discarded
- *    once the structural prefix is recovered.
+ *    splitting there is exact, not a heuristic — EXCEPT that a quoted `groups['name'].body`
+ *    head (point 2) is not "no structural token", and Python's `!r` places no restriction on
+ *    what `name` may contain: a group named with a literal space or `->` is real, reachable
+ *    state via Import (docStore.ts's `GROUP_NAME_RE` is enforced only on add/rename, not on
+ *    load). The first-space/last-arrow scans below must therefore treat a quoted head as
+ *    opaque, or a name like `'a b'`/`'a->b'` gets misread as carrying a suffix/compound it
+ *    does not have. Only `param 'x'`/`param "x"` is parsed further, since `MappedDiagnostic.
+ *    param` is consumed by the Inspector; every other suffix is discarded once the structural
+ *    prefix is recovered.
  */
 import type { Diagnostic } from '../types/doc'
 import { childSlots, type BlockNode } from './tree'
@@ -56,6 +62,21 @@ const GROUP_HEAD_RE = new RegExp(`^groups\\[(?:'([^']*)'|"([^"]*)")\\]\\.body(\\
 // interpolates `b.name` directly (validate.py:894/:940), never through `repr`.
 const GROUP_SEGMENT_RE = new RegExp(`^([A-Za-z_][A-Za-z0-9_]*)\\.body(\\[\\d+\\]${TRAILER})$`)
 const TOKEN_RE = /\[\d+\]|\.(?:children|body|then|else)\[\d+\]/g
+const ROLE_RE = /^roles\[(?:'([^']*)'|"([^"]*)")\]$/
+const PARAM_RE = /^param (?:'([^']+)'|"([^"]+)")$/
+
+/** If `path` opens with a quoted `groups['name']`/`groups["name"]` head, returns the index
+ * just past the closing quote — the point after which the space/arrow scans below may safely
+ * resume. A quoted group name carries no identifier restriction (Python's `repr`, like Studio's
+ * import path, allows a space or `->` in it — Finding 1 review), so those scans must not
+ * mistake a character INSIDE the quotes for the suffix/compound boundary they are looking for.
+ * Returns 0 for every other path form, which then scans from the very start exactly as before. */
+function quotedGroupHeadEnd(path: string): number {
+  const open = /^groups\[(['"])/.exec(path)
+  if (!open) return 0
+  const close = path.indexOf(open[1], open[0].length)
+  return close === -1 ? 0 : close + 1
+}
 
 /** Walks a `[i](.slot[i])*` index chain against `root` via `childSlots` for every hop past
  * the first. `tail` is always pre-validated against one of the RE's above (each fully
@@ -79,18 +100,26 @@ function resolveTail(root: BlockNode[] | null, tail: string): BlockNode | null {
 }
 
 export function resolveDiagnosticPath(tree: BlockNode[], groups: GroupsMap, path: string): ResolvedPath {
-  const roleMatch = /^roles\['(.+)'\]$/.exec(path)
-  if (roleMatch) return { ...NONE, role: roleMatch[1] }
+  const roleMatch = ROLE_RE.exec(path)
+  if (roleMatch) return { ...NONE, role: roleMatch[1] ?? roleMatch[2] }
 
-  const spaceIndex = path.indexOf(' ')
+  // A quoted `groups[...]` head, if present, is opaque up to `headEnd` — the space/arrow
+  // scans below must not resume inside it (Finding 1: an unescaped space or `->` in the
+  // group name would otherwise be mistaken for the suffix/compound boundary).
+  const headEnd = quotedGroupHeadEnd(path)
+  const spaceIndex = path.indexOf(' ', headEnd)
   const structural = spaceIndex === -1 ? path : path.slice(0, spaceIndex)
   const suffix = spaceIndex === -1 ? '' : path.slice(spaceIndex + 1)
-  const paramMatch = /^param '([^']+)'$/.exec(suffix)
-  const param = paramMatch ? paramMatch[1] : null
+  const paramMatch = PARAM_RE.exec(suffix)
+  const param = paramMatch ? (paramMatch[1] ?? paramMatch[2]) : null
 
   // Compound: only the INNERMOST (last) `->` segment is the edit target — everything
-  // before it is call-site context (see file header, point 3).
-  const arrowIndex = structural.lastIndexOf('->')
+  // before it is call-site context (see file header, point 3). Skip the same opaque
+  // `headEnd` prefix here too, so an arrow inside a quoted group name is never mistaken
+  // for one (in practice a quoted `groups[...]` head and a compound path are mutually
+  // exclusive grammars — see file header, points 2 vs. 3 — but this stays correct even so).
+  const arrowTail = structural.slice(headEnd).lastIndexOf('->')
+  const arrowIndex = arrowTail === -1 ? -1 : arrowTail + headEnd
   if (arrowIndex !== -1) {
     const segMatch = GROUP_SEGMENT_RE.exec(structural.slice(arrowIndex + 2))
     if (!segMatch) return { ...NONE, param }

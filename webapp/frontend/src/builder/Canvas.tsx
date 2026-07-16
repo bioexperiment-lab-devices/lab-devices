@@ -1,4 +1,4 @@
-import { Fragment, createContext, useContext, useMemo, useState } from 'react'
+import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { useActiveTree, useDocStore } from '../stores/docStore'
 import { diagnosticsByUid, type MappedDiagnostic } from './paths'
@@ -18,6 +18,22 @@ export function Canvas() {
   const select = useDocStore((s) => s.select)
   const diagnostics = useDocStore((s) => s.diagnostics)
   const byUid = useMemo(() => diagnosticsByUid(diagnostics), [diagnostics])
+
+  // `scrollToUid` (docStore.ts) is set by a Problems row click on a block diagnostic
+  // (ProblemsPanel.tsx). Reading it here and scrolling in a reactive effect — the same shape
+  // as RolesPanel's `focusedRole` effect — rather than querying the DOM synchronously inside
+  // that click handler is what makes this immune to the cross-scope race (2026-07-16 review,
+  // Finding 2): when the click also calls `setScope`, `activeTree` above is what re-renders
+  // this component for the new scope, and this effect only runs after that render commits, so
+  // `block-${scrollToUid}` is guaranteed to already be in the DOM by the time it queries.
+  const scrollToUid = useDocStore((s) => s.scrollToUid)
+  useEffect(() => {
+    if (!scrollToUid) return
+    document
+      .getElementById(`block-${scrollToUid}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [scrollToUid])
+
   return (
     <DiagContext.Provider value={byUid}>
       <div

@@ -45,6 +45,15 @@ describe('resolveDiagnosticPath', () => {
     })
   })
 
+  it('resolves a double-quoted role path — repr flips quote style for an apostrophe (Finding 4)', () => {
+    // Pre-existing gap, unchanged from main: the role regex was single-quote only, so the
+    // one diagnostic whose whole job is flagging a bad role name died silently the moment
+    // that name contained an apostrophe.
+    expect(resolveDiagnosticPath(tree, {}, `roles["o'brien"]`)).toEqual({
+      uid: null, role: "o'brien", param: null, scope: null,
+    })
+  })
+
   it('returns nulls for workflow-level and out-of-range paths', () => {
     expect(resolveDiagnosticPath(tree, {}, 'workflow').uid).toBeNull()
     expect(resolveDiagnosticPath(tree, {}, 'blocks[9]').uid).toBeNull()
@@ -64,6 +73,11 @@ describe('resolveDiagnosticPath', () => {
   it('still extracts the param name from a param path (context-suffix rewrite)', () => {
     const r = resolveDiagnosticPath(tree, {}, "blocks[0] param 'volume_ml'")
     expect(r).toMatchObject({ uid: tree[0].uid, param: 'volume_ml' })
+  })
+
+  it('extracts a double-quoted param name — repr flips quote style for an apostrophe (Finding 3)', () => {
+    const r = resolveDiagnosticPath(tree, {}, `blocks[0] param "o'brien"`)
+    expect(r).toMatchObject({ uid: tree[0].uid, param: "o'brien" })
   })
 
   it('resolves a group body path to the group scope', () => {
@@ -102,6 +116,30 @@ describe('resolveDiagnosticPath', () => {
     const groups: GroupsMap = { "o'brien": { params: [], body: [waitNode] } }
     const r = resolveDiagnosticPath([], groups, `groups["o'brien"].body[0]`)
     expect(r).toMatchObject({ uid: waitNode.uid, scope: "o'brien" })
+  })
+
+  it('resolves a group name containing a space, with no suffix present (Finding 1)', () => {
+    // Pre-fix, `path.indexOf(' ')` found the space INSIDE the quoted name and mistook it
+    // for a suffix boundary that does not exist, leaving `structural` as the truncated
+    // `groups['a` — uid null even though there is no compound/suffix anywhere in this path.
+    const groups: GroupsMap = { 'a b': { params: [], body: [waitNode] } }
+    const r = resolveDiagnosticPath([], groups, "groups['a b'].body[0]")
+    expect(r).toMatchObject({ uid: waitNode.uid, scope: 'a b' })
+  })
+
+  it('resolves a group name containing "->", not misread as a compound path (Finding 1)', () => {
+    // Pre-fix, `structural.lastIndexOf('->')` found the arrow INSIDE the quoted name and
+    // took the direct group-scope path for a compound one, whose GROUP_SEGMENT_RE then
+    // failed on the mangled remainder — uid null for a fully direct, non-compound path.
+    const groups: GroupsMap = { 'a->b': { params: [], body: [waitNode] } }
+    const r = resolveDiagnosticPath([], groups, "groups['a->b'].body[0]")
+    expect(r).toMatchObject({ uid: waitNode.uid, scope: 'a->b' })
+  })
+
+  it('resolves a group name containing a space AND carries a context suffix (Finding 1)', () => {
+    const groups: GroupsMap = { 'a b': { params: [], body: [waitNode] } }
+    const r = resolveDiagnosticPath([], groups, "groups['a b'].body[0] compute value")
+    expect(r).toMatchObject({ uid: waitNode.uid, scope: 'a b' })
   })
 
   it('resolves a compound call-site->group path to the group DEFINITION, not the call site', () => {

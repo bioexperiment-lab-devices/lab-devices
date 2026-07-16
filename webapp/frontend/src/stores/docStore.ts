@@ -70,6 +70,14 @@ export interface EditorState extends DocSnapshot {
   // role diagnostic (paths.ts's `MappedDiagnostic.role`, previously read by nothing). VIEW
   // state like `scope`/`selectedUid` above — not part of the zundo snapshot.
   focusedRole: string | null
+  // Which block uid Canvas should scroll to, set by a Problems row click on a block
+  // diagnostic. A dedicated field rather than reusing `selectedUid` for this: `select()` is
+  // also called by ordinary canvas clicks, and Canvas's own re-render (after a cross-scope
+  // `setScope`) has to land before the scroll query runs, exactly like `focusedRole` above —
+  // a same-tick `document.getElementById` in the click handler races React's batched commit
+  // for the new scope's DOM and silently no-ops (2026-07-16 review, Finding 2). VIEW state,
+  // not part of the zundo snapshot.
+  scrollToUid: string | null
   collapsed: Record<string, boolean>
   diagnostics: MappedDiagnostic[]
   validating: boolean
@@ -90,6 +98,7 @@ export interface EditorState extends DocSnapshot {
   setStreamUnits: (name: string, units: string | null) => void
   setScope: (scope: string | null) => void
   focusRole: (name: string | null) => void
+  scrollToBlock: (uid: string | null) => void
   addGroup: (name: string) => string | null
   renameGroup: (from: string, to: string) => string | null
   removeGroup: (name: string) => string | null
@@ -213,6 +222,7 @@ export const useDocStore = create<EditorState>()(
       selectedUid: null,
       scope: null,
       focusedRole: null,
+      scrollToUid: null,
       collapsed: {},
       diagnostics: [],
       validating: false,
@@ -326,6 +336,7 @@ export const useDocStore = create<EditorState>()(
 
       setScope: (scope) => set({ scope, selectedUid: null }),
       focusRole: (name) => set({ focusedRole: name }),
+      scrollToBlock: (uid) => set({ scrollToUid: uid }),
 
       addGroup: (name) => {
         if (!GROUP_NAME_RE.test(name)) return `group name must be an identifier`
@@ -492,6 +503,7 @@ export function loadDoc(content: DocContent, serverId: string | null): void {
     selectedUid: null,
     scope: null,
     focusedRole: null,
+    scrollToUid: null,
     collapsed: {},
     diagnostics: [],
     validating: false,
