@@ -155,6 +155,18 @@ def _record(body: Any, timing: dict[str, Any]) -> B.Block:
     return B.Record(into=into, value=value, **timing)
 
 
+def _abort(body: Any, timing: dict[str, Any]) -> B.Block:
+    if_ = _checked_expr(_req(body, "if", "abort"), "abort if")
+    message = _str(_req(body, "message", "abort"), "abort message")
+    return B.Abort(if_=if_, message=message, **timing)
+
+
+def _alarm(body: Any, timing: dict[str, Any]) -> B.Block:
+    if_ = _checked_expr(_req(body, "if", "alarm"), "alarm if")
+    message = _str(_req(body, "message", "alarm"), "alarm message")
+    return B.Alarm(if_=if_, message=message, **timing)
+
+
 def _operator_input(body: Any, timing: dict[str, Any]) -> B.Block:
     return B.OperatorInput(
         name=_req(body, "name", "operator_input"),
@@ -243,6 +255,8 @@ _BUILDERS: dict[str, Callable[[Any, dict[str, Any]], B.Block]] = {
     "for_each": _for_each,
     "compute": _compute,
     "record": _record,
+    "abort": _abort,
+    "alarm": _alarm,
 }
 
 
@@ -326,6 +340,10 @@ def _dump_body(b: B.Block) -> tuple[str, dict[str, Any]]:
         return "compute", {"into": b.into, "value": b.value}
     if isinstance(b, B.Record):
         return "record", {"into": b.into, "value": b.value}
+    if isinstance(b, B.Abort):
+        return "abort", {"if": b.if_, "message": b.message}
+    if isinstance(b, B.Alarm):
+        return "alarm", {"if": b.if_, "message": b.message}
     raise WorkflowLoadError(f"cannot serialize {type(b).__name__}")
 
 

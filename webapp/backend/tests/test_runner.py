@@ -2,15 +2,26 @@
 
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 import runsupport
 from fakelab import FakeLab
+from lab_devices.experiment.errors import AlarmRecord
+from lab_devices.experiment.run import RunReport
+from lab_devices.experiment.runlog import InMemoryRunLog
+from lab_devices.experiment.state import RunState
+
 from experiment_studio.docs_store import ExperimentDoc
 from experiment_studio.records import RecordsStore
-from experiment_studio.runner import PreflightError, RunActiveError, StartValidationError
+from experiment_studio.runner import (
+    PreflightError,
+    RunActiveError,
+    StartValidationError,
+    _write_report,
+)
 
 
 async def _create_doc(env: SimpleNamespace, blocks: list, **kw: object) -> str:
@@ -69,6 +80,7 @@ async def test_happy_path_completes_with_full_artifacts(env: SimpleNamespace) ->
     assert report["finalize_errors"] == []
     assert report["persistence_errors"] == []
     assert report["tolerated_errors"] == []
+    assert report["alarms"] == []
     assert isinstance(report["clock_origin"], float)
     assert report["started_at"] < report["ended_at"]
     assert report["role_mapping"] == runsupport.MAPPING
@@ -131,6 +143,34 @@ async def test_report_records_errors_tolerated_by_on_error(env: SimpleNamespace)
 
     record = await RecordsStore(env.db, env.data_dir).get(run_id)
     assert record["status"] == "completed"
+
+
+def test_report_payload_carries_alarms(tmp_path: Path) -> None:
+    """report.json is assembled field-by-field (see _write_report): a completed run that
+    raised an alarm must not look identical to a silent one — the same reasoning as
+    tolerated_errors above, now for RunReport.alarms. Calls the payload builder directly:
+    no HTTP/engine run needed to prove the key round-trips through the payload."""
+    report = RunReport(
+        status="completed",
+        error=None,
+        finalize_errors=(),
+        state=RunState(),
+        log=InMemoryRunLog(),
+        alarms=(AlarmRecord("blocks[0]", "tube 3 contaminated"),),
+    )
+    _write_report(
+        tmp_path,
+        report=report,
+        status="completed",
+        clock_origin=0.0,
+        started_at="2026-07-16T00:00:00+00:00",
+        ended_at="2026-07-16T00:00:01+00:00",
+        experiment_name="exp",
+        lab="lab",
+        role_mapping={},
+    )
+    payload = json.loads((tmp_path / "report.json").read_text())
+    assert payload["alarms"] == [{"block_id": "blocks[0]", "message": "tube 3 contaminated"}]
 
 
 async def test_mapping_saved_on_start(env: SimpleNamespace) -> None:

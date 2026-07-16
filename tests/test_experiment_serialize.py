@@ -302,3 +302,35 @@ def test_workflow_roundtrip_with_compute_and_record():
         ],
     }
     assert workflow_to_dict(workflow_from_dict(doc)) == doc
+
+
+def test_abort_alarm_roundtrip():
+    doc = {
+        "schema_version": 1,
+        "persistence": {"default": "in_memory", "format": "jsonl"},
+        "streams": {"od_1": {}},
+        "blocks": [
+            {"abort": {"if": "count(od_1, last=1min) > 0 and last(od_1) > 2.0",
+                       "message": "contaminated"}},
+            {"alarm": {"if": "last(od_1) > 1.0", "message": "high od"}},
+        ],
+    }
+    assert workflow_to_dict(workflow_from_dict(doc)) == doc
+
+
+def test_abort_requires_if_and_message():
+    with pytest.raises(WorkflowLoadError):
+        workflow_from_dict({"schema_version": 1,
+                            "blocks": [{"abort": {"message": "x"}}]})
+    with pytest.raises(WorkflowLoadError):
+        workflow_from_dict({"schema_version": 1,
+                            "blocks": [{"abort": {"if": "true"}}]})
+
+
+def test_alarm_requires_if_and_message():
+    with pytest.raises(WorkflowLoadError):
+        workflow_from_dict({"schema_version": 1,
+                            "blocks": [{"alarm": {"message": "x"}}]})
+    with pytest.raises(WorkflowLoadError):
+        workflow_from_dict({"schema_version": 1,
+                            "blocks": [{"alarm": {"if": "true"}}]})

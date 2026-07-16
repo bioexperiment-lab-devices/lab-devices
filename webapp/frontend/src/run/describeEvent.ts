@@ -46,6 +46,8 @@ export function describeEvent(e: EventLike): string {
     case 'sweep_command': return `${s(d.device)}: sweep ${s(d.verb)}`
     case 'finalize_step_failed':
       return `${s(d.device)}: finalize ${s(d.verb)} failed: ${s(d.error)}`
+    case 'abort_raised': return `run aborted by workflow: ${s(d.message)}`
+    case 'alarm_raised': return `alarm: ${s(d.message)}`
     default: {
       const extra = Object.keys(d).length > 0 ? ` ${JSON.stringify(d)}` : ''
       return `${e.kind}${extra}`

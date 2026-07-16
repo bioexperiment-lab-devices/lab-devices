@@ -20,7 +20,7 @@ _CHILD_LISTS: dict[str, tuple[str, ...]] = {
     "for_each": ("body",),
 }
 # Engine block types the walker deliberately treats as leaves (no device field, no children).
-_LEAF_BLOCKS = ("wait", "operator_input", "group_ref", "compute", "record")
+_LEAF_BLOCKS = ("wait", "operator_input", "group_ref", "compute", "record", "abort", "alarm")
 
 
 def _diag(category: str, path: str, message: str) -> dict[str, str]:

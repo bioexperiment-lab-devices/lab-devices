@@ -37,6 +37,7 @@ from lab_devices.experiment.context import RunOptions
 from lab_devices.experiment.control import Console
 from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import (
+    AlarmRecord,
     BlockFailedError,
     DeviceBusyError,
     Diagnostic,
@@ -123,7 +124,7 @@ __all__ = [
     "RunEvent", "RunLogSink", "InMemoryRunLog",
     "ExperimentRunError", "BlockFailedError", "InvariantViolationError",
     "RunAbortedError", "FinalizeError", "PersistenceError", "DeviceBusyError",
-    "OrphanedJobError", "ToleratedError",
+    "OrphanedJobError", "ToleratedError", "AlarmRecord",
     "CsvRunLogSink", "CsvStreamSink", "JsonlRunLogSink", "JsonlStreamSink",
     "SinkSet", "StreamSink",
     "ParamEntry", "VerbEntry", "expression_functions", "verb_catalog",

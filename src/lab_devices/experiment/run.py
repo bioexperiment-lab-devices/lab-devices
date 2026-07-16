@@ -10,6 +10,8 @@ from lab_devices.client import LabClient
 from lab_devices.experiment import blocks as B
 from lab_devices.experiment.context import RunContext, RunOptions
 from lab_devices.experiment.errors import (
+    AbortSignalError,
+    AlarmRecord,
     ExperimentRunError,
     FinalizeError,
     PersistenceError,
@@ -47,6 +49,18 @@ def assign_block_ids(workflow: Workflow) -> None:
         walk(group.body, f"groups[{name!r}].body")
 
 
+def _contains_abort(exc: BaseException) -> bool:
+    """True iff `exc` is, or (recursing through ExceptionGroups) contains, an AbortSignalError.
+    A parallel lane's abort arrives inside the TaskGroup's ExceptionGroup — the group preserves
+    the error (only a racing CancelledError is dropped) — so it must be flattened to find it
+    (design 2026-07-16 §4.3)."""
+    if isinstance(exc, AbortSignalError):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_contains_abort(inner) for inner in exc.exceptions)
+    return False
+
+
 @dataclass
 class RunReport:
     """Outcome of one execution (design 4-exec §12); set before execute() raises."""
@@ -61,6 +75,7 @@ class RunReport:
     # 40 samples still reports `completed` — this is what stops it looking like a clean one.
     # Declared last, with a default: the failure path above constructs RunReport positionally.
     tolerated_errors: tuple[ToleratedError, ...] = ()
+    alarms: tuple[AlarmRecord, ...] = ()  # alarm blocks that fired (design 2026-07-16 §4.4)
 
 
 class ExperimentRun:
@@ -174,9 +189,10 @@ class ExperimentRun:
             for fin_err in finalize_errors:
                 error.add_note(f"finalizer: {fin_err!r}")
         cancelled = isinstance(error, asyncio.CancelledError)
-        aborted = cancelled and ctx.abort_requested
+        operator_aborted = cancelled and ctx.abort_requested
+        workflow_aborted = error is not None and _contains_abort(error)
         status = (
-            "aborted" if aborted
+            "aborted" if operator_aborted or workflow_aborted
             else "cancelled" if cancelled
             else "failed" if error is not None
             else "completed"
@@ -192,10 +208,11 @@ class ExperimentRun:
             state=ctx.state, log=sinks.log_sink,
             persistence_errors=sinks.persistence_errors(),
             tolerated_errors=tuple(ctx.tolerated),
+            alarms=tuple(ctx.alarms),
         )
         if cancelled:
             assert error is not None  # isinstance check above guarantees this (mypy narrowing)
-            if aborted:  # operator abort (wired in plan 4b Task 3)
+            if operator_aborted:  # operator abort (wired in plan 4b Task 3)
                 if self._task is not None:
                     self._task.uncancel()
                 raise RunAbortedError("run aborted by operator") from error

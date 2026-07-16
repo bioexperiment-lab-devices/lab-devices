@@ -115,6 +115,21 @@ export function RecordViewer(props: { id: string }) {
         </div>
       )}
 
+      {/* An alarm block firing must not look identical to a silent run — this panel is the
+          point of RunReport.alarms (design 2026-07-16 §4.4). */}
+      {detail.report !== null && (detail.report.alarms?.length ?? 0) > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+          <p className="mb-1 font-semibold">
+            {detail.report.alarms?.length} alarm(s)
+          </p>
+          {detail.report.alarms?.map((a, i) => (
+            <p key={`a${i}`}>
+              <span className="font-mono">{a.block_id}</span>: {a.message}
+            </p>
+          ))}
+        </div>
+      )}
+
       <StreamChart series={series} />
       <EventLog events={events} origin={events.length > 0 ? events[0].timestamp : null} rev={0} />
 

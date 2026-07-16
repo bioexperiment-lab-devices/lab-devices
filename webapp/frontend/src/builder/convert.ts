@@ -148,6 +148,11 @@ function blockToNode(block: BlockJson): BlockNode {
       throw new DocConvertError(
         'for_each is not yet supported in the builder (author it as JSON; it runs and charts)',
       )
+    case 'abort':
+    case 'alarm':
+      throw new DocConvertError(
+        `${kind} is not yet supported in the builder (author it as JSON; it runs and charts)`,
+      )
     default:
       throw new DocConvertError(`unsupported block type '${kind}' in the builder`)
   }

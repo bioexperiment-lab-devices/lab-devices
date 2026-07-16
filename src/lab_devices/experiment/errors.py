@@ -59,6 +59,16 @@ class ToleratedError:
     error: str
 
 
+@dataclass(frozen=True)
+class AlarmRecord:
+    """An `alarm` block whose condition fired (design 2026-07-16 §4.4). Not an exception: the
+    run continued. The record that it happened, so a run that raised alarms is distinguishable
+    from a silent one."""
+
+    block_id: str
+    message: str
+
+
 class ExperimentRunError(ExperimentError):
     """Base for errors raised while executing a workflow (design 4-exec §15)."""
 
@@ -74,6 +84,17 @@ class BlockFailedError(ExperimentRunError):
 class InvariantViolationError(ExperimentRunError):
     """A proven-impossible occupancy state was observed (busy-slot conflict or hardware
     BusyError). Never retried: the static proof was violated (design 4-exec §7)."""
+
+
+class AbortSignalError(ExperimentRunError):
+    """A workflow `abort` block's condition was true: a deliberate, workflow-initiated stop
+    (design 2026-07-16 §2.1). Distinct from an operator abort's RunAbortedError. Never retried,
+    never tolerated (execute._tolerable); the finalizer still sweeps to a safe state and the run
+    reports status "aborted" (run._contains_abort)."""
+
+    def __init__(self, block_id: str, message: str) -> None:
+        self.block_id = block_id
+        super().__init__(message)
 
 
 class OrphanedJobError(ExperimentRunError):

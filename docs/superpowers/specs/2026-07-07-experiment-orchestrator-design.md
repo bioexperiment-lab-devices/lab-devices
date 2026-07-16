@@ -125,6 +125,8 @@ arrives with the executor in Increment 4, not in the serialized AST.)
 | `OperatorInput` | `name`, `type`, `prompt`, constraints | Binds a scalar the operator enters mid-run. Blocks its own lane until entered; other parallel lanes keep running. |
 | `Compute` | `into: <binding>`, `value: ValueExpr` | Evaluates `value` and binds a number **or** boolean into the binding namespace (overwrite → accumulator across loop iterations). No hardware. Added Increment 6 (2026-07-15). |
 | `Record` | `into: <stream>`, `value: ValueExpr` | Evaluates `value` and appends the number to a **declared** stream via the same data path `Measure` uses (charted/exported for free). A stream is `Measure`-written XOR `Record`-written. Added Increment 6. |
+| `Abort` | `if: <condition>`, `message: <str>` | Hard stop: when `if` is true, raises a never-tolerated, never-retried `AbortSignalError` (emits `abort_raised`), unwinding to the finalizer; the run ends `status="aborted"`. Forbids `on_error: "continue"` (§12). No hardware. Added Increment 8 (2026-07-16). |
+| `Alarm` | `if: <condition>`, `message: <str>` | Flag-and-continue: when `if` is true, emits `alarm_raised` and appends an `AlarmRecord` to `RunReport.alarms`, then returns normally. Stateless — fires every cycle `if` holds; fire-once is a `compute`-latched guard (§15.3), not a block flag. No hardware. Added Increment 8. |
 
 ### 5.2 Container blocks
 
@@ -350,6 +352,14 @@ unaffected; expansion is the identity on it.
   `count` needs only the declaration — it evaluates to 0 on a never-written
   stream, which requires the executor to pre-create every declared stream at run
   start.
+- **Self-failing blocks (amendment 2026-07-16, Increment 8)** — `abort`/`alarm`'s `if` is
+  type-checked and freshness/read-before-write analyzed through the exact same path as
+  `branch.if` (zero new analysis logic); `message` must be a non-empty string (a `{hole}` is
+  legal — it is checked after substitution). **`abort` forbids `on_error: "continue"`** —
+  tolerating a safety stop is a contradiction, and it would silently swallow the very
+  condition-eval failure the guard exists to catch; `alarm` allows it, since tolerating a flaky
+  condition-eval is benign on a block that never ends the run. Full design:
+  [`superpowers/specs/2026-07-16-experiment-orchestrator-8-abort-alarm-design.md`](superpowers/specs/2026-07-16-experiment-orchestrator-8-abort-alarm-design.md).
 
 The mode-lifetime and affinity checks are a control-flow lifetime analysis
 (may-open mode intervals over the CFG). This is the price of the **free
@@ -574,7 +584,8 @@ Reading the 2026-07-14 keys in it (amendment):
   `count(OD) > 0` this section used to show. What it does **not** do is stop: the `until` reads the
   same dead stream, so the loop cannot reach its exit condition and spins — paced, with the pump
   idle — until an operator aborts. There is no way to say "exit if the stream went stale" (no
-  `elapsed()`, and no `abort` block — limitations #7 and #8 of the limitations doc). **A feedback
+  `elapsed()` — limitation #8 of the limitations doc; `abort` itself has since shipped as
+  Increment 8, §15.5, but this example predates it and is not rewritten to use it). **A feedback
   loop cannot outlive the sensor it feeds back from.** The guard's job is not to make it survive;
   it is to make the failure *inert* — the difference between a run you have to kill and a run that
   kills the culture.
@@ -624,6 +635,37 @@ Two new serialized forms. Full design:
 - **Round-trip.** Both forms are first-class: `workflow_to_dict(workflow_from_dict(d)) == d` for a
   doc containing `for_each`, `params`, or `args` — the authored document is never expanded on
   disk, only internally (§10.1, §12).
+
+### 15.5 `abort` / `alarm` (amendment 2026-07-16, Increment 8)
+
+Two new leaf forms, sharing `branch`'s condition machinery. Full design:
+[`superpowers/specs/2026-07-16-experiment-orchestrator-8-abort-alarm-design.md`](superpowers/specs/2026-07-16-experiment-orchestrator-8-abort-alarm-design.md).
+
+```json
+{ "abort": { "if": "contaminated_1 and contaminated_2 and contaminated_3",
+             "message": "all tubes contaminated — nothing left to run" } }
+{ "alarm": { "if": "contaminated_1 and not alarmed_1", "message": "tube 1 contaminated" } }
+```
+
+- `if` is a boolean expression, parsed and type-checked identically to `branch.if` (same
+  `_condition` runtime helper, same freshness/read-before-write path analysis — §12). `message` is
+  a required, non-empty string; a `{hole}` in it is a plain string, interpolated on expansion like
+  any other field.
+- **`abort`**: when `if` is true, emits `abort_raised` and raises a new `AbortSignalError` — never
+  retried, never tolerated (not even by an enclosing `on_error: "continue"`, including inside a
+  `parallel` lane), unwinding to the existing finalizer, which sweeps every touched device safe.
+  The run ends with status **`"aborted"`** — the same status an operator abort already used;
+  distinguished by the `AbortSignalError` type and the `abort_raised` event, not a new status
+  string. `retry` and `on_error: "continue"` are both illegal on `abort` (§12).
+- **`alarm`**: when `if` is true, emits `alarm_raised` and appends an `AlarmRecord` to
+  `RunReport.alarms`, then returns normally — the run keeps going. Deliberately **stateless**: it
+  fires every cycle its condition holds. Fire-once is expressed by composing it with a
+  `compute`-latched boolean (§15.3), not a built-in flag.
+- Neither block commands a device or has children: `_footprint` ignores them, and macro expansion
+  (`for_each`, parametrized groups) substitutes `{hole}`s into `if`/`message` for free via the same
+  uniform string-substitution rule every other leaf gets — no expander changes.
+- **Round-trip.** Both are first-class: `workflow_to_dict(workflow_from_dict(d)) == d` for a doc
+  containing `abort`/`alarm`, including `{hole}`s in `if` and `message`.
 
 ## 16. Package structure, testing, deferred work
 

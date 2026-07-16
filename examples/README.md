@@ -467,6 +467,7 @@ Map the nine roles to your devices, then answer the prompts. The published param
 | `r_dil` | 0.4 | Dilution rate, 1/h. **The setpoint.** |
 | `dose_ml` | 1.0 | ΔV per injection (~8% dilution of 12 ml). |
 | `drug_stock_x_mic` | 10.0 | Stock A = 10× MIC. Recorded, never actuated on. |
+| `emergency_stop` | `false` | Operator safety switch; `true` aborts before the first OD read. |
 
 Before your first real run, do the pre-flight of the algorithm doc §3: measure `r₀`, confirm
 `r_dil ≈ r₀/2`, and determine the MIC. **`r_dil` must be less than `r₀`** or the culture washes
@@ -476,7 +477,10 @@ To change the cycle time, edit `pace` and `count` — they are literals, not exp
 cannot be operator inputs — **and recompute BOTH pace-coupled constants: the slope constant
 (`24`) and the guard's freshness window (`last=11min`).** Nothing checks either one. Getting the
 slope constant wrong biases the decision; getting the freshness window wrong can latch a drug
-pump open on a dead sensor.
+pump open on a dead sensor. `OD_CEILING` (`2.0`) is a third, looser constant: it only needs to sit
+above the healthy steady-state OD band (empirically `0.03`–`1.0` under the published parameters),
+so it does not need recomputing on an ordinary pace change — only if you change the culture's
+biology enough to shift that band.
 
 ## What the example now tracks — the drug concentration
 
@@ -497,14 +501,98 @@ any dose-ramp or "stop when c exceeds X" controller needs. (See limitations #1 a
 shipped.) The concentration update sits inside the freshness guard with everything else, so a
 dead sensor freezes `c_t` rather than latching it toward the stock.
 
+## The contamination guard, and the emergency stop
+
+The freshness guard above answers "did this tube read this cycle?" It has nothing to say about
+a tube that reads *fine* and is still wrong — a vial contaminated with something the drug does
+not touch. That organism keeps out-growing its dilution no matter how much drug it gets, so the
+controller's own decision tree — which only ever asks "is this tube growing faster than
+`r_dil`?" — does exactly what it would for a healthy culture fighting to stay at IC₅₀: it keeps
+choosing **drug**. Left alone, that walks the tube's concentration to the undiluted stock while
+its OD sits stubbornly, genuinely, above the healthy band — a real vial, doing real (undesired)
+biology, not a latched decision on stale data.
+
+Each tube now latches a `contaminated_t` binding, seeded `false` alongside `c_t`:
+
+```json
+{ "compute": { "into": "od_high_t", "value": "count(od_t, last=11min) > 0 and mean(od_t, last=11min) > OD_CEILING" } }
+{ "compute": { "into": "contaminated_t", "value": "contaminated_t or (od_high_t and c_t >= drug_stock_x_mic * 0.99)" } }
+```
+
+Two legs, both required, both independently corroborating evidence: the tube's *believed* drug
+concentration (the same `c_t` binding the sawtooth above tracks) has walked to within 1% of the
+stock — drug has been maxed out for a long stretch of cycles — **and** its OD is still stuck
+above `OD_CEILING`, a value set well above the healthy steady-state band (§"Running it" below).
+Either alone is not enough: a tube can transiently read high after a bad dilution, and drug
+concentration alone says nothing about growth. Both together, sustained, is what "the drug
+stopped working" looks like from the outside. `od_high_t` is a separate `compute` — not inlined
+into the latch's own expression — because the validator's guard-propagation only threads a
+`count(S, W) > 0` proof through an `and`-chain it is *itself* traversing; splitting the
+freshness-guarded read into its own binding first, then referencing that plain binding from the
+`or`-latch, keeps every windowed read inside an expression the validator can actually prove.
+
+The latch is a sticky **OR**: once true, `contaminated_t or (...)` is true forever, regardless of
+what the tube reads next — exactly like the `alarmed_t` latch below it, and for the same reason
+the freshness guard exists: a stream is append-only, so nothing should ever be allowed to *heal*
+a fact this consequential by accident.
+
+**Fire once, not every remaining cycle.** An `alarm` is not a `branch` — it does not gate
+anything, it just flags and continues (`report.alarms`) — so without an edge test it would refire
+on every one of the (possibly hundreds of) remaining cycles. The idiom is alarm-on-the-edge, then
+latch:
+
+```json
+{ "alarm": { "if": "contaminated_t and not alarmed_t", "message": "tube t contaminated - dropped from service" } }
+{ "compute": { "into": "alarmed_t", "value": "alarmed_t or contaminated_t" } }
+```
+
+**Drop from service.** A contaminated tube must never be dosed again — dosing it teaches you
+nothing and wastes reagent on a vial that is not the experiment anymore. The entire pre-existing
+decision tree (freshness branch, growth-rate compute, drug/medium arm, waste restore, the
+`c_series` record) is now wrapped:
+
+```json
+{ "branch": { "if": "not contaminated_t", "then": [ /* everything the tube used to always do */ ] } }
+```
+
+On the healthy path this branch is a no-op: `contaminated_t` stays `false`, so `not contaminated_t`
+is always `true`, and the wrapped body runs exactly as before — the contamination machinery is
+inert until real evidence says otherwise.
+
+**Two whole-run `abort`s, at the very top of the cycle** (before the growth-phase OD reads):
+
+```json
+{ "abort": { "if": "emergency_stop", "message": "operator emergency stop" } }
+{ "abort": { "if": "contaminated_1 and contaminated_2 and contaminated_3", "message": "all vials contaminated - nothing left to run" } }
+```
+
+`emergency_stop` is a plain `operator_input` bool, answered once at setup (`false` for a normal
+run). The second condition is the natural consequence of the drop-from-service design: once
+every tube has been independently dropped, the run has nothing left to do, and continuing would
+just burn 12-minute cycles measuring three tubes nobody is servicing.
+
+**The honest gap.** The preprod hardware's OD sensors, per the site's simulated backend, read
+`0.0` — so `mean(od_t, ...) > OD_CEILING` can never fire there, and the contamination latch
+cannot be proven live on that hardware. What *can* be proven live is the operator's own
+`emergency_stop` switch: that is Task 9's job. This task's proof of the contamination path is
+entirely in `tests/test_examples_morbidostat.py`, against a FakeLab culture that is genuinely
+resistant to the drug (`ResistantCulture`/`ContaminatedLab`) — its growth rate never responds to
+`drug`, so both legs of the predicate become true from real, independently-arrived-at simulated
+biology, not from a rigged or stale reading. `test_contaminated_tube_is_alarmed_and_dropped_from_service`
+pins it: the contaminated tube alarms exactly once and stops receiving injections, while its two
+healthy neighbours are serviced on every one of the 120 cycles. `test_operator_emergency_stop_aborts_and_finalizes`
+pins the other abort: the run stops before the first OD read, and the finalizer still sweeps the
+thermostats back off.
+
 ## What the example deliberately does not do
 
 - **There is no Stock A → Stock B escalation.** It needs a second drug line, and the
   escalation predicate is cross-cycle state the engine cannot hold.
-- **It cannot raise the alarm.** The guard means a tube whose sensor has died is *skipped*
-  safely rather than dosed blindly — but nothing stops the run, and nothing tells you. A tube
-  can sit skipped for hours while the run reports healthy. Check `tolerated_errors`. There is no
-  `abort`/`alarm` block yet (limitation #7).
+- **A tube whose sensor merely goes dark is still not alarmed.** The freshness guard means it is
+  *skipped* safely rather than dosed blindly, and the run keeps going — but nothing raises the
+  alarm for *that* failure mode specifically (only for a tube that reads fine and is
+  contaminated). Check `tolerated_errors` for a dark sensor; check `report.alarms` for
+  contamination.
 
 These are engine limitations, not modelling choices, and they are catalogued in
 [`../docs/experiment-engine-limitations.md`](../docs/experiment-engine-limitations.md).
@@ -528,3 +616,13 @@ fault tolerance described above: that a run survives the transient fault that ki
 one, that a lane failure does not take its siblings down, and — most importantly — that **a dead
 sensor does not latch the drug pump open**. If you edit an example, run that test. If you widen
 or delete a guard's freshness window, that last test is the one that will catch you.
+
+Two more tests pin the guard added above. `test_contaminated_tube_is_alarmed_and_dropped_from_service`
+drives a `ResistantCulture` — a FakeLab culture whose growth never responds to drug — through the
+full 120-cycle faithful doc: the contaminated tube alarms exactly once, its `contaminated`
+binding latches, and it stops receiving injections while its two healthy neighbours are serviced
+on every remaining cycle. `test_operator_emergency_stop_aborts_and_finalizes` answers
+`emergency_stop=true` at setup and asserts the run raises `AbortSignalError`, reports
+`status: "aborted"`, never reads a single OD, and still runs the finalizer's thermostat sweep. If
+you touch `OD_CEILING`, the `drug_stock_x_mic * 0.99` stock ceiling, or the drop-from-service
+wrap, these are the tests that will catch you.

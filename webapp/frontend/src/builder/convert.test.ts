@@ -74,6 +74,24 @@ describe('docToTree', () => {
     expect(() => docToTree(doc)).toThrow(DocConvertError)
     expect(() => docToTree(doc)).toThrow(/for_each is not yet supported in the builder/)
   })
+
+  it('reports abort as a specific unsupported-in-builder message', () => {
+    const doc = fixture('valid-od-growth')
+    doc.workflow.blocks = [
+      { abort: { if: 'true', message: 'safety stop' } },
+    ] as unknown as BlockJson[]
+    expect(() => docToTree(doc)).toThrow(DocConvertError)
+    expect(() => docToTree(doc)).toThrow(/abort is not yet supported in the builder/)
+  })
+
+  it('reports alarm as a specific unsupported-in-builder message', () => {
+    const doc = fixture('valid-od-growth')
+    doc.workflow.blocks = [
+      { alarm: { if: 'true', message: 'flagged condition' } },
+    ] as unknown as BlockJson[]
+    expect(() => docToTree(doc)).toThrow(DocConvertError)
+    expect(() => docToTree(doc)).toThrow(/alarm is not yet supported in the builder/)
+  })
 })
 
 describe('treeToDoc', () => {
