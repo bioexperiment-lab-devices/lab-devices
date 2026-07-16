@@ -38,12 +38,19 @@ export function parseDocFile(text: string): ExperimentDocJson {
   }
 }
 
-/** Browser glue. No branching, no decisions — untested by convention (§6.1). */
+/**
+ * Browser glue. No branching, no decisions — untested by convention (§6.1). The anchor is
+ * appended to the document before `click()` and removed after (Firefox requires the anchor
+ * be in the DOM to fire); the object URL is revoked on a deferred tick so the download, which
+ * reads the URL asynchronously in some browsers, has already started.
+ */
 export function triggerDownload(filename: string, text: string): void {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }

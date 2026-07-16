@@ -124,12 +124,20 @@ export function Toolbar() {
 
   const fresh = () => {
     if (selectDirty(useDocStore.getState()) && !window.confirm('Discard unsaved changes?')) return
+    setError(null)
+    setNote(null)
     newDoc()
   }
 
   const exportDoc = () => {
-    const state = useDocStore.getState()
-    triggerDownload(exportFilename(state.name), serializeDoc(selectDoc(state)))
+    setError(null)
+    setNote(null)
+    try {
+      const state = useDocStore.getState()
+      triggerDownload(exportFilename(state.name), serializeDoc(selectDoc(state)))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
   }
 
   const importFile = (file: File) => {
@@ -156,8 +164,16 @@ export function Toolbar() {
       </div>
       {dirty && <span title="Unsaved changes" className="text-amber-500">●</span>}
       <ValidationChip />
-      {error && <span className="truncate text-xs text-red-600">{error}</span>}
-      {note && <span className="truncate text-xs text-emerald-700">{note}</span>}
+      {error && (
+        <span title={error} className="truncate text-xs text-red-600">
+          {error}
+        </span>
+      )}
+      {note && (
+        <span title={note} className="truncate text-xs text-emerald-700">
+          {note}
+        </span>
+      )}
       <span className="ml-auto flex items-center gap-1">
         <button className={buttonClass} disabled={!canUndo} onClick={undo} title="Undo (⌘Z)">
           ↶

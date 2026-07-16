@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 from fastapi import FastAPI
 
 import runsupport
@@ -163,17 +164,20 @@ async def test_import_does_not_gate_on_workflow_validity(
     )
 
 
-async def test_import_roundtrips_the_real_morbidostat_example(
-    client: httpx.AsyncClient,
+@pytest.mark.parametrize("name", ["morbidostat.json", "morbidostat-demo-speed.json"])
+async def test_import_roundtrips_the_real_examples(
+    client: httpx.AsyncClient, name: str
 ) -> None:
     """The load-bearing guarantee (§8): the shipped examples import byte-for-byte.
 
-    Uses the real file, not a fixture — so this also pins that examples/*.json stay
+    Uses the real files, not fixtures — so this also pins that examples/*.json stay
     importable.
     """
-    path = Path(__file__).parents[3] / "examples" / "morbidostat.json"
+    path = Path(__file__).parents[3] / "examples" / name
     original = json.loads(path.read_text())
     resp = await client.post("/api/experiments/import", json=original)
     assert resp.status_code == 201
     fetched = await client.get(f"/api/experiments/{resp.json()['id']}")
     assert fetched.json()["doc"] == original
+    # Deep-equal alone is blind to numeric-type/key-order drift; pin byte-exactness.
+    assert json.dumps(fetched.json()["doc"]) == json.dumps(original)
