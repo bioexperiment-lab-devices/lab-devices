@@ -173,6 +173,13 @@ def _write_report(
             if report
             else []
         ),
+        # alarm blocks that fired (design 2026-07-16 §4.4); a completed run that raised alarms
+        # must not look identical to a silent one. Field-by-field payload: add here or it drops.
+        "alarms": (
+            [{"block_id": a.block_id, "message": a.message} for a in report.alarms]
+            if report
+            else []
+        ),
         "diagnostics": diagnostics or [],
         "clock_origin": clock_origin,
         "started_at": started_at,
