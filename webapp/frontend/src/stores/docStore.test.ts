@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { docToTree } from '../builder/convert'
-import { newPaletteNode } from '../builder/tree'
+import { newPaletteNode, type GroupRefNode } from '../builder/tree'
+import type { ExperimentDocJson } from '../types/doc'
 import {
   loadDoc,
   newDoc,
@@ -16,6 +17,10 @@ import {
 } from './docStore'
 
 const store = () => useDocStore.getState()
+
+const groupRef = (uid: string, name: string): GroupRefNode => ({
+  uid, kind: 'group_ref', name, args: {}, label: null, gapAfter: null, startOffset: null,
+})
 
 beforeEach(() => {
   newDoc()
@@ -263,5 +268,121 @@ describe('docStore', () => {
     useDocStore.getState().removeBlock(serial.uid)
     expect(useDocStore.getState().selectedUid).toBeNull()
     expect(useDocStore.getState().tree).toHaveLength(0)
+  })
+
+  describe('groups and the scope switcher (design §5.2)', () => {
+    it('round-trips a groups-using doc through the store, not just through convert', () => {
+      // The Save button's real path: loadDoc(docToTree(raw)) -> selectDoc(state) -> treeToDoc.
+      // Task 4's pure-function round-trip was byte-perfect while THIS path silently deleted
+      // groups.service and left dangling group_refs — the active bug this task closes.
+      const input: ExperimentDocJson = {
+        doc_version: 1,
+        name: 'macro',
+        description: null,
+        roles: {},
+        workflow: {
+          schema_version: 1,
+          metadata: { name: 'macro' },
+          persistence: { default: 'in_memory', format: 'jsonl' },
+          streams: {},
+          groups: {
+            service: { params: ['tube'], body: [{ wait: { duration: '{tube}s' } }] },
+          },
+          blocks: [
+            { group_ref: { name: 'service', args: { tube: 1 } } },
+            { group_ref: { name: 'service', args: { tube: 2 } } },
+          ],
+        },
+      }
+      loadDoc(docToTree(input), 'id-1')
+      expect(JSON.stringify(selectDoc(useDocStore.getState()))).toBe(JSON.stringify(input))
+    })
+
+    it('inserts blocks into the active scope, not the main tree', () => {
+      expect(store().addGroup('svc')).toBeNull()
+      store().setScope('svc')
+      const node = newPaletteNode('wait')
+      store().insertBlock(node, { parentUid: null, slot: 'blocks', index: 0 })
+      expect(store().groups.svc.body).toEqual([node])
+      expect(store().tree).toEqual([])
+    })
+
+    it('refuses to delete a group a group_ref still cites', () => {
+      store().addGroup('svc')
+      store().insertBlock(groupRef('r1', 'svc'), { parentUid: null, slot: 'blocks', index: 0 })
+      expect(store().removeGroup('svc')).toMatch(/1 block/)
+      expect(store().groups).toHaveProperty('svc')
+    })
+
+    it('allows deleting a group once its last group_ref is gone', () => {
+      store().addGroup('svc')
+      store().insertBlock(groupRef('r1', 'svc'), { parentUid: null, slot: 'blocks', index: 0 })
+      store().removeBlock('r1')
+      expect(store().removeGroup('svc')).toBeNull()
+      expect(store().groups).not.toHaveProperty('svc')
+    })
+
+    it('counts group_refs inside OTHER group bodies, not just the main tree', () => {
+      store().addGroup('inner')
+      store().addGroup('outer')
+      store().setScope('outer')
+      store().insertBlock(groupRef('r1', 'inner'), { parentUid: null, slot: 'blocks', index: 0 })
+      store().setScope(null)
+      expect(store().tree).toEqual([]) // the ref landed in 'outer', not the main tree
+      expect(store().removeGroup('inner')).toMatch(/1 block/)
+
+      store().setScope('outer')
+      store().removeBlock('r1')
+      store().setScope(null)
+      expect(store().removeGroup('inner')).toBeNull()
+    })
+
+    it('refuses a duplicate or non-identifier group name', () => {
+      expect(store().addGroup('svc')).toBeNull()
+      expect(store().addGroup('svc')).toMatch(/exists/)
+      expect(store().addGroup('1bad')).toMatch(/identifier/)
+    })
+
+    it('keeps scope out of the undo snapshot, and undo switches scope to follow the ' +
+      'reverted edit rather than applying it invisibly (design §5.2)', () => {
+      store().addGroup('svc')
+      store().setScope('svc')
+      const node = newPaletteNode('wait')
+      store().insertBlock(node, { parentUid: null, slot: 'blocks', index: 0 })
+      store().setScope(null) // view a different scope than the one just edited
+      undo()
+      expect(store().groups.svc.body).toEqual([]) // the group edit reverted
+      expect(store().scope).toBe('svc') // and the store followed the undo there to show it
+    })
+
+    it('renaming a group cascades to every group_ref by that name, across the main tree ' +
+      'and other group bodies', () => {
+      store().addGroup('svc')
+      store().addGroup('outer')
+      store().insertBlock(groupRef('r1', 'svc'), { parentUid: null, slot: 'blocks', index: 0 })
+      store().setScope('outer')
+      store().insertBlock(groupRef('r2', 'svc'), { parentUid: null, slot: 'blocks', index: 0 })
+      store().setScope(null)
+
+      expect(store().renameGroup('svc', 'ctrl')).toBeNull()
+      expect(store().groups).toHaveProperty('ctrl')
+      expect(store().groups).not.toHaveProperty('svc')
+      expect((store().tree[0] as GroupRefNode).name).toBe('ctrl')
+      expect((store().groups.outer.body[0] as GroupRefNode).name).toBe('ctrl')
+    })
+
+    it('renaming the currently-active group scope keeps scope pointing at it under the new name', () => {
+      store().addGroup('svc')
+      store().setScope('svc')
+      expect(store().renameGroup('svc', 'ctrl')).toBeNull()
+      expect(store().scope).toBe('ctrl')
+    })
+
+    it('removing the active group scope falls back to the main workflow', () => {
+      store().addGroup('svc')
+      store().setScope('svc')
+      expect(store().removeGroup('svc')).toBeNull()
+      expect(store().scope).toBeNull()
+    })
   })
 })

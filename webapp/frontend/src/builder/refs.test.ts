@@ -1,6 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { collectBindings, countRoleRefs, countStreamRefs, renameRoleRefs, renameStreamRefs, streamSources } from './refs'
-import type { BlockNode, CommandNode, ComputeNode, LoopNode, MeasureNode, RecordNode, SerialNode } from './tree'
+import {
+  collectBindings,
+  countGroupRefs,
+  countRoleRefs,
+  countStreamRefs,
+  renameGroupRefs,
+  renameRoleRefs,
+  renameStreamRefs,
+  streamSources,
+} from './refs'
+import type {
+  BlockNode,
+  CommandNode,
+  ComputeNode,
+  GroupRefNode,
+  LoopNode,
+  MeasureNode,
+  RecordNode,
+  SerialNode,
+} from './tree'
 
 const base = { label: null, gapAfter: null, startOffset: null }
 const cmd = (uid: string, device: string): CommandNode => ({
@@ -14,6 +32,9 @@ const rec = (uid: string, into: string): RecordNode => ({
 })
 const comp = (uid: string, into: string, value: string): ComputeNode => ({
   uid, kind: 'compute', into, value, ...base,
+})
+const grp = (uid: string, name: string): GroupRefNode => ({
+  uid, kind: 'group_ref', name, args: {}, ...base,
 })
 const tree: BlockNode[] = [
   {
@@ -129,5 +150,29 @@ describe('streamSources', () => {
   it('skips a freshly-dragged block with an empty into', () => {
     const t: BlockNode[] = [meas('m1', 'od_meter', ''), rec('r1', 'c_series')]
     expect(streamSources(t)).toEqual({ c_series: 'record' })
+  })
+})
+
+describe('group refs', () => {
+  it('counts group_ref blocks by name', () => {
+    const t: BlockNode[] = [grp('g1', 'service'), grp('g2', 'service'), grp('g3', 'wash')]
+    expect(countGroupRefs(t, 'service')).toBe(2)
+    expect(countGroupRefs(t, 'wash')).toBe(1)
+    expect(countGroupRefs(t, 'ghost')).toBe(0)
+  })
+
+  it('finds group_refs nested inside containers, not just the top level', () => {
+    const nested: BlockNode[] = [
+      { uid: 's1', kind: 'serial', ...base, children: [grp('g1', 'service')] },
+    ]
+    expect(countGroupRefs(nested, 'service')).toBe(1)
+  })
+
+  it('renames every group_ref by name in one pass, leaving the input untouched', () => {
+    const t: BlockNode[] = [grp('g1', 'service'), grp('g2', 'wash')]
+    const next = renameGroupRefs(t, 'service', 'ctrl')
+    expect(countGroupRefs(next, 'ctrl')).toBe(1)
+    expect(countGroupRefs(next, 'service')).toBe(0)
+    expect(countGroupRefs(t, 'service')).toBe(1) // input untouched
   })
 })

@@ -46,6 +46,27 @@ export function renameStreamRefs(tree: BlockNode[], from: string, to: string): B
   )
 }
 
+/** Counts `group_ref` blocks citing `name` within ONE tree — a group can `group_ref` another
+ * group (design §5.2), so a caller checking whether a group is safe to delete must sum this
+ * across the main tree AND every group body, not just the main tree. */
+export function countGroupRefs(tree: BlockNode[], name: string): number {
+  let count = 0
+  visitNodes(tree, (node) => {
+    if (node.kind === 'group_ref' && node.name === name) count++
+  })
+  return count
+}
+
+/** Renaming a group must cascade to every `group_ref` that cites it — left un-cascaded, a
+ * rename produces the exact class of dangling reference this design closes elsewhere
+ * (expand.py:231 `group_ref 'x': unknown group`), just triggered by a rename instead of a
+ * dropped save. The caller applies this to the main tree and to every group body. */
+export function renameGroupRefs(tree: BlockNode[], from: string, to: string): BlockNode[] {
+  return mapNodes(tree, (node) =>
+    node.kind === 'group_ref' && node.name === from ? { ...node, name: to } : node,
+  )
+}
+
 /** Bindings are written by `operator_input` and by `compute` (engine blocks.py:96) — both
  * land in the same RunState.bindings namespace, so expression help must offer both. The
  * seed-then-accumulate idiom writes one name from several computes, hence the de-dup. */
