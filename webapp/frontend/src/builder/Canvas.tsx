@@ -59,7 +59,7 @@ function BlockView({ node }: { node: BlockNode }) {
     data: { source: 'canvas', uid: node.uid } satisfies DragPayload,
   })
   const isContainer =
-    node.kind === 'serial' || node.kind === 'parallel' || node.kind === 'loop' || node.kind === 'branch'
+    node.kind === 'serial' || node.kind === 'parallel' || node.kind === 'loop' || node.kind === 'branch' || node.kind === 'for_each'
   return (
     <div
       id={`block-${node.uid}`}
@@ -142,6 +142,12 @@ function ContainerBody({ node }: { node: BlockNode }) {
         </div>
       )
     case 'loop':
+      return (
+        <div className="ml-2 border-l-2 border-slate-200 px-2 pb-2">
+          <BlockList parentUid={node.uid} slot="body" items={node.body} />
+        </div>
+      )
+    case 'for_each':
       return (
         <div className="ml-2 border-l-2 border-slate-200 px-2 pb-2">
           <BlockList parentUid={node.uid} slot="body" items={node.body} />

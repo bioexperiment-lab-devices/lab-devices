@@ -56,5 +56,15 @@ export function blockSummary(node: BlockNode): string {
       return `⛔ Abort if ${node.condition || '…'}${marker}`
     case 'alarm':
       return `⚠ Alarm if ${node.condition || '…'}${marker}`
+    case 'for_each':
+      return (
+        (node.var !== null
+          ? `∀ For each ${node.var} in [${node.items.join(', ')}]`
+          : `∀ For each of ${node.items.length} items`) + marker
+      )
+    case 'group_ref': {
+      const args = formatParams(node.args)
+      return `⧉ ${node.name || '?'}${args ? `(${args})` : ''}${marker}`
+    }
   }
 }

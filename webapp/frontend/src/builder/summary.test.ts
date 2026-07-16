@@ -93,4 +93,17 @@ describe('blockSummary', () => {
       }),
     ).toBe('⚠ Alarm if x ⤳')
   })
+
+  it('summarises repetition blocks', () => {
+    expect(
+      blockSummary({ uid: 'u', kind: 'for_each', var: 'tube', items: [1, 2, 3], body: [], ...base }),
+    ).toBe('∀ For each tube in [1, 2, 3]')
+    expect(
+      blockSummary({ uid: 'u', kind: 'for_each', var: null, items: [{ tube: 1 }, { tube: 2 }], body: [], ...base }),
+    ).toBe('∀ For each of 2 items')
+    expect(blockSummary({ uid: 'u', kind: 'group_ref', name: 'service', args: { tube: 1 }, ...base })).toBe(
+      '⧉ service(tube=1)',
+    )
+    expect(blockSummary({ uid: 'u', kind: 'group_ref', name: 'wash', args: {}, ...base })).toBe('⧉ wash')
+  })
 })
