@@ -166,12 +166,19 @@ const renameRefsInGroups = (
     }),
   )
 
-/** The Palette/Inspector/drag-drop operate on "the current tree" (design §5.2) — a selector
- * over whichever list `scope` names, not a fixed field. These two helpers are the single
- * place that resolves it, so the five block ops below need not each re-derive the scope
- * check; `activeList` reads, `setActiveList` returns the partial `set()` patch that writes
- * back to the same list, keeping the same in-place-update/patch shape the ops already use. */
-const activeList = (s: Pick<EditorState, 'scope' | 'tree' | 'groups'>): BlockNode[] =>
+/** The Palette/Inspector/drag-drop/expression-help operate on "the current tree" (design
+ * §5.2) — a selector over whichever list `scope` names, not a fixed field. These two helpers
+ * are the single place that resolves it, so the five block ops below need not each re-derive
+ * the scope check; `activeList` reads, `setActiveList` returns the partial `set()` patch that
+ * writes back to the same list, keeping the same in-place-update/patch shape the ops already
+ * use. `activeList` is exported as a plain function (not a hook) for the one non-component
+ * caller (BuilderTab.tsx's `dragLabel`, which reads via `useDocStore.getState()` rather than
+ * the hook); `useActiveTree` below wraps it for the React call sites (Canvas.tsx, Inspector.tsx,
+ * fields.tsx) so every one of the four resolves scope through this single helper instead of
+ * re-deriving `scope === null ? tree : groups[scope]?.body ?? []` independently (2026-07-16
+ * review, Findings 1+2 — the fourth copy, in fields.tsx, left group-body expressions unable
+ * to see their own group's bindings in the ƒ popover). */
+export const activeList = (s: Pick<EditorState, 'scope' | 'tree' | 'groups'>): BlockNode[] =>
   s.scope === null ? s.tree : (s.groups[s.scope]?.body ?? [])
 
 const setActiveList = (
@@ -395,6 +402,20 @@ export const useDocStore = create<EditorState>()(
     },
   ),
 )
+
+/** The hook form of `activeList` for React render bodies. Selects `scope`/`tree`/`groups` as
+ * three separate `useDocStore` slices — exactly the subscription shape Canvas.tsx/Inspector.tsx
+ * already used before this helper existed — rather than one selector computing the ternary
+ * inside `useDocStore`, so a render is triggered only when one of those three slices actually
+ * changes, same as before; the derivation itself now happens in one place instead of three (soon
+ * four). Returns `s.tree`/a group's `body` array by reference, never a freshly-allocated array,
+ * so it does not perturb memoization downstream (e.g. Canvas's `useMemo` over diagnostics). */
+export function useActiveTree(): BlockNode[] {
+  const scope = useDocStore((s) => s.scope)
+  const tree = useDocStore((s) => s.tree)
+  const groups = useDocStore((s) => s.groups)
+  return activeList({ scope, tree, groups })
+}
 
 const temporalStore = (
   useDocStore as unknown as { temporal: StoreApi<TemporalState<DocSnapshot>> }

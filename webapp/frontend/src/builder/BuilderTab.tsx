@@ -9,7 +9,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
-import { redo, undo, useDocStore } from '../stores/docStore'
+import { activeList, redo, undo, useDocStore } from '../stores/docStore'
 import { useCatalogStore } from '../stores/catalogStore'
 import { parseSlotDroppableId, type DragPayload } from './dnd'
 import { findNode, newPaletteNode, newVerbNode } from './tree'
@@ -42,8 +42,10 @@ function dragLabel(payload: DragPayload): string {
   // A canvas drag can originate from a group's body, not just the main tree (design §5.2's
   // scope switcher) — look the dragged uid up in whichever list `scope` currently names, or
   // the overlay silently falls back to the generic 'block' label for every in-group drag.
-  const { scope, tree, groups } = useDocStore.getState()
-  const activeTree = scope === null ? tree : (groups[scope]?.body ?? [])
+  // Reads via `activeList` (docStore.ts) rather than re-deriving the ternary here — this is a
+  // plain function call, not the `useDocStore` hook, because `dragLabel` runs inside a plain
+  // render helper (not a hook-eligible component) against `useDocStore.getState()`.
+  const activeTree = activeList(useDocStore.getState())
   const node = findNode(activeTree, payload.uid)
   return node ? blockSummary(node) : 'block'
 }

@@ -1,6 +1,6 @@
 import { Fragment, createContext, useContext, useMemo, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
-import { useDocStore } from '../stores/docStore'
+import { useActiveTree, useDocStore } from '../stores/docStore'
 import { diagnosticsByUid, type MappedDiagnostic } from './paths'
 import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
@@ -10,14 +10,11 @@ import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } fr
 const DiagContext = createContext<Map<string, MappedDiagnostic[]>>(new Map())
 
 export function Canvas() {
-  const scope = useDocStore((s) => s.scope)
-  const tree = useDocStore((s) => s.tree)
-  const groups = useDocStore((s) => s.groups)
   // The canvas renders whichever list `scope` names (design §5.2): the main workflow tree
   // when null, else the active group's body. docStore's own `activeList`/`setActiveList`
   // (docStore.ts) resolve the same scope for every block op, so reads here always agree
   // with what insertBlock/moveBlock/etc. would write to.
-  const activeTree = scope === null ? tree : (groups[scope]?.body ?? [])
+  const activeTree = useActiveTree()
   const select = useDocStore((s) => s.select)
   const diagnostics = useDocStore((s) => s.diagnostics)
   const byUid = useMemo(() => diagnosticsByUid(diagnostics), [diagnostics])

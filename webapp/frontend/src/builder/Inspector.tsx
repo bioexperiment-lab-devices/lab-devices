@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useCatalogStore } from '../stores/catalogStore'
-import { useDocStore } from '../stores/docStore'
+import { useActiveTree, useDocStore } from '../stores/docStore'
 import type { ParamSpec } from '../types/catalog'
 import type { ParamValue, RetryJson } from '../types/doc'
 import { coerceParamInput, coerceValueInput, paramInputText } from './params'
@@ -47,17 +47,6 @@ const KIND_TITLES: Record<BlockNode['kind'], string> = {
   alarm: 'Alarm',
   for_each: 'For each',
   group_ref: 'Group ref',
-}
-
-/** "The current tree" is a selector over `scope`, not a fixed field (design §5.2) — a
- * selected uid can live in a group's body, not just the main tree, once the scope switcher
- * (Canvas.tsx) has a group active. Mirrors Canvas's identical read and docStore's internal
- * `activeList` (not exported; store ops resolve it themselves for writes). */
-function useActiveTree(): BlockNode[] {
-  const scope = useDocStore((s) => s.scope)
-  const tree = useDocStore((s) => s.tree)
-  const groups = useDocStore((s) => s.groups)
-  return scope === null ? tree : (groups[scope]?.body ?? [])
 }
 
 export function Inspector() {
@@ -814,11 +803,17 @@ function ConditionForm({ node }: { node: AbortNode | AlarmNode }) {
 /** Fast-feedback mirror of expand.py:95-118 `_envs` (design §5.1): non-empty list; scalars
  * when `var` is set; objects sharing one key set when it is not. This is NOT a second
  * opinion — on ambiguity we still accept the input and let the backend diagnostic speak, so
- * the return is only ever advisory text, never a reason to withhold the patch. */
+ * the return is only ever advisory text, never a reason to withhold the patch.
+ *
+ * The `var`-branch predicate below must match expand.py:104's `isinstance(item, dict)`
+ * exactly: the engine only rejects dicts, not lists — a JSON array is a perfectly valid
+ * scalar `var` item (e.g. `[1, 2]`), so `typeof item === 'object'` alone (true for arrays
+ * too) over-flagged it. A warning the backend would never raise is a false positive from a
+ * check whose only job is to mirror the backend (2026-07-16 review, Finding 3). */
 function forEachItemsWarning(items: unknown[], hasVar: boolean): string | null {
   if (items.length === 0) return "for_each 'in' must be a non-empty list"
   if (hasVar) {
-    return items.some((item) => item !== null && typeof item === 'object')
+    return items.some((item) => item !== null && typeof item === 'object' && !Array.isArray(item))
       ? "for_each with 'var' requires scalar items"
       : null
   }
