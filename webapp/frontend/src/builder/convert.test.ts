@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import type { BlockJson, ExperimentDocJson } from '../types/doc'
-import { DocConvertError, docToTree, nodeToBlock, treeToDoc } from './convert'
-import type { ComputeNode, LoopNode, MeasureNode, SerialNode, WaitNode } from './tree'
+import type { BlockJson, ExperimentDocJson, WorkflowJson } from '../types/doc'
+import { docToTree, nodeToBlock, treeToDoc } from './convert'
+import type { ComputeNode, ForEachNode, LoopNode, MeasureNode, SerialNode, WaitNode } from './tree'
 
 const fixture = (name: string): ExperimentDocJson =>
   JSON.parse(
@@ -57,23 +57,6 @@ describe('docToTree', () => {
     expect(uids.length).toBe(5)
   })
 
-  it('refuses docs that use groups or group_ref blocks', () => {
-    const doc = fixture('valid-od-growth')
-    doc.workflow.groups = { prep: { body: [] } }
-    expect(() => docToTree(doc)).toThrow(DocConvertError)
-    const doc2 = fixture('valid-od-growth')
-    doc2.workflow.blocks = [{ group_ref: { name: 'prep' } }]
-    expect(() => docToTree(doc2)).toThrow(/group_ref/)
-  })
-
-  it('reports for_each as a specific unsupported-in-builder message, not the generic one', () => {
-    const doc = fixture('valid-od-growth')
-    doc.workflow.blocks = [
-      { for_each: { var: 't', in: [1, 2], body: [{ wait: { duration: '1s' } }] } },
-    ] as unknown as BlockJson[]
-    expect(() => docToTree(doc)).toThrow(DocConvertError)
-    expect(() => docToTree(doc)).toThrow(/for_each is not yet supported in the builder/)
-  })
 })
 
 describe('treeToDoc', () => {
@@ -283,5 +266,65 @@ describe('control blocks', () => {
     // Deep-equal is blind to 6.0 vs 6 and to key order (W7 review); compare serialised bytes,
     // which is what actually reaches the backend.
     expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
+  })
+})
+
+describe('repetition blocks', () => {
+  const doc = (workflow: Partial<WorkflowJson>): ExperimentDocJson => ({
+    doc_version: 1,
+    name: 'macro',
+    description: null,
+    roles: {},
+    workflow: {
+      schema_version: 1,
+      metadata: { name: 'macro' },
+      persistence: { default: 'in_memory', format: 'jsonl' },
+      streams: {},
+      blocks: [],
+      ...workflow,
+    } as WorkflowJson,
+  })
+
+  it('round-trips a for_each with scalar items', () => {
+    const input = doc({
+      blocks: [{ for_each: { var: 'tube', in: [1, 2, 3], body: [{ wait: { duration: '{tube}s' } }] } }],
+    })
+    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
+  })
+
+  it('round-trips a for_each with object items and no var', () => {
+    const input = doc({
+      blocks: [{ for_each: { in: [{ tube: 1, port: 2 }], body: [{ wait: { duration: '{tube}s' } }] } }],
+    })
+    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
+  })
+
+  it('round-trips parametrized groups and a group_ref with args', () => {
+    const input = doc({
+      groups: { service: { params: ['tube'], body: [{ wait: { duration: '{tube}s' } }] } },
+      blocks: [{ group_ref: { name: 'service', args: { tube: 1 } } }],
+    })
+    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
+  })
+
+  it('round-trips a plain param-less group_ref unchanged', () => {
+    const input = doc({
+      groups: { wash: { body: [{ wait: { duration: '1s' } }] } },
+      blocks: [{ group_ref: { name: 'wash' } }],
+    })
+    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
+  })
+
+  it('parses a for_each into a node with a body slot', () => {
+    const tree = docToTree(
+      doc({ blocks: [{ for_each: { var: 't', in: [1], body: [{ wait: { duration: '1s' } }] } }] }),
+    ).tree
+    expect(tree[0]).toMatchObject({ kind: 'for_each', var: 't', items: [1] })
+    expect((tree[0] as ForEachNode).body).toHaveLength(1)
+  })
+
+  it('omits groups entirely when the doc has none', () => {
+    const out = treeToDoc(docToTree(doc({ blocks: [{ wait: { duration: '1s' } }] })))
+    expect('groups' in out.workflow).toBe(false)
   })
 })
