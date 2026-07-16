@@ -48,5 +48,13 @@ export function blockSummary(node: BlockNode): string {
       )
     case 'branch':
       return `⑂ If ${node.condition || '…'}${marker}`
+    case 'compute':
+      return `ƒ ${node.into || '?'} = ${String(node.value) || '…'}${marker}`
+    case 'record':
+      return `✎ ${node.into || '?'} ← ${String(node.value) || '…'}${marker}`
+    case 'abort':
+      return `⛔ Abort if ${node.condition || '…'}${marker}`
+    case 'alarm':
+      return `⚠ Alarm if ${node.condition || '…'}${marker}`
   }
 }
