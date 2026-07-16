@@ -104,6 +104,18 @@ class Record(BlockBase):
 
 
 @dataclass(kw_only=True)
+class Abort(BlockBase):
+    if_: str  # boolean expression; a true value stops the run (design 2026-07-16 §2.1)
+    message: str
+
+
+@dataclass(kw_only=True)
+class Alarm(BlockBase):
+    if_: str  # boolean expression; a true value flags and continues (design 2026-07-16 §2.2)
+    message: str
+
+
+@dataclass(kw_only=True)
 class ForEach(BlockBase):
     body: list[Block] = field(default_factory=list)
     var: str | None = None
@@ -122,5 +134,7 @@ Block = (
     | GroupRef
     | Compute
     | Record
+    | Abort
+    | Alarm
     | ForEach
 )
