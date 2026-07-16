@@ -277,6 +277,98 @@ def test_a_diagnostic_with_no_arrow_remaps_by_identity_when_unduplicated() -> No
     assert diags[0]["path"] == "blocks[0] compute value"
 
 
+def test_a_for_each_inside_a_plain_groups_own_body_remaps_the_tail_index() -> None:
+    """Second Critical fix: expand.py expands a PLAIN group's body IN PLACE
+    (expand.py:270-274), so "g1.body[1]" in a compound path (validate.py:894/:940) is an
+    EXPANDED index into g1's own body, not an authored one -- unlike the call-site head,
+    the tail segment genuinely needs remapping too. Reproduced with NO outer duplication
+    at all: the for_each lives directly inside g1's own body. validate.py walks
+    blocks[0] (group_ref g1) into g1's two expanded for_each copies, reporting one
+    diagnostic per copy at "blocks[0]->g1.body[0]" and "blocks[0]->g1.body[1]" -- both
+    trace back to the one authored for_each body block, groups['g1'].body[0].body[0].
+    Both must collapse to a single diagnostic at "blocks[0]->g1.body[0].body[0]"."""
+    doc = ExperimentDoc.model_validate(
+        {
+            "doc_version": 1,
+            "name": "for-each-inside-plain-group-body",
+            "description": None,
+            "roles": {},
+            "workflow": {
+                "schema_version": 1,
+                "groups": {
+                    "g1": {
+                        "body": [
+                            {
+                                "for_each": {
+                                    "var": "t",
+                                    "in": [1, 2],
+                                    "body": [
+                                        {
+                                            "compute": {
+                                                "into": "x",
+                                                "value": "nope_undeclared_thing",
+                                            }
+                                        }
+                                    ],
+                                }
+                            }
+                        ]
+                    }
+                },
+                "blocks": [{"group_ref": {"name": "g1"}}],
+            },
+        }
+    )
+    diags = validate_doc(doc)
+    assert len(diags) == 1, f"expected the two per-copy diagnostics to dedup to one, got {diags}"
+    assert diags[0]["path"] == "blocks[0]->g1.body[0].body[0] compute value"
+
+
+def test_a_doubly_nested_plain_group_remaps_every_segment() -> None:
+    """Regression guard for the general N-segment case: validate.py:894 recurses when a
+    plain group_ref's body itself contains another plain group_ref, building a
+    three-segment compound path "blocks[0]->g1.body[0]->g2.body[i]". Every "->" segment
+    must be remapped with its own trace-key spelling, not just the head -- here it is the
+    innermost segment that actually shifts (g2's own body holds the for_each), proving
+    the fix reaches every level, not just the first "->"."""
+    doc = ExperimentDoc.model_validate(
+        {
+            "doc_version": 1,
+            "name": "doubly-nested-plain-groups",
+            "description": None,
+            "roles": {},
+            "workflow": {
+                "schema_version": 1,
+                "groups": {
+                    "g1": {"body": [{"group_ref": {"name": "g2"}}]},
+                    "g2": {
+                        "body": [
+                            {
+                                "for_each": {
+                                    "var": "t",
+                                    "in": [1, 2],
+                                    "body": [
+                                        {
+                                            "compute": {
+                                                "into": "x",
+                                                "value": "nope_undeclared_thing",
+                                            }
+                                        }
+                                    ],
+                                }
+                            }
+                        ]
+                    },
+                },
+                "blocks": [{"group_ref": {"name": "g1"}}],
+            },
+        }
+    )
+    diags = validate_doc(doc)
+    assert len(diags) == 1, f"expected the two per-copy diagnostics to dedup to one, got {diags}"
+    assert diags[0]["path"] == "blocks[0]->g1.body[0]->g2.body[0].body[0] compute value"
+
+
 def test_an_unmappable_diagnostic_path_passes_through_unchanged() -> None:
     """The passthrough branch (self-review flagged it untested): `_check_groups`'s
     recursive-group diagnostic is reported at the bare "groups['name']" container path --

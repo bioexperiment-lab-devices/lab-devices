@@ -156,20 +156,39 @@ class ExperimentsStore:
         )
 
 
-# A diagnostic path is a structural prefix plus an optional context suffix the validator
-# appends (" branch if", " param 'x'", " compute value"). Only the prefix is a path; the
-# suffix is prose. Split on the first space — no structural token contains one.
+def _remap_group_segment(seg: str, trace: dict[str, str]) -> str:
+    """Remap one `<group>.body[i]...` segment of a compound path.
+
+    validate.py names the group BARE (`g1.body[0]`, :894/:940) while the trace keys group
+    bodies the way validate.py's own _iter_all_blocks does (`groups['g1'].body[0]`, :63-64).
+    The indices genuinely need mapping: expand.py expands a plain group's body IN PLACE
+    (:270-274), so a for_each inside it shifts them.
+    """
+    name, dot, rest = seg.partition(".")
+    if not dot:
+        return seg
+    prefix = f"groups[{name!r}]."
+    mapped = trace.get(prefix + rest)
+    if mapped is None or not mapped.startswith(prefix):
+        return seg
+    return name + "." + mapped[len(prefix):]
+
+
 def _remap(path: str, trace: dict[str, str]) -> str:
+    """Rewrite a diagnostic's structural path from expanded indices to authored ones.
+
+    A path is a structural prefix plus an optional context suffix the validator appends
+    (" branch if", " param 'x'"); only the prefix is a path, and no structural token contains
+    a space. The prefix may itself be compound — "<call site>-><group>.body[i]" — when an
+    analysis walks into a plain group's body; every segment is mapped with its own key form.
+    An unmappable segment is carried through: a raw path beats no path (design §5.3).
+    """
     prefix, sep, suffix = path.partition(" ")
-    # A validate-phase walk from a group_ref call site into a PLAIN group's body builds a
-    # compound path, "<call site>-><group>.body[i]" (validate.py:894, :940). Only the call-site
-    # segment is a trace key; the rest already names an authored location inside the group
-    # definition, so it is carried through untouched.
-    head, arrow, tail = prefix.partition("->")
-    mapped = trace.get(head)
-    if mapped is None:
-        return path  # unmappable: a raw path beats no path (design §5.3)
-    return mapped + arrow + tail + sep + suffix
+    head, *segments = prefix.split("->")
+    out = trace.get(head, head)
+    for seg in segments:
+        out += "->" + _remap_group_segment(seg, trace)
+    return out + sep + suffix
 
 
 def _remap_diagnostics(
