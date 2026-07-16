@@ -1,6 +1,11 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ApiError } from '../api/client'
-import { createExperiment, duplicateExperiment, replaceExperiment } from '../api/studio'
+import {
+  createExperiment,
+  duplicateExperiment,
+  importExperiment,
+  replaceExperiment,
+} from '../api/studio'
 import {
   loadDoc,
   newDoc,
@@ -15,7 +20,8 @@ import {
   useDocStore,
   useTemporal,
 } from '../stores/docStore'
-import { docToTree } from './convert'
+import { DocConvertError, docToTree } from './convert'
+import { exportFilename, parseDocFile, serializeDoc, triggerDownload } from './files'
 import { TextField } from './fields'
 import { LoadDialog } from './LoadDialog'
 
@@ -53,10 +59,13 @@ export function Toolbar() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [loadOpen, setLoadOpen] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true)
     setError(null)
+    setNote(null)
     try {
       await fn()
     } catch (e) {
@@ -118,6 +127,28 @@ export function Toolbar() {
     newDoc()
   }
 
+  const exportDoc = () => {
+    const state = useDocStore.getState()
+    triggerDownload(exportFilename(state.name), serializeDoc(selectDoc(state)))
+  }
+
+  const importFile = (file: File) => {
+    if (selectDirty(useDocStore.getState()) && !window.confirm('Discard unsaved changes?')) return
+    return run(async () => {
+      const res = await importExperiment(parseDocFile(await file.text()))
+      try {
+        loadDoc(docToTree(res.doc), res.id)
+        setNote(`imported as '${res.doc.name}'`)
+      } catch (e) {
+        if (!(e instanceof DocConvertError)) throw e
+        // §7: it IS saved and runnable — it just can't render as a block tree.
+        setNote(
+          `imported as '${res.doc.name}' — saved, but can't open in the Builder: ${e.message}`,
+        )
+      }
+    })
+  }
+
   return (
     <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
       <div className="w-64">
@@ -126,6 +157,7 @@ export function Toolbar() {
       {dirty && <span title="Unsaved changes" className="text-amber-500">●</span>}
       <ValidationChip />
       {error && <span className="truncate text-xs text-red-600">{error}</span>}
+      {note && <span className="truncate text-xs text-emerald-700">{note}</span>}
       <span className="ml-auto flex items-center gap-1">
         <button className={buttonClass} disabled={!canUndo} onClick={undo} title="Undo (⌘Z)">
           ↶
@@ -153,7 +185,34 @@ export function Toolbar() {
         >
           Duplicate
         </button>
+        <button
+          className={buttonClass}
+          disabled={busy}
+          title="Download this experiment as a JSON file"
+          onClick={exportDoc}
+        >
+          Export
+        </button>
+        <button
+          className={buttonClass}
+          disabled={busy}
+          title="Import an experiment from a JSON file"
+          onClick={() => fileRef.current?.click()}
+        >
+          Import
+        </button>
       </span>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = '' // re-importing the same file must re-fire change
+          if (file) void importFile(file)
+        }}
+      />
       {loadOpen && <LoadDialog onClose={() => setLoadOpen(false)} />}
     </div>
   )

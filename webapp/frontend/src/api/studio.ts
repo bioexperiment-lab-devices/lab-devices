@@ -17,6 +17,9 @@ export const getExperiment = (id: string) =>
 export const createExperiment = (doc: ExperimentDocJson) =>
   postJson<ExperimentResource>('/api/experiments', doc)
 
+export const importExperiment = (doc: ExperimentDocJson) =>
+  postJson<ExperimentResource>('/api/experiments/import', doc)
+
 export const replaceExperiment = (id: string, doc: ExperimentDocJson) =>
   putJson<ExperimentResource>(`/api/experiments/${id}`, doc)
 
