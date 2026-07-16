@@ -104,6 +104,22 @@ async def test_duplicate_suffixes_name(store: ExperimentsStore) -> None:
     assert first["id"] != src["id"]
 
 
+async def test_create_renaming_keeps_a_free_name(store: ExperimentsStore) -> None:
+    created = await store.create_renaming(make_doc("Fresh"))
+    assert created["name"] == "Fresh"
+    assert created["doc"]["name"] == "Fresh"
+
+
+async def test_create_renaming_walks_suffixes_when_taken(store: ExperimentsStore) -> None:
+    await store.create(make_doc("X"))
+    first = await store.create_renaming(make_doc("X"))
+    second = await store.create_renaming(make_doc("X"))
+    assert first["name"] == "X (copy)"
+    assert second["name"] == "X (copy 2)"
+    assert first["doc"]["name"] == "X (copy)"
+    assert first["id"] != second["id"]
+
+
 async def test_name_conflict_rolls_back_transaction(tmp_path: Path) -> None:
     """W2 carry-forward: a failed INSERT/UPDATE must not leave the connection in an
     open transaction."""
