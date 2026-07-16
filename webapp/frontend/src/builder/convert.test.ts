@@ -277,4 +277,11 @@ describe('control blocks', () => {
     expect((tree[0] as ComputeNode).value).toBe(12)
     expect(nodeToBlock(tree[0])).toEqual({ compute: { into: 'V', value: 12 } })
   })
+
+  it('round-trips the control-blocks fixture with identical bytes', () => {
+    const input = fixture('valid-control-blocks')
+    // Deep-equal is blind to 6.0 vs 6 and to key order (W7 review); compare serialised bytes,
+    // which is what actually reaches the backend.
+    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
+  })
 })

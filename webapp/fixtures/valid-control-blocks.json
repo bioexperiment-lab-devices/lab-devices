@@ -1,0 +1,35 @@
+{
+  "doc_version": 1,
+  "name": "Control blocks",
+  "description": "Exercises compute, record, abort and alarm end to end.",
+  "roles": {
+    "od_meter": { "type": "densitometer" }
+  },
+  "workflow": {
+    "schema_version": 1,
+    "metadata": { "name": "Control blocks" },
+    "persistence": { "default": "in_memory", "format": "jsonl" },
+    "streams": {
+      "od": { "units": "AU" },
+      "c_series": { "units": "mg/L" }
+    },
+    "blocks": [
+      { "compute": { "into": "V", "value": 12 } },
+      { "compute": { "into": "c", "value": 0 } },
+      { "operator_input": { "name": "emergency_stop", "type": "bool" } },
+      { "abort": { "if": "emergency_stop", "message": "operator emergency stop" } },
+      {
+        "loop": {
+          "body": [
+            { "measure": { "device": "od_meter", "verb": "measure", "into": "od" }, "on_error": "continue" },
+            { "compute": { "into": "c", "value": "c * V / (V + 1)" } },
+            { "record": { "into": "c_series", "value": "c" } },
+            { "alarm": { "if": "count(od, last=45s) > 0 and last(od) > 2.0", "message": "tube contaminated" } }
+          ],
+          "count": 3,
+          "pace": "60s"
+        }
+      }
+    ]
+  }
+}
