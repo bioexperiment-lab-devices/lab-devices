@@ -13,6 +13,7 @@ export interface LogEvent {
 }
 
 const KIND_COLOR: Record<string, string> = {
+  abort_raised: 'text-red-700',
   block_failed: 'text-red-700',
   invariant_violation: 'text-red-700',
   finalize_step_failed: 'text-red-700',
@@ -30,6 +31,7 @@ const KIND_COLOR: Record<string, string> = {
   // Same category: a stranded job is a real degradation the run survived, not a routine
   // in-progress retry (2026-07-14 review, engine agent addendum).
   job_stranded: 'text-amber-800',
+  alarm_raised: 'text-amber-800',
 }
 
 export function EventLog(props: { events: ReadonlyArray<LogEvent>; origin: number | null; rev: number }) {

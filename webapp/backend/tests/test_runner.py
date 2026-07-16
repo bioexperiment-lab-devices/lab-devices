@@ -80,6 +80,7 @@ async def test_happy_path_completes_with_full_artifacts(env: SimpleNamespace) ->
     assert report["finalize_errors"] == []
     assert report["persistence_errors"] == []
     assert report["tolerated_errors"] == []
+    assert report["alarms"] == []
     assert isinstance(report["clock_origin"], float)
     assert report["started_at"] < report["ended_at"]
     assert report["role_mapping"] == runsupport.MAPPING

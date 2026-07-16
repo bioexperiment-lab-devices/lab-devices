@@ -934,8 +934,6 @@ def _check_abort_not_under_tolerance(w: Workflow, out: list[Diagnostic]) -> None
                 visit(b.then, f"{path}.then", child_tolerance)
                 if b.else_ is not None:
                     visit(b.else_, f"{path}.else", child_tolerance)
-            elif isinstance(b, B.ForEach):
-                visit(b.body, f"{path}.body", child_tolerance)
             elif isinstance(b, B.GroupRef):
                 group = w.groups.get(b.name)
                 if group is not None:
