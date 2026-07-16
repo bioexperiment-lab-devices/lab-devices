@@ -130,16 +130,30 @@ class ExperimentsStore:
             raise UnknownExperimentError(f"no experiment {experiment_id!r}")
         await self._db.conn.commit()
 
-    async def duplicate(self, experiment_id: str) -> dict[str, Any]:
-        source = await self.get(experiment_id)
-        doc = ExperimentDoc.model_validate(source["doc"])
+    async def create_renaming(self, doc: ExperimentDoc) -> dict[str, Any]:
+        """create(), but walk '(copy)', '(copy 2)'… until a free name lands
+        (design §5.1)."""
+        try:
+            return await self.create(doc)
+        except NameConflictError:
+            pass
         for n in itertools.count(1):
-            candidate = f"{doc.name} (copy)" if n == 1 else f"{doc.name} (copy {n})"
+            candidate = (
+                f"{doc.name} (copy)" if n == 1 else f"{doc.name} (copy {n})"
+            )
             try:
-                return await self.create(doc.model_copy(update={"name": candidate}))
+                return await self.create(
+                    doc.model_copy(update={"name": candidate})
+                )
             except NameConflictError:
                 continue
         raise AssertionError("unreachable")
+
+    async def duplicate(self, experiment_id: str) -> dict[str, Any]:
+        source = await self.get(experiment_id)
+        return await self.create_renaming(
+            ExperimentDoc.model_validate(source["doc"])
+        )
 
 
 def validate_doc(doc: ExperimentDoc) -> list[dict[str, str]]:

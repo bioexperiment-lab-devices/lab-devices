@@ -3,6 +3,7 @@ import { deleteExperiment, getExperiment, listExperiments } from '../api/studio'
 import type { ExperimentSummary } from '../types/doc'
 import { loadDoc, selectDirty, useDocStore } from '../stores/docStore'
 import { DocConvertError, docToTree } from './convert'
+import { exportFilename, serializeDoc, triggerDownload } from './files'
 
 export function LoadDialog(props: { onClose: () => void }) {
   const [items, setItems] = useState<ExperimentSummary[] | null>(null)
@@ -48,6 +49,17 @@ export function LoadDialog(props: { onClose: () => void }) {
     }
   }
 
+  const exportItem = async (item: ExperimentSummary) => {
+    setError(null)
+    try {
+      const res = await getExperiment(item.id)
+      // the STORED doc, no convert round-trip — works for docs the builder can't open
+      triggerDownload(exportFilename(res.doc.name), serializeDoc(res.doc))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   const shown = (items ?? []).filter(
     (i) =>
       i.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -87,6 +99,13 @@ export function LoadDialog(props: { onClose: () => void }) {
                 <p className="truncate text-xs text-slate-400">
                   {item.description ?? 'no description'} · updated {item.updated_at.slice(0, 16)}
                 </p>
+              </button>
+              <button
+                title="Export experiment as JSON"
+                onClick={() => void exportItem(item)}
+                className="text-xs text-slate-300 hover:text-sky-600"
+              >
+                ⭳
               </button>
               <button
                 title="Delete experiment"

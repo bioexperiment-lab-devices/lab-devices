@@ -38,6 +38,14 @@ async def create_experiment(
     return await store.create(doc)
 
 
+@router.post("/import", status_code=201)
+async def import_experiment(
+    doc: ExperimentDoc, store: ExperimentsStore = Depends(get_store)
+) -> dict[str, Any]:
+    """§5.2: create with auto-rename on conflict. Never 409; no validate_doc gate."""
+    return await store.create_renaming(doc)
+
+
 @router.get("/{experiment_id}")
 async def get_experiment(
     experiment_id: str, store: ExperimentsStore = Depends(get_store)
