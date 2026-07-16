@@ -16,7 +16,8 @@ Ranked by what they would actually unlock.
 made the example unusable for its actual purpose. It is now closed. **Update, 2026-07-15:** #1 and
 #3 (computed bindings/streams, Increment 6) and #4 (parametrized groups, Increment 7) have since
 shipped too — see their sections; #2 and #5–#8 remain open, and everything written about those
-still holds.
+still holds. **Update, 2026-07-16:** #7 (`abort`/`alarm`, Increment 8) has since shipped too — see
+its section; #2, #5, #6, and #8 remain open, and everything written about those still holds.
 
 ---
 
@@ -513,7 +514,33 @@ exist; this is mostly a validator and serializer change.
 
 ---
 
-## 7. No abort or assert block
+## 7. No abort or assert block — **SHIPPED (2026-07-16)**
+
+**Shipped as the `abort` and `alarm` blocks** (Increment 8). Design:
+[`superpowers/specs/2026-07-16-experiment-orchestrator-8-abort-alarm-design.md`](superpowers/specs/2026-07-16-experiment-orchestrator-8-abort-alarm-design.md).
+`{abort: {if: "<expr>", message: "..."}}` and `{alarm: {if: "<expr>", message: "..."}}` share the
+exact condition-evaluation path `branch.if` already uses — same parser, same type-check, same
+freshness/read-before-write path analysis — and differ only in what they do when the condition is
+true. `abort` emits `abort_raised` and raises a new `AbortSignalError`: never retried, never
+tolerated by any enclosing `on_error: "continue"` (not even inside a `parallel` lane —
+`_tolerable`'s never-absorb list and the exception-group flattening both refuse to swallow it),
+and it unwinds the block tree so the existing finalizer sweeps every touched device to a safe
+state; the run ends with status **`"aborted"`** — the same status an operator-triggered abort
+already used, distinguished only by the `AbortSignalError` type and the `abort_raised` event, not
+by a new status string. `alarm` is the flag-and-continue sibling: it emits `alarm_raised`, appends
+an `AlarmRecord` to `RunReport.alarms`, and returns normally so the run keeps going — deliberately
+**stateless** (it fires every cycle its condition holds), with fire-once expressed by composing it
+with a `compute`-latched boolean rather than a built-in flag. Both require a non-empty `message`;
+`abort` additionally forbids `on_error: "continue"` (tolerating a safety stop is a contradiction),
+while `alarm` allows it. `examples/morbidostat.json` now expresses the contamination guard this
+section was filed for: a latched `alarm` flags a contaminated tube and drops it from service while
+the others run on, and a whole-run `abort` fires once every tube is lost. **Honest gap:** the test
+rig's simulated densitometers read absorbance 0.0 on every sample, so the contamination predicate
+itself cannot fire on real hardware — that path is proven in FakeLab integration tests, where OD
+is scriptable. What *is* proven on real hardware is the operator side: an `emergency_stop`
+operator input feeding an `abort` lets the preprod smoke trigger a real abort and watch the
+finalizer sweep the thermostats, pumps, and valves safe, end to end. The original problem
+statement is kept below as motivation.
 
 **What.** The block vocabulary is `command`, `measure`, `operator_input`, `wait`, `serial`,
 `parallel`, `loop`, `branch`, `group_ref`. There is no way for a workflow to *fail itself* on a
@@ -692,7 +719,7 @@ that a `parallel` block of state-persisting verbs is unsafe on such a roster.
 | 4 | ~~Groups not parametrized~~ | ~~Scaling past ~3 vials~~ | **SHIPPED 2026-07-15** — `for_each` (splicing macro) + parametrized groups (`params`/`args`, inlined as a `Serial`) |
 | 5 | `enum` inputs unusable in expressions | Operator-selectable modes | String comparison in expressions |
 | 6 | Durations/counts are literals | Cycle time as an operator input; adaptive timing | Expressions in duration/count slots |
-| 7 | No abort/assert block | Contamination guards on long runs | `abort` / `alarm` block |
+| 7 | ~~No abort/assert block~~ | ~~Contamination guards on long runs~~ | **SHIPPED 2026-07-16** — `abort` (hard stop, `AbortSignalError`, status `"aborted"`) / `alarm` (flag-and-continue, `RunReport.alarms`) |
 | 8 | No clock in expressions | Time-bounded conditions | `elapsed()` |
 
 **#0 is done**, and it is the one that had to be: it is the difference between a workflow you
@@ -719,9 +746,20 @@ for the first time: the tube-service control law is written once, as a `service(
 `for_each` invokes it per tube, seeds its accumulators, and lanes its OD reads. `defaults.retry`
 had already bought this example its scale for *retry policy* — one clause instead of ~60
 hand-copied ones; **#4 now buys that same scale for the *control law* itself** — one law instead
-of fifteen hand-copied, byte-identical subtrees. Of what remains, **#7 (abort/alarm)** is still
-the natural sequel to #0: a run can now survive a dead sensor and even record its frozen state,
-but it still cannot *flag* one and halt.
+of fifteen hand-copied, byte-identical subtrees.
+
+**#7 (abort/alarm) is now done too** (Increment 8, 2026-07-16). `abort` and `alarm` share one
+condition-evaluation path with `branch`, so the freshness/read-before-write guarantees documented
+under #0 apply to them for free — zero new analysis logic, the same payoff Increment 7 already
+banked for `for_each`. #7 was named the natural sequel to #0 throughout this document, and it now
+closes the loop: a run can both *survive* a dead sensor (#0 — `retry`/`on_error`) and *flag or
+halt* on one (#7 — `alarm`/`abort`). The morbidostat's contamination guard is the concrete
+demonstration: a latched `alarm` drops one bad vial from service while the other fourteen run on,
+and a whole-run `abort` sweeps every device safe when every vial is lost. The one honest gap is
+where it was always going to be — the test rig's simulated densitometers read OD 0.0, so the
+contamination predicate itself cannot fire on real hardware; that path is proven in FakeLab
+integration tests, and the operator's own `emergency_stop` → `abort` is what is proven end to end
+on real hardware instead.
 
 Separately, the **duplicate-serial collision** above is not an engine issue at all, and it has a
 one-line fix: give the simulated test devices distinct serials. Until then, a `parallel` block of
