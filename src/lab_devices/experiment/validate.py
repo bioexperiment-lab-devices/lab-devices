@@ -286,6 +286,11 @@ def _check_condition(
     _check_streams_declared(text, ctx, w, out)
 
 
+def _check_message(message: object, path: str, kind: str, out: list[Diagnostic]) -> None:
+    if not isinstance(message, str) or not message.strip():
+        out.append(Diagnostic("block", path, f"{kind} requires a non-empty message"))
+
+
 def _check_compute_value(
     value: object,
     ctx: str,
@@ -573,6 +578,17 @@ def _check_block(
         _check_compute(block, path, w, binding_types, out)
     elif isinstance(block, B.Record):
         _check_record(block, path, w, binding_types, out)
+    elif isinstance(block, B.Abort):
+        _check_condition(block.if_, f"{path} abort if", w, binding_types, out)
+        _check_message(block.message, path, "abort", out)
+        if block.on_error == "continue":
+            out.append(Diagnostic(
+                "block", path,
+                "abort may not carry on_error: 'continue'; a safety stop cannot be tolerated",
+            ))
+    elif isinstance(block, B.Alarm):
+        _check_condition(block.if_, f"{path} alarm if", w, binding_types, out)
+        _check_message(block.message, path, "alarm", out)
 
 
 @dataclass
@@ -869,6 +885,9 @@ def _visit_body(b: B.Block, path: str, state: _PathState, c: _Ctx) -> _PathState
         _expr_reads(b.value, f"{path} record value", state, c)
         if isinstance(b.into, str):
             state.streams.add(b.into)
+    elif isinstance(b, (B.Abort, B.Alarm)):
+        slot = "abort if" if isinstance(b, B.Abort) else "alarm if"
+        _expr_reads(b.if_, f"{path} {slot}", state, c)
     elif isinstance(b, B.GroupRef):
         group = c.workflow.groups.get(b.name)
         if group is not None:  # unknown refs are diagnosed globally; phase is gated anyway

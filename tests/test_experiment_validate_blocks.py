@@ -149,3 +149,47 @@ def test_enum_choices_non_list_degrades():
 def test_enum_choices_string_rejected():
     d = diags(wf([{"operator_input": {"name": "x", "type": "enum", "choices": "ab"}}]))
     assert any(x.category == "block" and "choices" in x.message for x in d)
+
+
+def test_abort_condition_must_be_boolean():
+    d = diags(wf([{"abort": {"if": "1 + 1", "message": "x"}}]))
+    assert any("boolean" in m.message for m in d)
+
+
+def test_abort_message_required_nonempty():
+    d = diags(wf([{"abort": {"if": "true", "message": "   "}}]))
+    assert any("non-empty message" in m.message for m in d)
+
+
+def test_abort_forbids_on_error_continue():
+    d = diags(wf([{"abort": {"if": "true", "message": "x"}, "on_error": "continue"}]))
+    assert any("cannot be tolerated" in m.message for m in d)
+
+
+def test_alarm_allows_on_error_continue():
+    validate(wf([{"alarm": {"if": "true", "message": "x"}, "on_error": "continue"}]))
+
+
+def test_retry_on_abort_rejected():
+    d = diags(wf([{"abort": {"if": "true", "message": "x"}, "retry": {"attempts": 2}}]))
+    assert any("command and measure" in m.message for m in d)
+
+
+def test_abort_unguarded_window_diagnosed():
+    d = diags(wf([{"abort": {"if": "mean(od_1, last=30min) > 1", "message": "x"}}],
+                 streams=["od_1"]))
+    assert any(m.category == "data-flow" for m in d)
+
+
+def test_abort_guarded_window_clean():
+    validate(wf([{"abort": {"if": "count(od_1, last=30min) > 0 and mean(od_1, last=30min) > 1",
+                            "message": "x"}}], streams=["od_1"]))
+
+
+def test_for_each_abort_expands_per_tube():
+    validate(wf([
+        {"for_each": {"var": "tube", "in": [1, 2],
+            "body": [{"abort": {
+                "if": "count(od_{tube}, last=1min) > 0 and last(od_{tube}) > 5",
+                "message": "tube {tube} lost"}}]}},
+    ], streams=["od_1", "od_2"]))
