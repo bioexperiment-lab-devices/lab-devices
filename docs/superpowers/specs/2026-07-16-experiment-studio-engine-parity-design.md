@@ -305,6 +305,19 @@ role diagnostics reach `ProblemsPanel.tsx:29-47` with `uid === null`, which disa
 button (`:32`), so they are unclickable. W9 wires `role` to focus the offending role in
 `RolesPanel`, since the same click-to-source machinery is being touched anyway.
 
+**Context-suffixed paths do not resolve, and W8 made this reachable** (found by W8's final
+whole-branch review; carried here because W9 owns `paths.ts`). The validator emits a context
+suffix on expression diagnostics — `blocks[0] compute value`, `blocks[4].body[3] alarm if`,
+`blocks[0] branch if` — but the structural regex at `paths.ts:29` only strips a ` param 'x'`
+suffix, so all of these resolve to `uid: null`: the Problems row's button is disabled and the
+canvas card gets no highlight. This is **pre-existing** (`branch if` fails identically on
+`main`, before any of this work) and is mitigated — `ProblemsPanel.tsx:43` prints the raw path,
+so the author still has a locator. But W8 made it materially more reachable: a `compute`
+`value` is the most error-prone field of the four new blocks, and before W8 a document
+containing one could not be opened in the builder at all. The fix is to strip **any** trailing
+context suffix, not just ` param`, before matching the structural prefix — a regex change, in
+the file W9 is already rewriting for §5.4's scope resolution.
+
 ### 5.5 Testing
 
 - `expand` trace tests (pytest) — `for_each` many-to-one; nested `for_each`; `group_ref`
@@ -312,7 +325,8 @@ button (`:32`), so they are unclickable. W9 wires `role` to focus the offending 
   `for_each` inside them spliced.
 - `test_docs_store` — a diagnostic inside a `for_each` body returns an **authored** path.
 - `paths.test.ts` — group-scope resolution; a `for_each` body path resolves to the authored
-  body block.
+  body block; **a context-suffixed path resolves** (`blocks[0] compute value`,
+  `blocks[4].body[3] alarm if`, `blocks[0] branch if`) — these all return `uid: null` today.
 - `convert.test.ts` — `examples/morbidostat.json` round-trips through
   `docToTree`/`treeToDoc` byte-for-byte via `json.dumps`-style key-order-sensitive comparison
   (the W7 trap: deep-equal is blind to `6.0` vs `6` and to key order).
