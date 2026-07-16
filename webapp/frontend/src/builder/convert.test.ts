@@ -269,19 +269,26 @@ describe('control blocks', () => {
 })
 
 describe('repetition blocks', () => {
+  // Key order mirrors the engine's canonical order (serialize.py:426-450): schema_version,
+  // metadata, persistence, defaults, streams, groups, blocks. `defaults`/`groups` are spread
+  // in at their canonical position (conditionally, so an absent one is omitted) rather than
+  // via a trailing `...workflow` spread — a trailing spread only overwrites a key's value in
+  // place when the key already exists in the base literal, but `groups` doesn't, so it would
+  // land wherever the spread appears (after `blocks`) instead of before it.
   const doc = (workflow: Partial<WorkflowJson>): ExperimentDocJson => ({
     doc_version: 1,
     name: 'macro',
     description: null,
     roles: {},
     workflow: {
-      schema_version: 1,
-      metadata: { name: 'macro' },
-      persistence: { default: 'in_memory', format: 'jsonl' },
-      streams: {},
-      blocks: [],
-      ...workflow,
-    } as WorkflowJson,
+      schema_version: workflow.schema_version ?? 1,
+      metadata: workflow.metadata ?? { name: 'macro' },
+      persistence: workflow.persistence ?? { default: 'in_memory', format: 'jsonl' },
+      ...(workflow.defaults !== undefined ? { defaults: workflow.defaults } : {}),
+      streams: workflow.streams ?? {},
+      ...(workflow.groups !== undefined ? { groups: workflow.groups } : {}),
+      blocks: workflow.blocks ?? [],
+    },
   })
 
   it('round-trips a for_each with scalar items', () => {

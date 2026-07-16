@@ -206,31 +206,34 @@ export function treeToDoc(content: DocContent): ExperimentDocJson {
   }
   const roles: ExperimentDocJson['roles'] = {}
   for (const [name, role] of Object.entries(content.roles)) roles[name] = { type: role.type }
-  const workflow: WorkflowJson = {
-    schema_version: 1,
-    metadata: { name: content.name },
-    // Preserve a custom persistence setting if the doc carried one in; only fall back to
-    // the builder's historical default when none was present (2026-07-14 review, Fix 1).
-    persistence: content.persistence ?? { default: 'in_memory', format: 'jsonl' },
-    streams,
-    blocks: content.tree.map(nodeToBlock),
-  }
-  if (content.defaults !== undefined) workflow.defaults = content.defaults
-  // groups omitted entirely when empty (serialize.py:445 `if w.groups:`), so a group-less doc
-  // round-trips byte-identically to today. Assigned last (not spread into the literal above)
-  // so a doc built with `blocks` already present emits `groups` after `blocks`, matching the
-  // fixtures' own key order (see convert.test.ts's `doc()` helper: `blocks` is a base key,
-  // `groups` is spread in afterward, so it lands after `blocks` in the JSON the tests pin).
   const groupEntries = Object.entries(content.groups ?? {})
+  let groups: Record<string, GroupJson> | undefined
   if (groupEntries.length > 0) {
-    const groups: Record<string, GroupJson> = {}
+    groups = {}
     for (const [name, g] of groupEntries) {
       groups[name] = {
         ...(g.params.length > 0 ? { params: [...g.params] } : {}),
         body: g.body.map(nodeToBlock),
       }
     }
-    workflow.groups = groups
+  }
+  // Key order mirrors workflow_to_dict (serialize.py:426-450): schema_version, metadata,
+  // persistence, defaults, streams, groups, blocks. defaults and groups are conditional
+  // (omitted when absent/empty), so they are spread into the literal at their canonical
+  // position rather than assigned afterward — an object-literal-plus-post-assignment
+  // cannot land a conditional key ahead of keys that must appear unconditionally after it.
+  const workflow: WorkflowJson = {
+    schema_version: 1,
+    metadata: { name: content.name },
+    // Preserve a custom persistence setting if the doc carried one in; only fall back to
+    // the builder's historical default when none was present (2026-07-14 review, Fix 1).
+    persistence: content.persistence ?? { default: 'in_memory', format: 'jsonl' },
+    ...(content.defaults !== undefined ? { defaults: content.defaults } : {}),
+    streams,
+    // groups omitted entirely when empty (serialize.py:445 `if w.groups:`), so a group-less
+    // doc round-trips byte-identically to today.
+    ...(groups !== undefined ? { groups } : {}),
+    blocks: content.tree.map(nodeToBlock),
   }
   return {
     doc_version: 1,
