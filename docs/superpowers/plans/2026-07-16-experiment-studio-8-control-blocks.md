@@ -287,7 +287,7 @@ git commit -m "feat(studio-frontend): tree + doc types for compute/record/abort/
 - Consumes: `ComputeNode`/`RecordNode`/`AbortNode`/`AlarmNode` and the `*Body` types from Task 2.
 - Produces: `docToTree`/`treeToDoc` handling all twelve kinds; `nodeToBlock` made exhaustive via a `never` check.
 
-**Context:** `nodeToBlock` is a `switch` with no `default`. It is safe today only because `BlockNode` cannot represent the newer kinds; now that the union has grown, a missing arm would silently emit a block with **zero type keys**, which the engine rejects at `serialize.py:277` with a message that blames the document rather than the builder (spec §6). The `never` check turns the next omission into a compile error.
+**Context:** `nodeToBlock` is a `switch` with no `default`. It is safe today only because `BlockNode` cannot represent the newer kinds; now that the union has grown, a missing arm would silently emit a block with **zero type keys**, which the engine rejects at `serialize.py:279` with a message that blames the document rather than the builder (spec §6). The `never` check turns the next omission into a compile error.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -400,7 +400,7 @@ In `nodeToBlock` (`:190-241`), add four arms before the closing brace of the swi
       break
     default: {
       // Exhaustiveness guard: a BlockNode kind with no arm here would emit a block with
-      // zero type keys, which the engine rejects at serialize.py:277 blaming the document
+      // zero type keys, which the engine rejects at serialize.py:279 blaming the document
       // rather than the builder. Keep this a compile error instead (design §6).
       const unreachable: never = node
       throw new DocConvertError(`unserializable block node ${JSON.stringify(unreachable)}`)

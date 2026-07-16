@@ -271,7 +271,7 @@ export function nodeToBlock(node: BlockNode): BlockJson {
       break
     default: {
       // Exhaustiveness guard: a BlockNode kind with no arm here would emit a block with
-      // zero type keys, which the engine rejects at serialize.py:277 blaming the document
+      // zero type keys, which the engine rejects at serialize.py:279 blaming the document
       // rather than the builder. Keep this a compile error instead (design §6).
       const unreachable: never = node
       throw new DocConvertError(`unserializable block node ${JSON.stringify(unreachable)}`)

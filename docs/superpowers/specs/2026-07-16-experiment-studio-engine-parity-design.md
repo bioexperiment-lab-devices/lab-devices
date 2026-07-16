@@ -334,7 +334,7 @@ catch-all for a future engine block Studio has not learned yet — which is exac
 `nodeToBlock` (`convert.ts:190-241`) is a `switch` over the node union with no `default`. It is
 safe today only because `BlockNode` cannot represent the newer kinds; a kind added to the union
 without an arm here silently emits a block with **zero type keys**, which the engine rejects at
-`serialize.py:277` with a message pointing at the document rather than at the builder. Both
+`serialize.py:279` with a message pointing at the document rather than at the builder. Both
 increments add arms; W8 additionally makes the switch exhaustive via a `never` check so the
 next omission is a **compile** error.
 
