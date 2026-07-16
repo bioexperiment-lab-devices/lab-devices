@@ -13,6 +13,7 @@ from lab_devices.experiment import blocks as B
 from lab_devices.experiment.context import RunContext
 from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import (
+    AbortSignalError,
     BlockFailedError,
     EvaluationError,
     InvariantViolationError,
@@ -463,6 +464,10 @@ def _tolerable(exc: BaseException) -> bool:
     - `InvariantViolationError`: a proven-impossible occupancy state. The safety model itself
       is broken; tolerating it would hide that, and the run would carry on dispatching against
       a proof it has just watched fail.
+    - `AbortSignalError`: a workflow `abort` block's condition was true — a deliberate,
+      workflow-initiated stop (design 2026-07-16 §2.1), not a device fault. An enclosing
+      `on_error: continue` absorbing it would silently turn "stop the run" into "carry on",
+      which defeats the whole feature.
     - `RunAbortedError`: unreachable inside a block today — its only raise site is `run.py`,
       AFTER the block walk has already returned — but it is the abort error named by design's
       own never-swallow table, and `_tolerate`'s whole reason to exist is defence against a
@@ -479,6 +484,7 @@ def _tolerable(exc: BaseException) -> bool:
         (
             asyncio.CancelledError,
             InvariantViolationError,
+            AbortSignalError,
             RunAbortedError,
             core_errors.BusyError,
         ),
@@ -566,7 +572,7 @@ async def execute_block(block: B.Block, ctx: RunContext) -> None:
     ctx.emit("block_started", block.id)
     try:
         await _execute_inner(block, ctx)
-    except (BlockFailedError, InvariantViolationError) as exc:
+    except (BlockFailedError, InvariantViolationError, AbortSignalError) as exc:
         if _tolerate(block, exc, ctx):  # the origin frame already emitted its event
             return
         raise
@@ -605,6 +611,8 @@ async def _execute_inner(block: B.Block, ctx: RunContext) -> None:
         await _run_compute(block, ctx)
     elif isinstance(block, B.Record):
         await _run_record(block, ctx)
+    elif isinstance(block, B.Abort):
+        await _run_abort(block, ctx)
     elif isinstance(block, B.GroupRef):
         await execute_blocks(ctx.workflow.groups[block.name].body, ctx)
     else:
@@ -678,6 +686,14 @@ async def _run_record(block: B.Record, ctx: RunContext) -> None:
     if sink is not None:
         sink.write(Sample(now, value))
     ctx.emit("sample_recorded", block.id, stream=block.into, value=value)
+
+
+async def _run_abort(block: B.Abort, ctx: RunContext) -> None:
+    """A true condition is a deliberate, non-tolerable stop (design 2026-07-16 §2.1). Emit the
+    event best-effort (a raising sink must not displace the abort), then raise."""
+    if _condition(block.if_, ctx):
+        _emit(ctx, "abort_raised", block.id, message=block.message)
+        raise AbortSignalError(str(block.id), block.message)
 
 
 async def _run_operator_input(block: B.OperatorInput, ctx: RunContext) -> None:
