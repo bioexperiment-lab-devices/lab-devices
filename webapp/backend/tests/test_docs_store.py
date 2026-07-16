@@ -176,3 +176,125 @@ def test_a_diagnostic_inside_a_for_each_body_reports_the_authored_path() -> None
     paths = {d["path"] for d in diags}
     # Authored, not expanded: every copy points at the one block the author can edit.
     assert paths == {"blocks[0].body[1] branch if"}
+
+
+def test_a_plain_group_ref_under_for_each_reports_a_compound_authored_path() -> None:
+    """Critical fix: a validate-phase walk from a group_ref call site into a PLAIN
+    group's body builds a compound "<call site>->name.body[i]" path (validate.py:894).
+    The for_each duplicates the call site (blocks[0] and blocks[1]), but both copies are
+    authored at the same place: blocks[0].body[0] (the group_ref itself, inside the
+    for_each body) calling into groups['mygroup'].body[0] (the group definition, authored
+    where it is written and never duplicated). _remap must split on the first "->",
+    remap only the call-site segment, and carry the group-body tail through unchanged --
+    then dedup collapses the two per-copy diagnostics into one."""
+    doc = ExperimentDoc.model_validate(
+        {
+            "doc_version": 1,
+            "name": "plain-group-under-for-each",
+            "description": None,
+            "roles": {},
+            "workflow": {
+                "schema_version": 1,
+                "groups": {
+                    "mygroup": {
+                        "body": [
+                            {"compute": {"into": "x", "value": "nope_undeclared_thing"}}
+                        ]
+                    }
+                },
+                "blocks": [
+                    {
+                        "for_each": {
+                            "var": "t",
+                            "in": [1, 2],
+                            "body": [{"group_ref": {"name": "mygroup"}}],
+                        }
+                    }
+                ],
+            },
+        }
+    )
+    diags = validate_doc(doc)
+    assert len(diags) == 1, f"expected the two per-copy diagnostics to dedup to one, got {diags}"
+    assert diags[0]["path"] == "blocks[0].body[0]->mygroup.body[0] compute value"
+
+
+def test_a_compound_path_reached_through_a_parametrized_group_remaps_the_call_site() -> None:
+    """Regression guard: a plain group_ref (to `plaingroup`) nested inside a
+    PARAMETRIZED group's body (`paramgroup`, called with args) still produces a compound
+    "<call site>->plaingroup.body[i]" path once validate.py walks into the surviving
+    GroupRef node -- the parametrized call site is fully inlined at expand time, but the
+    trace still knows it as groups['paramgroup'].body[0]. That call-site segment must
+    remap; the plaingroup.body[0] tail is already authored and passes through untouched."""
+    doc = ExperimentDoc.model_validate(
+        {
+            "doc_version": 1,
+            "name": "plain-group-under-parametrized-group",
+            "description": None,
+            "roles": {},
+            "workflow": {
+                "schema_version": 1,
+                "groups": {
+                    "plaingroup": {
+                        "body": [
+                            {"compute": {"into": "x", "value": "nope_undeclared_thing"}}
+                        ]
+                    },
+                    "paramgroup": {
+                        "params": ["tube"],
+                        "body": [{"group_ref": {"name": "plaingroup"}}],
+                    },
+                },
+                "blocks": [{"group_ref": {"name": "paramgroup", "args": {"tube": 1}}}],
+            },
+        }
+    )
+    diags = validate_doc(doc)
+    assert len(diags) == 1
+    assert diags[0]["path"] == "groups['paramgroup'].body[0]->plaingroup.body[0] compute value"
+
+
+def test_a_diagnostic_with_no_arrow_remaps_by_identity_when_unduplicated() -> None:
+    """Regression guard: partition("->") on a path with no "->" leaves head == the whole
+    prefix and arrow == tail == "", so behavior for the common (non-compound) case is
+    byte-for-byte identical to before this fix."""
+    doc = ExperimentDoc.model_validate(
+        {
+            "doc_version": 1,
+            "name": "no-arrow",
+            "description": None,
+            "roles": {},
+            "workflow": {
+                "schema_version": 1,
+                "blocks": [
+                    {"compute": {"into": "x", "value": "nope_undeclared_thing"}}
+                ],
+            },
+        }
+    )
+    diags = validate_doc(doc)
+    assert len(diags) == 1
+    assert diags[0]["path"] == "blocks[0] compute value"
+
+
+def test_an_unmappable_diagnostic_path_passes_through_unchanged() -> None:
+    """The passthrough branch (self-review flagged it untested): `_check_groups`'s
+    recursive-group diagnostic is reported at the bare "groups['name']" container path --
+    never a trace key, since the trace only ever records positions *inside* a body list.
+    _remap must hand that raw path back unchanged rather than dropping the diagnostic."""
+    doc = ExperimentDoc.model_validate(
+        {
+            "doc_version": 1,
+            "name": "recursive-group",
+            "description": None,
+            "roles": {},
+            "workflow": {
+                "schema_version": 1,
+                "groups": {"selfref": {"body": [{"group_ref": {"name": "selfref"}}]}},
+                "blocks": [{"group_ref": {"name": "selfref"}}],
+            },
+        }
+    )
+    diags = validate_doc(doc)
+    paths = {d["path"] for d in diags}
+    assert "groups['selfref']" in paths

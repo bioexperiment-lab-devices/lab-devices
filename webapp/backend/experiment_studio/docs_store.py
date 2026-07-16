@@ -161,10 +161,15 @@ class ExperimentsStore:
 # suffix is prose. Split on the first space — no structural token contains one.
 def _remap(path: str, trace: dict[str, str]) -> str:
     prefix, sep, suffix = path.partition(" ")
-    mapped = trace.get(prefix)
+    # A validate-phase walk from a group_ref call site into a PLAIN group's body builds a
+    # compound path, "<call site>-><group>.body[i]" (validate.py:894, :940). Only the call-site
+    # segment is a trace key; the rest already names an authored location inside the group
+    # definition, so it is carried through untouched.
+    head, arrow, tail = prefix.partition("->")
+    mapped = trace.get(head)
     if mapped is None:
         return path  # unmappable: a raw path beats no path (design §5.3)
-    return mapped + sep + suffix
+    return mapped + arrow + tail + sep + suffix
 
 
 def _remap_diagnostics(
