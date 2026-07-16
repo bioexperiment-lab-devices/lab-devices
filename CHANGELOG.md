@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.6.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.5.0...v0.6.0) (2026-07-16)
+
+
+### Features
+
+* **experiment:** abort block raises non-tolerable AbortSignalError -&gt; status aborted ([706613e](https://github.com/bioexperiment-lab-devices/lab-devices/commit/706613ecaf58ea3e0d929cee6c0a474db146f2a3))
+* **experiment:** alarm block emits event + RunReport.alarms, run continues ([6a850eb](https://github.com/bioexperiment-lab-devices/lab-devices/commit/6a850eba27360466052b95be4953db63787ce350))
+* **experiment:** AST + serialization for abort/alarm blocks ([8b26850](https://github.com/bioexperiment-lab-devices/lab-devices/commit/8b26850ea245c2ef6ff9364e74c883da9d9faf87))
+* **experiment:** AST + serialization for for_each, group params, group_ref args ([5ec41aa](https://github.com/bioexperiment-lab-devices/lab-devices/commit/5ec41aa1ed4eccec18d0bec1070d4dc98734968c))
+* **experiment:** execute the expanded workflow (for_each / parametrized groups) ([d3d6830](https://github.com/bioexperiment-lab-devices/lab-devices/commit/d3d6830cbb134e78aeba8fc9c9b8dd29602837b2))
+* **experiment:** for_each / parametrized-group expansion engine ([6f9af93](https://github.com/bioexperiment-lab-devices/lab-devices/commit/6f9af934b9c11bfbacd6f6fcb534d4dee02c8a74))
+* **experiment:** self-failing blocks — abort + alarm (Increment 8, closes limitations [#7](https://github.com/bioexperiment-lab-devices/lab-devices/issues/7)) ([b8c78e9](https://github.com/bioexperiment-lab-devices/lab-devices/commit/b8c78e915b2ee0c1948b5390555213620f5ad00b))
+* **experiment:** validate abort/alarm (condition, message, on_error, freshness) ([ef895dd](https://github.com/bioexperiment-lab-devices/lab-devices/commit/ef895dd778132a77ef501f497f88f74c7b877415))
+* **experiment:** validate for_each/parametrized groups via expand-then-check ([732c442](https://github.com/bioexperiment-lab-devices/lab-devices/commit/732c4424f6da311c9c3eb3ea54edc1e7842810b3))
+* **studio-backend:** abort/alarm grammar parity + alarms in run report payload ([37af17f](https://github.com/bioexperiment-lab-devices/lab-devices/commit/37af17f01be202f3c59768badee363d0e5d23a3d))
+* **studio-backend:** for_each grammar parity + expand before role substitution ([96a5537](https://github.com/bioexperiment-lab-devices/lab-devices/commit/96a55375003492de43e385a78f34f91179d3c737))
+* **studio-frontend:** render abort/alarm events + alarm summary; builder degrades gracefully ([9143b09](https://github.com/bioexperiment-lab-devices/lab-devices/commit/9143b0930ba74abcf010a5aa329aa931be494204))
+* **studio-frontend:** specific graceful message for for_each docs in the builder ([1bafb1a](https://github.com/bioexperiment-lab-devices/lab-devices/commit/1bafb1ab95e5be6a575c18ce17e01be9959ec4be))
+* **studio:** export/import experiment setups (W7) ([#27](https://github.com/bioexperiment-lab-devices/lab-devices/issues/27)) ([b76e7aa](https://github.com/bioexperiment-lab-devices/lab-devices/commit/b76e7aa39172a996564dca5802cc11d60dd7ff5d))
+
+
+### Bug Fixes
+
+* **experiment:** forbid a tolerant on_error ancestor over an abort (safety hole) ([cb40695](https://github.com/bioexperiment-lab-devices/lab-devices/commit/cb40695d14cfbf27080f1979936bd936564c3ef1))
+* **experiment:** let parametrized groups contain for_each (pass-through holes + residual scan) ([98f72d8](https://github.com/bioexperiment-lab-devices/lab-devices/commit/98f72d85147e87f66f08f6ddb99ff9507795c1a7))
+* harden group_ref non-object body (500 fix), dedup macro defaults diagnostic, preserve Studio role diags on expand failure ([afe22fd](https://github.com/bioexperiment-lab-devices/lab-devices/commit/afe22fdcc16f86ca44bf34b2afa5ff1d60d51a21))
+
+
+### Documentation
+
+* Increment 7 design — parametrized repetition (for_each + parametrized groups) ([cda2cc5](https://github.com/bioexperiment-lab-devices/lab-devices/commit/cda2cc5c1bf1bfd4fa2c4df66a7906616a08948a))
+* Increment 8 design — self-failing blocks (abort + alarm) ([dec3614](https://github.com/bioexperiment-lab-devices/lab-devices/commit/dec36141e8fa80156e8d096e220536116667ee60))
+* mark limitations [#4](https://github.com/bioexperiment-lab-devices/lab-devices/issues/4) shipped; amend parent + Increment-7 specs for parametrized repetition ([07c45b6](https://github.com/bioexperiment-lab-devices/lab-devices/commit/07c45b629d37de751adc0f575ae030bcbad663c7))
+* mark limitations [#7](https://github.com/bioexperiment-lab-devices/lab-devices/issues/7) shipped; amend parent design for abort/alarm ([2be983a](https://github.com/bioexperiment-lab-devices/lab-devices/commit/2be983aabd9d3c53f48f4d027c10400599af1a36))
+* resolve stale parametrized-groups "deferred" references (Increment 7 shipped) ([322af79](https://github.com/bioexperiment-lab-devices/lab-devices/commit/322af793fb430b17ee10d07156a00d4a780cecf8))
+
 ## [0.5.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.4.0...v0.5.0) (2026-07-15)
 
 
