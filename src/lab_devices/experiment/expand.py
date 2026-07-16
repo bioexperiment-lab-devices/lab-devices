@@ -119,37 +119,65 @@ def _envs(body: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _expand_blocks(
-    blocks: list[Any], groups: dict[str, Any], counter: _Counter, depth: int
+    blocks: list[Any],
+    groups: dict[str, Any],
+    counter: _Counter,
+    depth: int,
+    trace: dict[str, str],
+    src: str,
+    dst: str,
+    base: int = 0,
 ) -> list[Any]:
     out: list[Any] = []
-    for block in blocks:
-        out.extend(_expand_block(block, groups, counter, depth))
+    for i, block in enumerate(blocks):
+        out.extend(
+            _expand_block(block, groups, counter, depth, trace, f"{src}[{i}]", dst, base + len(out))
+        )
     return out
 
 
 def _expand_block(
-    block: Any, groups: dict[str, Any], counter: _Counter, depth: int
+    block: Any,
+    groups: dict[str, Any],
+    counter: _Counter,
+    depth: int,
+    trace: dict[str, str],
+    src: str,
+    dst: str,
+    base: int,
 ) -> list[Any]:
     if depth > _MAX_DEPTH:
         raise WorkflowLoadError("for_each/group expansion nested too deeply (recursion?)")
     key = _type_key(block)
     if key is None:
+        trace[f"{dst}[{base}]"] = src
         return [block]  # malformed; workflow_from_dict reports it
     if key == "for_each":
-        return _expand_for_each(block, groups, counter, depth)
+        return _expand_for_each(block, groups, counter, depth, trace, src, dst, base)
     if key == "group_ref":
-        return _expand_group_ref(block, groups, counter, depth)
+        return _expand_group_ref(block, groups, counter, depth, trace, src, dst, base)
+    trace[f"{dst}[{base}]"] = src
     body = block[key]
     if isinstance(body, dict):
         for child_key in _CHILD_LISTS.get(key, ()):
             children = body.get(child_key)
             if isinstance(children, list):
-                body[child_key] = _expand_blocks(children, groups, counter, depth)
+                body[child_key] = _expand_blocks(
+                    children, groups, counter, depth, trace,
+                    f"{src}.{child_key}", f"{dst}[{base}].{child_key}",
+                )
     return [block]
 
 
 def _expand_for_each(
-    block: dict[str, Any], groups: dict[str, Any], counter: _Counter, depth: int
+    block: dict[str, Any],
+    groups: dict[str, Any],
+    counter: _Counter,
+    depth: int,
+    trace: dict[str, str],
+    src: str,
+    dst: str,
+    base: int,
 ) -> list[Any]:
     for k in _FOR_EACH_FORBIDDEN:
         if k in block:
@@ -165,13 +193,25 @@ def _expand_for_each(
     out: list[Any] = []
     for env in _envs(body):
         substituted = [_substitute(b, env) for b in tmpl]
-        out.extend(_expand_blocks(substituted, groups, counter, depth + 1))
+        out.extend(
+            _expand_blocks(
+                substituted, groups, counter, depth + 1, trace,
+                f"{src}.body", dst, base + len(out),
+            )
+        )
     counter.bump(len(out))
     return out
 
 
 def _expand_group_ref(
-    block: dict[str, Any], groups: dict[str, Any], counter: _Counter, depth: int
+    block: dict[str, Any],
+    groups: dict[str, Any],
+    counter: _Counter,
+    depth: int,
+    trace: dict[str, str],
+    src: str,
+    dst: str,
+    base: int,
 ) -> list[Any]:
     # Caveat: a group `param` name must not collide with an inner for_each `var` —
     # the param would shadow the loop var (no enforcement here).
@@ -184,6 +224,7 @@ def _expand_group_ref(
     group = groups.get(name) if isinstance(name, str) else None
     params = list(group.get("params", [])) if isinstance(group, dict) else []
     if not params and not args:
+        trace[f"{dst}[{base}]"] = src
         return [block]  # plain group_ref: preserve the node (lazy inline)
     if group is None:
         raise WorkflowLoadError(f"group_ref {name!r}: unknown group")
@@ -195,7 +236,11 @@ def _expand_group_ref(
     if not isinstance(raw_body, list):
         raise WorkflowLoadError(f"group {name!r} body must be a list")
     substituted = [_substitute(b, dict(args)) for b in raw_body]
-    inlined = _expand_blocks(substituted, groups, counter, depth + 1)
+    trace[f"{dst}[{base}]"] = src
+    inlined = _expand_blocks(
+        substituted, groups, counter, depth + 1, trace,
+        f"groups[{name!r}].body", f"{dst}[{base}].children",
+    )
     wrapper: dict[str, Any] = {"serial": {"children": inlined}}
     for k in _BLOCK_KEYS:
         if k in block:
@@ -206,16 +251,29 @@ def _expand_group_ref(
 
 def expand_dict(workflow_dict: dict[str, Any]) -> dict[str, Any]:
     """Splice for_each, inline parametrized group_refs, interpolate holes. Pure JSON."""
+    return expand_dict_traced(workflow_dict)[0]
+
+
+def expand_dict_traced(workflow_dict: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+    """expand_dict plus a source map: expanded structural path -> authored structural path.
+
+    Studio validates the EXPANDED workflow, so its diagnostics carry expanded indices that do
+    not match the authored tree; the map is what lets the builder resolve a diagnostic back to
+    the block the author can actually edit (design 2026-07-16 §5.3). Many-to-one by nature:
+    every for_each copy traces to the one authored body block.
+    """
     out = copy.deepcopy(workflow_dict)
     groups = out.get("groups")
     groups = groups if isinstance(groups, dict) else {}
     counter = _Counter()
-    for g in groups.values():  # expand for_each inside plain-group bodies (used lazily)
+    trace: dict[str, str] = {}
+    for name, g in groups.items():  # expand for_each inside plain-group bodies (used lazily)
         if isinstance(g, dict) and not g.get("params") and isinstance(g.get("body"), list):
-            g["body"] = _expand_blocks(g["body"], groups, counter, 0)
+            path = f"groups[{name!r}].body"
+            g["body"] = _expand_blocks(g["body"], groups, counter, 0, trace, path, path)
     blocks = out.get("blocks")
     if isinstance(blocks, list):
-        out["blocks"] = _expand_blocks(blocks, groups, counter, 0)
+        out["blocks"] = _expand_blocks(blocks, groups, counter, 0, trace, "blocks", "blocks")
     kept = {n: g for n, g in groups.items()
             if not (isinstance(g, dict) and g.get("params"))}
     if kept:
@@ -232,7 +290,7 @@ def expand_dict(workflow_dict: dict[str, Any]) -> dict[str, Any]:
                         break
         if hole is not None:
             raise WorkflowLoadError(f"unbound hole '{hole}' remains after expansion")
-    return out
+    return out, trace
 
 
 def expand_workflow(w: Workflow) -> Workflow:
