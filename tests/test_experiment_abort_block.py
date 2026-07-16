@@ -85,6 +85,19 @@ async def test_abort_in_parallel_lane_reports_aborted(fake_client):
         ]}, "on_error": "continue"},
     ])
     run = _run(client, wf)
-    with pytest.raises(BaseException):  # AbortSignalError or the ExceptionGroup carrying it
+    with pytest.raises(BaseException) as excinfo:  # AbortSignalError or the ExceptionGroup carrying it
         await run.execute()
+
+    # Assert AbortSignalError is present in the exception tree (WIRE assertion)
+    def _contains_abort_signal_error(exc):
+        if isinstance(exc, AbortSignalError):
+            return True
+        if isinstance(exc, BaseExceptionGroup):
+            return any(_contains_abort_signal_error(e) for e in exc.exceptions)
+        return False
+
+    assert _contains_abort_signal_error(excinfo.value)
     assert run.report.status == "aborted"
+    # Assert the innocent sibling lane's device was swept to safe state
+    assert ("pump_1", "stop") in verbs(fake)
+    assert run._ctx.occupancy.open_modes() == ()
