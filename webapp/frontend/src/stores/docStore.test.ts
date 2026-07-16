@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { docToTree } from '../builder/convert'
-import { newStructureNode } from '../builder/tree'
+import { newPaletteNode } from '../builder/tree'
 import {
   loadDoc,
   newDoc,
@@ -40,7 +40,7 @@ describe('docStore', () => {
   })
 
   it('selection changes do not create undo steps', () => {
-    store().insertBlock(newStructureNode('wait'), { parentUid: null, slot: 'blocks', index: 0 })
+    store().insertBlock(newPaletteNode('wait'), { parentUid: null, slot: 'blocks', index: 0 })
     const uid = store().tree[0].uid
     store().select(null)
     store().select(uid)
@@ -49,13 +49,13 @@ describe('docStore', () => {
   })
 
   it('insertBlock selects the inserted block', () => {
-    const node = newStructureNode('wait')
+    const node = newPaletteNode('wait')
     store().insertBlock(node, { parentUid: null, slot: 'blocks', index: 0 })
     expect(store().selectedUid).toBe(node.uid)
   })
 
   it('removeBlock clears selection when the selected node goes away', () => {
-    const node = newStructureNode('serial')
+    const node = newPaletteNode('serial')
     store().insertBlock(node, { parentUid: null, slot: 'blocks', index: 0 })
     store().removeBlock(node.uid)
     expect(store().selectedUid).toBeNull()
@@ -209,9 +209,9 @@ describe('docStore', () => {
 
   it('removeBlock clears selection when the removed container held it', () => {
     newDoc()
-    const serial = newStructureNode('serial')
+    const serial = newPaletteNode('serial')
     useDocStore.getState().insertBlock(serial, { parentUid: null, slot: 'blocks', index: 0 })
-    const wait = newStructureNode('wait')
+    const wait = newPaletteNode('wait')
     useDocStore.getState().insertBlock(wait, { parentUid: serial.uid, slot: 'children', index: 0 })
     useDocStore.getState().select(wait.uid)
     useDocStore.getState().removeBlock(serial.uid)

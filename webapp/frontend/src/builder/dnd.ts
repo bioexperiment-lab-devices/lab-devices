@@ -1,9 +1,9 @@
 /** Drag-and-drop wire types. Draggables carry DragPayload in dnd-kit's data; droppables
  * are insertion slots encoded in the droppable id so onDragEnd needs no lookups. */
-import type { SlotRef, StructureKind } from './tree'
+import type { PaletteKind, SlotRef } from './tree'
 
 export type DragPayload =
-  | { source: 'palette-structure'; kind: StructureKind }
+  | { source: 'palette-structure'; kind: PaletteKind }
   | { source: 'palette-verb'; role: string; verb: string; verbKind: 'command' | 'measure' }
   | { source: 'canvas'; uid: string }
 

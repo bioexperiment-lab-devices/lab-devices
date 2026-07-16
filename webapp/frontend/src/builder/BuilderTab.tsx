@@ -12,7 +12,7 @@ import {
 import { redo, undo, useDocStore } from '../stores/docStore'
 import { useCatalogStore } from '../stores/catalogStore'
 import { parseSlotDroppableId, type DragPayload } from './dnd'
-import { findNode, newStructureNode, newVerbNode } from './tree'
+import { findNode, newPaletteNode, newVerbNode } from './tree'
 import { blockSummary } from './summary'
 import { Palette } from './Palette'
 import { Canvas } from './Canvas'
@@ -28,6 +28,10 @@ const STRUCTURE_TITLES: Record<string, string> = {
   branch: 'Branch',
   wait: 'Wait',
   operator_input: 'Operator input',
+  compute: 'Compute',
+  record: 'Record',
+  abort: 'Abort',
+  alarm: 'Alarm',
 }
 
 function dragLabel(payload: DragPayload): string {
@@ -96,7 +100,7 @@ export function BuilderTab() {
       return
     }
     if (payload.source === 'palette-structure') {
-      s.insertBlock(newStructureNode(payload.kind), at)
+      s.insertBlock(newPaletteNode(payload.kind), at)
       return
     }
     const roleType = s.roles[payload.role]?.type

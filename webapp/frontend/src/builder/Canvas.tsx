@@ -5,7 +5,7 @@ import { diagnosticsByUid, type MappedDiagnostic } from './paths'
 import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
 import { blockSummary } from './summary'
-import { newStructureNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
+import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
 
 const DiagContext = createContext<Map<string, MappedDiagnostic[]>>(new Map())
 
@@ -192,7 +192,7 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
         title="Add lane"
         onClick={(e) => {
           e.stopPropagation()
-          insertBlock(newStructureNode('serial'), {
+          insertBlock(newPaletteNode('serial'), {
             parentUid: node.uid,
             slot: 'children',
             index: node.children.length,
