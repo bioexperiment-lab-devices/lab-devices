@@ -3,7 +3,7 @@ import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
 import type { ParamSpec } from '../types/catalog'
 import type { ParamValue, RetryJson } from '../types/doc'
-import { coerceParamInput, paramInputText } from './params'
+import { coerceParamInput, coerceValueInput, paramInputText } from './params'
 import {
   DurationField,
   ExpressionInput,
@@ -117,7 +117,7 @@ function BlockForm({ node }: { node: BlockNode }) {
         </FieldRow>
       )}
       {/* abort forbids on_error: "continue" — tolerating a safety stop is a contradiction
-          (engine design 2026-07-16 §2.1), so the control is omitted rather than offered and
+          (engine design 2026-07-16 §5.1), so the control is omitted rather than offered and
           rejected. The related rule (an abort may have no tolerant ANCESTOR) is the backend
           validator's; it surfaces as a diagnostic, not as a second frontend opinion. */}
       {node.kind !== 'abort' && (
@@ -714,7 +714,7 @@ function ValueForm({ node }: { node: ComputeNode | RecordNode }) {
       <FieldRow label="Value" required>
         <ExpressionInput
           value={String(node.value)}
-          onCommit={(v) => patchBlock(node.uid, { value: v })}
+          onCommit={(v) => patchBlock(node.uid, { value: coerceValueInput(v) })}
         />
       </FieldRow>
     </div>

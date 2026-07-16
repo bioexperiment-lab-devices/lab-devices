@@ -742,7 +742,8 @@ git commit -m "feat(studio-frontend): Control palette section for compute/record
 
 **Files:**
 - Modify: `webapp/frontend/src/builder/Inspector.tsx:29-38` (`KIND_TITLES`), `:72-124` (`BlockForm`), `:235-253` (`KindBody`)
-- Test: none (React glue; the pure helpers it calls are already covered — this matches the existing W3–W6 convention of not component-testing the Inspector)
+- Modify: `webapp/frontend/src/builder/params.ts` (add `coerceValueInput`)
+- Test: `webapp/frontend/src/builder/params.test.ts` (covers `coerceValueInput`; the Inspector itself stays glue-tested-by-browser per the existing W3–W6 convention)
 
 **Interfaces:**
 - Consumes: `ComputeNode`, `RecordNode`, `AbortNode`, `AlarmNode` from Task 2; `patchBlock` from `docStore`.
@@ -784,12 +785,41 @@ Add this comment directly above the wrapped row:
 
 ```tsx
       {/* abort forbids on_error: "continue" — tolerating a safety stop is a contradiction
-          (engine design 2026-07-16 §2.1), so the control is omitted rather than offered and
+          (engine design 2026-07-16 §5.1), so the control is omitted rather than offered and
           rejected. The related rule (an abort may have no tolerant ANCESTOR) is the backend
           validator's; it surfaces as a diagnostic, not as a second frontend opinion. */}
 ```
 
-- [ ] **Step 3: Add the four `KindBody` arms and their forms**
+- [ ] **Step 3: Add `coerceValueInput` (TDD)**
+
+`ComputeNode.value` / `RecordNode.value` are `ParamValue` (`number | string | boolean`) because the
+engine's `ValueExpr` is `str | int | float | bool` (`src/lab_devices/experiment/blocks.py:8`) — a
+bare literal is as legal as an expression string (`types/doc.ts:59-61`), and
+`convert.test.ts`'s `'keeps a literal compute value a number, not a string'` pins it. `params.ts`'s
+existing `coerceParamInput(text, kind)` can't be reused directly — it keys on a catalog `ParamKind`,
+and a compute/record `value` has no catalog kind. Add a sibling that coerces on shape alone.
+
+First add the failing tests to `webapp/frontend/src/builder/params.test.ts` (matching the file's
+existing `describe`/`it` style), run them, confirm RED, then add the implementation below to
+`webapp/frontend/src/builder/params.ts` and confirm GREEN:
+
+```ts
+/** compute/record `value` is a ValueExpr (engine blocks.py:8 — str | int | float | bool) with no
+ * catalog kind to key on, so coerce on shape alone: a bare numeric or boolean literal becomes its
+ * JSON type, anything else stays an expression string. Without this the Inspector rewrites
+ * {"value": 12} to {"value": "15"} on the first edit — semantically identical to the engine (a
+ * literal string parses to the same value) but a silent loss of the literal fidelity
+ * convert.test.ts pins. */
+export function coerceValueInput(text: string): ParamValue {
+  const t = text.trim()
+  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t)
+  if (t === 'true') return true
+  if (t === 'false') return false
+  return text
+}
+```
+
+- [ ] **Step 4: Add the four `KindBody` arms and their forms**
 
 In `KindBody` (`:235-253`):
 
@@ -847,7 +877,7 @@ function ValueForm({ node }: { node: ComputeNode | RecordNode }) {
       <FieldRow label="Value" required>
         <ExpressionInput
           value={String(node.value)}
-          onCommit={(v) => patchBlock(node.uid, { value: v })}
+          onCommit={(v) => patchBlock(node.uid, { value: coerceValueInput(v) })}
         />
       </FieldRow>
     </div>
@@ -882,17 +912,17 @@ function ConditionForm({ node }: { node: AbortNode | AlarmNode }) {
 }
 ```
 
-Extend the `./tree` type import at the top of `Inspector.tsx` with `AbortNode`, `AlarmNode`, `ComputeNode`, `RecordNode`.
+Extend the `./tree` type import at the top of `Inspector.tsx` with `AbortNode`, `AlarmNode`, `ComputeNode`, `RecordNode`. Import `coerceValueInput` from `./params` alongside the existing `coerceParamInput`/`paramInputText` import.
 
-- [ ] **Step 4: Run the frontend gate**
+- [ ] **Step 5: Run the frontend gate**
 
 Run: `cd webapp/frontend && npm run typecheck && npm run lint && npm test -- --run`
 Expected: PASS (two known oxlint fast-refresh warnings, exit 0).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add webapp/frontend/src/builder/Inspector.tsx
+git add webapp/frontend/src/builder/Inspector.tsx webapp/frontend/src/builder/params.ts webapp/frontend/src/builder/params.test.ts
 git commit -m "feat(studio-frontend): Inspector editors for compute/record/abort/alarm"
 ```
 
