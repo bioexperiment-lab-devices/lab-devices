@@ -905,6 +905,45 @@ def _analyze_paths(w: Workflow, out: list[Diagnostic]) -> None:
     _visit_blocks(w.blocks, "blocks", _PathState(), _Ctx(w, out))
 
 
+def _check_abort_not_under_tolerance(w: Workflow, out: list[Diagnostic]) -> None:
+    """An `abort` may not sit under an `on_error: "continue"` ancestor, at any depth: a
+    tolerant ancestor can absorb the abort's own condition-eval failure (a divide-by-zero,
+    a non-finite result, a type fault — none of which the freshness analysis catches) and
+    silently disable the safety stop. This mirrors, transitively, the existing prohibition
+    on the abort's own `on_error` (`_check_block`'s `B.Abort` arm). Only ever called on an
+    expandable workflow (gated like `_analyze_paths`), so group refs are acyclic and this
+    recursion terminates."""
+
+    def visit(blocks: list[B.Block], prefix: str, under_tolerance: bool) -> None:
+        for i, b in enumerate(blocks):
+            path = f"{prefix}[{i}]"
+            if isinstance(b, B.Abort) and under_tolerance:
+                out.append(Diagnostic(
+                    "block", path,
+                    "abort has an on_error: 'continue' ancestor; a tolerant ancestor can "
+                    "absorb the abort's condition-eval failure and silently disable the "
+                    "safety stop — remove the tolerance from the ancestor, or move the "
+                    "abort out of the tolerant subtree",
+                ))
+            child_tolerance = under_tolerance or (b.on_error == "continue")
+            if isinstance(b, (B.Serial, B.Parallel)):
+                visit(b.children, f"{path}.children", child_tolerance)
+            elif isinstance(b, B.Loop):
+                visit(b.body, f"{path}.body", child_tolerance)
+            elif isinstance(b, B.Branch):
+                visit(b.then, f"{path}.then", child_tolerance)
+                if b.else_ is not None:
+                    visit(b.else_, f"{path}.else", child_tolerance)
+            elif isinstance(b, B.ForEach):
+                visit(b.body, f"{path}.body", child_tolerance)
+            elif isinstance(b, B.GroupRef):
+                group = w.groups.get(b.name)
+                if group is not None:
+                    visit(group.body, f"{path}->{b.name}.body", child_tolerance)
+
+    visit(w.blocks, "blocks", False)
+
+
 def validate(workflow: Workflow) -> None:
     """Statically validate a loaded workflow (design §11 phase 2, rules §12).
 
@@ -932,6 +971,7 @@ def _validate_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
         _check_block(block, path, workflow, binding_types, out)
     if expandable:
         _analyze_paths(workflow, out)
+        _check_abort_not_under_tolerance(workflow, out)
 
 
 def _validate_macro_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:

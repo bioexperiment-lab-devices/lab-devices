@@ -193,3 +193,41 @@ def test_for_each_abort_expands_per_tube():
                 "if": "count(od_{tube}, last=1min) > 0 and last(od_{tube}) > 5",
                 "message": "tube {tube} lost"}}]}},
     ], streams=["od_1", "od_2"]))
+
+
+def test_abort_under_tolerant_serial_ancestor_rejected():
+    d = diags(wf([
+        {"serial": {"children": [
+            {"abort": {"if": "true", "message": "x"}},
+        ]}, "on_error": "continue"},
+    ]))
+    assert any("tolerant ancestor" in m.message for m in d)
+
+
+def test_abort_under_tolerant_ancestor_transitive_through_branch():
+    """A tolerant serial two levels up, reached through a branch.then, still counts."""
+    d = diags(wf([
+        {"serial": {"children": [
+            {"branch": {"if": "true", "then": [
+                {"abort": {"if": "true", "message": "x"}},
+            ]}},
+        ]}, "on_error": "continue"},
+    ]))
+    assert any("tolerant ancestor" in m.message for m in d)
+
+
+def test_abort_under_non_tolerant_serial_clean():
+    validate(wf([
+        {"serial": {"children": [
+            {"abort": {"if": "true", "message": "x"}},
+        ]}},
+    ]))
+
+
+def test_alarm_under_tolerant_serial_clean():
+    """The rule is abort-specific: alarm under a tolerant ancestor is fine (design §5.1)."""
+    validate(wf([
+        {"serial": {"children": [
+            {"alarm": {"if": "true", "message": "x"}},
+        ]}, "on_error": "continue"},
+    ]))

@@ -252,7 +252,11 @@ elif isinstance(block, B.Alarm):
   window), defeating the guard. `alarm` allows `on_error` (least-strict lean): tolerating a flaky
   alarm-condition eval is benign because the alarm does not end the run. `_check_on_error` and
   `_check_retry` still run unconditionally on both (via `_check_block`'s unconditional head), so
-  `retry` on either is already the standard "command/measure only" error.
+  `retry` on either is already the standard "command/measure only" error. The prohibition is
+  transitive: an `abort` may not sit under a tolerant (`on_error: "continue"`) ancestor either
+  (`_check_abort_not_under_tolerance`, walking `Serial`/`Parallel`/`Loop`/`Branch`/`ForEach`/
+  `GroupRef`), since a tolerant ancestor can just as easily absorb the abort's own
+  condition-eval failure and silently disable the stop.
 
 ### 5.2 Path analysis (`analyze.py` / `validate.py` `_visit_body`)
 

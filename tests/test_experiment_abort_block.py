@@ -58,15 +58,24 @@ async def test_abort_runs_finalizer_over_touched_device(fake_client):
 
 async def test_abort_not_tolerated_by_enclosing_on_error(fake_client):
     # MUTATION: remove AbortSignalError from _tolerable -> this run would "complete".
+    #
+    # The validator now forbids AUTHORING a tolerant ancestor over an abort (fix for finding
+    # I1: a tolerant ancestor can absorb the abort condition's own eval failure and silently
+    # disable the stop) -- so this exact document no longer loads. The property under test
+    # here is a *different*, still-real one: the executor's independent defense-in-depth,
+    # that on_error: "continue" never swallows an AbortSignalError even if one somehow
+    # reaches a tolerant frame. Build a validator-clean document, then flip the flag
+    # post-construction to exercise that executor guarantee directly.
     fake, client = fake_client
     add_standard_devices(fake)
     wf = make_workflow([
         {"serial": {"children": [
             {"abort": {"if": "true", "message": "stop"}},
-        ]}, "on_error": "continue"},
+        ]}},
         {"command": {"device": "pump_2", "verb": "dispense", "params": {"volume_ml": 1.0}}},
     ])
     run = _run(client, wf)
+    run._workflow.blocks[0].on_error = "continue"
     with pytest.raises(AbortSignalError):
         await run.execute()
     assert run.report.status == "aborted"
@@ -75,6 +84,11 @@ async def test_abort_not_tolerated_by_enclosing_on_error(fake_client):
 
 async def test_abort_in_parallel_lane_reports_aborted(fake_client):
     # MUTATION: remove _contains_abort's group recursion -> status becomes "failed".
+    #
+    # Same rationale as test_abort_not_tolerated_by_enclosing_on_error above: the validator
+    # now forbids authoring on_error: "continue" over an abort (finding I1), so the tolerant
+    # flag is applied post-construction to exercise the executor's group-recursion guarantee
+    # directly, independent of the validator.
     fake, client = fake_client
     add_standard_devices(fake)
     wf = make_workflow([
@@ -82,9 +96,10 @@ async def test_abort_in_parallel_lane_reports_aborted(fake_client):
             {"abort": {"if": "true", "message": "lane stop"}},
             {"command": {"device": "pump_1", "verb": "rotate",
                          "params": {"direction": "forward", "speed_ml_min": 2.0}}},
-        ]}, "on_error": "continue"},
+        ]}},
     ])
     run = _run(client, wf)
+    run._workflow.blocks[0].on_error = "continue"
     # AbortSignalError, or the ExceptionGroup carrying it out of the parallel lane.
     with pytest.raises(BaseException) as excinfo:
         await run.execute()
