@@ -695,6 +695,21 @@ git commit -m "feat(studio-frontend): render for_each as an authored container; 
 
 **Context.** This is the task with real design content; read spec §5.2 before starting.
 
+**Start here — an active data-loss bug this task must close.** Task 4 added `DocContent.groups`, but `DocSnapshot` has no counterpart and `selectContent` never reads it back, so **the store silently drops `groups` on save**. `loadDoc`'s `...content` spread writes a `groups` property onto the live state at runtime, but nothing reads it out again before `treeToDoc` runs — a dead write. Today, opening `examples/morbidostat.json` and clicking **Save** or **Export** with zero edits deletes the whole `groups.service` body (the per-tube control law) while leaving its three `group_ref` calls in `blocks`; the saved file is then unloadable — `expand.py:231` raises `group_ref 'service': unknown group`, because the lazy-inline escape at `:227-229` only applies when **both** `params` and `args` are empty, and `args` is non-empty here.
+
+**The lesson, which shapes this task's tests:** Task 4's round-trip was verified by calling `docToTree`/`treeToDoc` directly and looked byte-perfect — but that bypasses the store, and the store is what the Save button actually calls (`loadDoc` → `selectDoc`). **A pure-function round-trip proves nothing about what Save does.** `docStore.test.ts` currently has zero mentions of `groups`, which is why a green 170-test suite gave no signal. Thread `groups` through `DocSnapshot`/`selectContent`/`snapshotOf`/`loadDoc` exactly as `metadata`, `persistence`, and `defaults` already are (the file has the pattern three times over), and pin it with a **store-level** test:
+
+```ts
+it('round-trips a groups-using doc through the store, not just through convert', () => {
+  // The Save button's real path: loadDoc(docToTree(raw)) -> selectDoc(state) -> treeToDoc.
+  // Task 4's pure-function round-trip was byte-perfect while THIS path silently deleted
+  // groups.service and left three dangling group_refs.
+  const input = /* a doc with groups + a group_ref carrying args */
+  store().loadDoc(docToTree(input), 'id-1')
+  expect(JSON.stringify(selectDoc(useDocStore.getState()))).toBe(JSON.stringify(input))
+})
+```
+
 - `groups` and `tree` are both **document** fields → both belong in the zundo snapshot. `scope` is **view state** → it must **not** be, exactly like `selectedUid` (`docStore.ts:1-3` states the rule).
 - Because `scope` is not snapshotted, undoing an edit made in another scope while viewing this one is possible. **The store switches scope to follow the undone edit** rather than applying it invisibly.
 - **Deleting a group that a `group_ref` still cites is refused**, reusing the `countRoleRefs`/`countStreamRefs` pattern. The count must span the main tree **and every group body** (a group can call another group).
@@ -883,7 +898,7 @@ git commit -m "feat(studio-frontend): resolve group-scope and context-suffixed d
 it('opens examples/morbidostat.json and round-trips it byte-for-byte', () => {
   // The W9 acceptance (spec §8): the flagship uses groups + for_each and has never been
   // openable in the builder. Byte comparison, not toEqual — deep-equal is blind to key order
-  // and to 6.0 vs 6 (the W7 trap; morbidostat.json carries 11 such literals).
+  // and to 6.0 vs 6 (the W7 trap).
   const input = JSON.parse(
     readFileSync(new URL('../../../../examples/morbidostat.json', import.meta.url), 'utf8'),
   ) as ExperimentDocJson
@@ -892,6 +907,20 @@ it('opens examples/morbidostat.json and round-trips it byte-for-byte', () => {
   expect(JSON.stringify(treeToDoc(content))).toBe(JSON.stringify(input))
 })
 ```
+
+**This pure-function test is necessary but NOT sufficient, and on its own it is misleading.** During Task 4 exactly this assertion passed byte-perfectly while the app's real Save path silently deleted the flagship's `groups.service` body — because `docToTree`/`treeToDoc` bypass the store, and the Save/Export/LoadDialog buttons all go through `loadDoc` → `selectDoc`. **Add the store-level twin**, in `docStore.test.ts`:
+
+```ts
+it('round-trips examples/morbidostat.json through the store (what Save actually calls)', () => {
+  const input = JSON.parse(
+    readFileSync(new URL('../../../../examples/morbidostat.json', import.meta.url), 'utf8'),
+  ) as ExperimentDocJson
+  store().loadDoc(docToTree(input), 'id-1')
+  expect(JSON.stringify(selectDoc(useDocStore.getState()))).toBe(JSON.stringify(input))
+})
+```
+
+Both must pass. If the store-level one fails, Task 6 left a field unthreaded — fix it there, do not weaken this test.
 
 Check the relative path resolves from `webapp/frontend/src/builder/` to `examples/` and correct it if not.
 
