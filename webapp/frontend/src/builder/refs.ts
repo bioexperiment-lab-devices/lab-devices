@@ -62,3 +62,16 @@ export function collectBindings(tree: BlockNode[]): string[] {
   })
   return out
 }
+
+/** Which block kind writes each stream. The engine enforces measure XOR record per stream
+ * (Increment 6), so a stream has at most one writer kind; on a doc that violates it, first
+ * writer seen wins and the backend validator reports the real error. */
+export function streamSources(tree: BlockNode[]): Record<string, 'measure' | 'record'> {
+  const out: Record<string, 'measure' | 'record'> = {}
+  visitNodes(tree, (node) => {
+    if ((node.kind === 'measure' || node.kind === 'record') && node.into && !(node.into in out)) {
+      out[node.into] = node.kind
+    }
+  })
+  return out
+}

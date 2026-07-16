@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { collectBindings, countRoleRefs, countStreamRefs, renameRoleRefs, renameStreamRefs } from './refs'
+import { collectBindings, countRoleRefs, countStreamRefs, renameRoleRefs, renameStreamRefs, streamSources } from './refs'
 import type { BlockNode, CommandNode, ComputeNode, LoopNode, MeasureNode, RecordNode, SerialNode } from './tree'
 
 const base = { label: null, gapAfter: null, startOffset: null }
@@ -108,5 +108,16 @@ describe('collectBindings', () => {
     ]
     // 'c' is written by two computes (the seed-then-accumulate idiom) and must de-duplicate.
     expect(collectBindings(t)).toEqual(['od_min', 'c'])
+  })
+})
+
+describe('streamSources', () => {
+  it('reports which block kind writes each stream', () => {
+    const t: BlockNode[] = [meas('m1', 'od_meter', 'od'), rec('r1', 'c_series')]
+    expect(streamSources(t)).toEqual({ od: 'measure', c_series: 'record' })
+  })
+
+  it('omits streams nothing writes', () => {
+    expect(streamSources([])).toEqual({})
   })
 })
