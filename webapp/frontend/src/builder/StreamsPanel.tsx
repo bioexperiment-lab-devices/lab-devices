@@ -1,14 +1,18 @@
 import { useRef, useState } from 'react'
 import { useDocStore } from '../stores/docStore'
+import { streamSources } from './refs'
 
-/** Streams are name + units only (settled decision S5) — persistence is forced by the
- * backend on every run, so the builder exposes no knobs for it. */
+/** Streams are name + units only (settled decision S5) — per-stream persistence is carried
+ * opaquely through convert.ts but has no UI, and the backend forces disk persistence on
+ * every run. The source tag shows the stream's writer: measure XOR record (Increment 6). */
 export function StreamsPanel() {
   const streams = useDocStore((s) => s.streams)
+  const tree = useDocStore((s) => s.tree)
   const addStream = useDocStore((s) => s.addStream)
   const renameStream = useDocStore((s) => s.renameStream)
   const removeStream = useDocStore((s) => s.removeStream)
   const setStreamUnits = useDocStore((s) => s.setStreamUnits)
+  const sources = streamSources(tree)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -72,6 +76,16 @@ export function StreamsPanel() {
                 {name}
               </button>
             )}
+            <span
+              title={
+                sources[name] === undefined
+                  ? 'No block writes this stream'
+                  : `Written by a ${sources[name]} block`
+              }
+              className="shrink-0 rounded bg-slate-200 px-1 text-xs text-slate-500"
+            >
+              {sources[name] ?? 'unused'}
+            </span>
             <input
               value={s.units ?? ''}
               placeholder="units"

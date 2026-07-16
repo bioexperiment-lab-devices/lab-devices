@@ -32,6 +32,16 @@ describe('applyMessage', () => {
     expect(s.samples.od).toEqual({ t: [5, 10], v: [0.5, 0.7] })
     expect(s.samples.temp).toEqual({ t: [10], v: [37] })
   })
+  it('folds sample_recorded (record blocks) into samples like measure_recorded', () => {
+    const s = feedAll([
+      ev(0, 'run_started', {}, 0),
+      ev(1, 'measure_recorded', { stream: 'od_1', value: 0.4 }, 5),
+      ev(2, 'sample_recorded', { stream: 'c_series_1', value: 1.25 }, 6),
+      ev(3, 'sample_recorded', { stream: 'c_series_1', value: 1.4 }, 12),
+    ])
+    expect(s.samples.od_1).toEqual({ t: [5], v: [0.4] })
+    expect(s.samples.c_series_1).toEqual({ t: [6, 12], v: [1.25, 1.4] })
+  })
   it('status messages update status and flag terminal', () => {
     let s = feedAll([ev(0, 'run_started'), st(1, 'paused')])
     expect(s.status).toBe('paused')

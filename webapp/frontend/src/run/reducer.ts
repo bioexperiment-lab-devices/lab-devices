@@ -43,7 +43,10 @@ export function applyMessage(s: FeedState, msg: RunWsMsg): FeedState {
   }
   s.events.push(msg)
   let samples = s.samples
-  if (msg.kind === 'measure_recorded') {
+  // Both carry {stream, value}: `measure_recorded` from a device read (execute.py:647),
+  // `sample_recorded` from a `record` block's computed sample (execute.py:691). A stream is
+  // measure XOR record in the engine, so the two can never collide on one series.
+  if (msg.kind === 'measure_recorded' || msg.kind === 'sample_recorded') {
     const stream = String(msg.data.stream)
     const series = samples[stream] ?? { t: [], v: [] }
     series.t.push(msg.timestamp)

@@ -166,7 +166,7 @@ export function ExpressionInput(props: {
           <p className="mb-1 font-mono text-slate-500">
             {help.streams.length > 0 ? help.streams.join(', ') : '— none declared —'}
           </p>
-          <p className="font-semibold text-slate-600">Bindings (operator inputs)</p>
+          <p className="font-semibold text-slate-600">Bindings</p>
           <p className="mb-1 font-mono text-slate-500">
             {help.bindings.length > 0 ? help.bindings.join(', ') : '— none —'}
           </p>

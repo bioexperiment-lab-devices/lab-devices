@@ -20,6 +20,12 @@ async def test_valid_doc_is_clean(client: httpx.AsyncClient) -> None:
     assert resp.json() == {"ok": True, "diagnostics": []}
 
 
+async def test_valid_control_blocks_doc_is_clean(client: httpx.AsyncClient) -> None:
+    resp = await client.post("/api/validate", json=load_fixture("valid-control-blocks.json"))
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "diagnostics": []}
+
+
 async def test_doc_level_diagnostics(client: httpx.AsyncClient) -> None:
     resp = await client.post("/api/validate", json=load_fixture("invalid-roles.json"))
     assert resp.status_code == 200

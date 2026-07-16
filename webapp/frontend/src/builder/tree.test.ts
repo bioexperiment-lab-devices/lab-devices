@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   canDrop,
+  childSlots,
   containsUid,
   duplicateNode,
   findLocation,
   findNode,
   insertNode,
   moveNode,
-  newStructureNode,
+  newPaletteNode,
   newVerbNode,
   removeNode,
   replaceSlot,
@@ -130,13 +131,13 @@ describe('tree ops', () => {
   })
 
   it('builds structure nodes with builder defaults', () => {
-    const parallel = newStructureNode('parallel') as ParallelNode
+    const parallel = newPaletteNode('parallel') as ParallelNode
     expect(parallel.children).toHaveLength(2)
     expect(parallel.children.every((lane) => lane.kind === 'serial')).toBe(true)
-    const branch = newStructureNode('branch')
+    const branch = newPaletteNode('branch')
     expect(branch).toMatchObject({ condition: '', else: [] })
-    expect(newStructureNode('wait')).toMatchObject({ duration: '1s' })
-    const l = newStructureNode('loop')
+    expect(newPaletteNode('wait')).toMatchObject({ duration: '1s' })
+    const l = newPaletteNode('loop')
     expect(l).toMatchObject({ mode: 'count', count: 2, check: 'after' })
   })
 
@@ -152,12 +153,28 @@ describe('tree ops', () => {
   })
 
   it('replaceSlot swaps the named slot and throws for leaf kinds', () => {
-    const serial = newStructureNode('serial')
-    const wait = newStructureNode('wait')
+    const serial = newPaletteNode('serial')
+    const wait = newPaletteNode('wait')
     const out = replaceSlot(serial, 'children', [wait]) as SerialNode
     expect(out.children).toHaveLength(1)
     expect(out.uid).toBe(serial.uid)
     expect(() => replaceSlot(wait, 'children', [])).toThrow(/no child slot/)
+  })
+
+  it('creates control-block nodes with no child slots', () => {
+    for (const kind of ['compute', 'record', 'abort', 'alarm'] as const) {
+      const node = newPaletteNode(kind)
+      expect(node.kind).toBe(kind)
+      expect(childSlots(node)).toEqual([])
+      expect(node.label).toBeNull()
+    }
+  })
+
+  it('seeds control blocks with empty, author-fillable fields', () => {
+    expect(newPaletteNode('compute')).toMatchObject({ into: '', value: '' })
+    expect(newPaletteNode('record')).toMatchObject({ into: '', value: '' })
+    expect(newPaletteNode('abort')).toMatchObject({ condition: '', message: '' })
+    expect(newPaletteNode('alarm')).toMatchObject({ condition: '', message: '' })
   })
 
   describe('retryAfterVerbChange', () => {

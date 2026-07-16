@@ -6,6 +6,10 @@ import type { VerbSpec } from '../types/catalog'
 
 export type InputType = 'int' | 'float' | 'bool' | 'enum'
 export type StructureKind = 'serial' | 'parallel' | 'loop' | 'branch' | 'wait' | 'operator_input'
+/** Leaf blocks that act on run state rather than on a device (Increments 6 and 8). None
+ * takes retry — retry is command/measure only (design 2026-07-14 §2.1). */
+export type ControlKind = 'compute' | 'record' | 'abort' | 'alarm'
+export type PaletteKind = StructureKind | ControlKind
 
 interface NodeBase {
   uid: string
@@ -75,6 +79,32 @@ export interface BranchNode extends NodeBase {
   else: BlockNode[] | null
 }
 
+export interface ComputeNode extends NodeBase {
+  kind: 'compute'
+  into: string
+  value: ParamValue
+}
+
+export interface RecordNode extends NodeBase {
+  kind: 'record'
+  into: string
+  value: ParamValue
+}
+
+/** `condition` mirrors BranchNode.condition: the JSON key is `if` (a reserved word), and
+ * convert.ts is the single place that translates. */
+export interface AbortNode extends NodeBase {
+  kind: 'abort'
+  condition: string
+  message: string
+}
+
+export interface AlarmNode extends NodeBase {
+  kind: 'alarm'
+  condition: string
+  message: string
+}
+
 export type BlockNode =
   | CommandNode
   | MeasureNode
@@ -84,6 +114,10 @@ export type BlockNode =
   | ParallelNode
   | LoopNode
   | BranchNode
+  | ComputeNode
+  | RecordNode
+  | AbortNode
+  | AlarmNode
 
 export type BlockKind = BlockNode['kind']
 
@@ -285,7 +319,7 @@ export function retryAfterVerbChange(retry: RetryJson | undefined): RetryJson | 
 
 const nodeBase = (): NodeBase => ({ uid: newUid(), label: null, gapAfter: null, startOffset: null })
 
-export function newStructureNode(kind: StructureKind): BlockNode {
+export function newPaletteNode(kind: PaletteKind): BlockNode {
   const base = nodeBase()
   switch (kind) {
     case 'serial':
@@ -308,6 +342,12 @@ export function newStructureNode(kind: StructureKind): BlockNode {
       return { ...base, kind, duration: '1s' }
     case 'operator_input':
       return { ...base, kind, name: 'value', inputType: 'float', prompt: null, min: null, max: null, choices: null }
+    case 'compute':
+    case 'record':
+      return { ...base, kind, into: '', value: '' }
+    case 'abort':
+    case 'alarm':
+      return { ...base, kind, condition: '', message: '' }
   }
 }
 

@@ -64,4 +64,33 @@ describe('blockSummary', () => {
     }
     expect(blockSummary(retryingLoop)).toBe('↻ Loop ×3 R×2')
   })
+
+  it('summarises control blocks', () => {
+    expect(blockSummary({ uid: 'u', kind: 'compute', into: 'c', value: 'c * 0.9', ...base })).toBe(
+      'ƒ c = c * 0.9',
+    )
+    expect(blockSummary({ uid: 'u', kind: 'record', into: 'c_series', value: 'c', ...base })).toBe(
+      '✎ c_series ← c',
+    )
+    expect(
+      blockSummary({ uid: 'u', kind: 'abort', condition: 'estop', message: 'stop', ...base }),
+    ).toBe('⛔ Abort if estop')
+    expect(
+      blockSummary({ uid: 'u', kind: 'alarm', condition: 'od > 2', message: 'bad', ...base }),
+    ).toBe('⚠ Alarm if od > 2')
+  })
+
+  it('shows a placeholder for an unfilled control block and keeps the fault marker', () => {
+    expect(blockSummary({ uid: 'u', kind: 'compute', into: '', value: '', ...base })).toBe('ƒ ? = …')
+    expect(
+      blockSummary({
+        uid: 'u',
+        kind: 'alarm',
+        condition: 'x',
+        message: 'm',
+        onError: 'continue',
+        ...base,
+      }),
+    ).toBe('⚠ Alarm if x ⤳')
+  })
 })

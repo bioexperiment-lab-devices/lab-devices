@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
-import type { StructureKind } from './tree'
+import type { ControlKind, StructureKind } from './tree'
 import type { DragPayload } from './dnd'
 import { RolesPanel } from './RolesPanel'
 import { StreamsPanel } from './StreamsPanel'
@@ -14,6 +14,13 @@ const STRUCTURE: Array<{ kind: StructureKind; title: string; icon: string }> = [
   { kind: 'branch', title: 'Branch', icon: '⑂' },
   { kind: 'wait', title: 'Wait', icon: '⏱' },
   { kind: 'operator_input', title: 'Operator input', icon: '⌨' },
+]
+
+const CONTROL: Array<{ kind: ControlKind; title: string; icon: string }> = [
+  { kind: 'compute', title: 'Compute', icon: 'ƒ' },
+  { kind: 'record', title: 'Record', icon: '✎' },
+  { kind: 'alarm', title: 'Alarm', icon: '⚠' },
+  { kind: 'abort', title: 'Abort', icon: '⛔' },
 ]
 
 function Chip(props: { id: string; payload: DragPayload; children: ReactNode }) {
@@ -113,6 +120,20 @@ export function Palette() {
             >
               <span className="mr-1 opacity-60">{s.icon}</span>
               {s.title}
+            </Chip>
+          ))}
+        </div>
+      </Section>
+      <Section title="Control">
+        <div className="flex flex-wrap gap-1">
+          {CONTROL.map((c) => (
+            <Chip
+              key={c.kind}
+              id={`palette-control-${c.kind}`}
+              payload={{ source: 'palette-structure', kind: c.kind }}
+            >
+              <span className="mr-1 opacity-60">{c.icon}</span>
+              {c.title}
             </Chip>
           ))}
         </div>

@@ -56,6 +56,31 @@ export interface GroupRefBody {
   name: string
 }
 
+/** compute binds a scalar into RunState.bindings; record appends a numeric sample to a
+ * DECLARED stream. Both carry a ValueExpr (engine blocks.py:8 — str | int | float | bool),
+ * so a bare literal is as legal as an expression string. */
+export interface ComputeBody {
+  into: string
+  value: ParamValue
+}
+
+export interface RecordBody {
+  into: string
+  value: ParamValue
+}
+
+/** abort raises AbortSignalError (run status 'aborted'); alarm flags and continues. Both
+ * require a non-empty message (engine design 2026-07-16 §2.1/§2.2). */
+export interface AbortBody {
+  if: string
+  message: string
+}
+
+export interface AlarmBody {
+  if: string
+  message: string
+}
+
 /** command/measure only (2026-07-14 §2.1). attempts is TOTAL tries, not retries-after-the-
  * first. allow_repeat is the explicit opt-in required to retry a non-idempotent verb. */
 export interface RetryJson {
@@ -79,6 +104,10 @@ export interface BlockJson {
   loop?: LoopBody
   branch?: BranchBody
   group_ref?: GroupRefBody
+  compute?: ComputeBody
+  record?: RecordBody
+  abort?: AbortBody
+  alarm?: AlarmBody
 }
 
 export interface StreamDeclJson {

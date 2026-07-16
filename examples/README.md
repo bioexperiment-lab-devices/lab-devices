@@ -4,7 +4,7 @@ Import one of these into Experiment Studio (**Builder → Import**, or
 `POST /api/experiments/import` with the file as the body), map its roles to your devices on the
 preflight screen, and run it.
 
-Both examples use `groups`, `for_each`, `compute`, and `abort`, which the block builder cannot
+Both examples use `groups` and `for_each`, which the block builder cannot
 render yet (spec §13, "Reusable groups (GroupRef) editing"). So they import, save, validate, and
 run — but the Builder canvas will refuse to open them, and Studio will tell you so when you import.
 Pick them on the Run tab and edit them as JSON.

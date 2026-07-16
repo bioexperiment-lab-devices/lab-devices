@@ -28,27 +28,49 @@ export function renameRoleRefs(tree: BlockNode[], from: string, to: string): Blo
   )
 }
 
+/** A stream is written by `measure` XOR `record` (engine Increment 6). Both must count, or
+ * deleting a record-only stream reports 0 refs and silently orphans the record block. */
 export function countStreamRefs(tree: BlockNode[], stream: string): number {
   let count = 0
   visitNodes(tree, (node) => {
-    if (node.kind === 'measure' && node.into === stream) count++
+    if ((node.kind === 'measure' || node.kind === 'record') && node.into === stream) count++
   })
   return count
 }
 
 export function renameStreamRefs(tree: BlockNode[], from: string, to: string): BlockNode[] {
   return mapNodes(tree, (node) =>
-    node.kind === 'measure' && node.into === from ? { ...node, into: to } : node,
+    (node.kind === 'measure' || node.kind === 'record') && node.into === from
+      ? { ...node, into: to }
+      : node,
   )
 }
 
+/** Bindings are written by `operator_input` and by `compute` (engine blocks.py:96) — both
+ * land in the same RunState.bindings namespace, so expression help must offer both. The
+ * seed-then-accumulate idiom writes one name from several computes, hence the de-dup. */
 export function collectBindings(tree: BlockNode[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   visitNodes(tree, (node) => {
-    if (node.kind === 'operator_input' && node.name && !seen.has(node.name)) {
-      seen.add(node.name)
-      out.push(node.name)
+    const name =
+      node.kind === 'operator_input' ? node.name : node.kind === 'compute' ? node.into : null
+    if (name && !seen.has(name)) {
+      seen.add(name)
+      out.push(name)
+    }
+  })
+  return out
+}
+
+/** Which block kind writes each stream. The engine enforces measure XOR record per stream
+ * (Increment 6), so a stream has at most one writer kind; on a doc that violates it, first
+ * writer seen wins and the backend validator reports the real error. */
+export function streamSources(tree: BlockNode[]): Record<string, 'measure' | 'record'> {
+  const out: Record<string, 'measure' | 'record'> = {}
+  visitNodes(tree, (node) => {
+    if ((node.kind === 'measure' || node.kind === 'record') && node.into && !(node.into in out)) {
+      out[node.into] = node.kind
     }
   })
   return out
