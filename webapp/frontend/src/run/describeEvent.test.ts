@@ -52,6 +52,10 @@ describe('describeEvent', () => {
     expect(d('finalize_step_failed', { device: 'pump_1', verb: 'stop', error: 'timeout' }))
       .toBe('pump_1: finalize stop failed: timeout')
   })
+  it('describes abort_raised and alarm_raised', () => {
+    expect(d('abort_raised', { message: 'contaminated' })).toBe('run aborted by workflow: contaminated')
+    expect(d('alarm_raised', { message: 'tube 3 flagged' })).toBe('alarm: tube 3 flagged')
+  })
   it('falls back to kind + data for unknown kinds', () => {
     expect(d('mystery', { a: 1 })).toBe('mystery {"a":1}')
     expect(d('mystery')).toBe('mystery')

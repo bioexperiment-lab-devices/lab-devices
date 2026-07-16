@@ -9,7 +9,7 @@ import { formatElapsed } from '../records/format'
 import { StreamChart } from '../charts/StreamChart'
 import { EventLog } from './EventLog'
 import { InputDialog } from './InputDialog'
-import { toleratedSummary } from './reportSummary'
+import { alarmSummary, toleratedSummary } from './reportSummary'
 
 function Elapsed() {
   const feed = useRunStore((s) => s.feed)
@@ -50,6 +50,7 @@ export function RunView() {
   const report = useRunStore((s) => s.report)
   const recordId = useRunStore((s) => s.recordId)
   const tolerated = toleratedSummary(report)
+  const alarms = alarmSummary(report)
 
   const buttonClass =
     'rounded border border-slate-300 bg-white px-3 py-1 text-xs hover:bg-slate-100 disabled:opacity-40'
@@ -114,6 +115,9 @@ export function RunView() {
               a clean one on the live screen — EventLog alone isn't enough (it slices to the
               last 500 events, so this can scroll out of view on a long run). */}
           {tolerated !== null && <p className="text-xs text-amber-800">{tolerated}</p>}
+          {/* An alarm block firing must not look identical to a silent run on the live screen —
+              same rationale as the tolerated-errors line above (design 2026-07-16 §4.4). */}
+          {alarms !== null && <p className="text-xs text-amber-800">{alarms}</p>}
           {recordId !== null && (
             <button
               onClick={() => {
