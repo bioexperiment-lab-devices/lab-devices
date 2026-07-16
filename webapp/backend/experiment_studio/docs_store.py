@@ -19,7 +19,7 @@ from lab_devices.experiment import (
     verb_catalog,
     workflow_from_dict,
 )
-from lab_devices.experiment.expand import expand_dict
+from lab_devices.experiment.expand import expand_dict_traced
 
 from experiment_studio import roles as roles_mod
 from experiment_studio.db import Database
@@ -156,18 +156,49 @@ class ExperimentsStore:
         )
 
 
+# A diagnostic path is a structural prefix plus an optional context suffix the validator
+# appends (" branch if", " param 'x'", " compute value"). Only the prefix is a path; the
+# suffix is prose. Split on the first space — no structural token contains one.
+def _remap(path: str, trace: dict[str, str]) -> str:
+    prefix, sep, suffix = path.partition(" ")
+    mapped = trace.get(prefix)
+    if mapped is None:
+        return path  # unmappable: a raw path beats no path (design §5.3)
+    return mapped + sep + suffix
+
+
+def _remap_diagnostics(
+    diags: list[dict[str, str]], trace: dict[str, str]
+) -> list[dict[str, str]]:
+    """Remap every diagnostic's path from expanded to authored, then dedup: a for_each
+    body diagnosed once per copy collapses to a single authored diagnostic. Order-preserving
+    (first occurrence wins) — some tests assert on diagnostic order."""
+    out: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for d in diags:
+        remapped = {**d, "path": _remap(d["path"], trace)}
+        key = (remapped["category"], remapped["path"], remapped["message"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(remapped)
+    return out
+
+
 def validate_doc(doc: ExperimentDoc) -> list[dict[str, str]]:
     """§4.3: doc-level role checks, placeholder substitution, engine parse + validate."""
     role_types = {name: role.type for name, role in doc.roles.items()}
     diags = roles_mod.role_diagnostics(role_types, set(verb_catalog()))
     try:
-        expanded = expand_dict(doc.workflow)  # for_each/group(tube) -> concrete roles (§9)
+        # for_each/group(tube) -> concrete roles (§9); trace maps expanded -> authored paths
+        # so every diagnostic downstream of the expand can be reported where the author edits.
+        expanded, trace = expand_dict_traced(doc.workflow)
     except WorkflowLoadError as exc:
         return diags + [{"category": "expansion", "path": "workflow", "message": str(exc)}]
     substituted, ref_diags = roles_mod.substitute(
         expanded, roles_mod.placeholder_ids(role_types)
     )
-    diags += ref_diags
+    diags += _remap_diagnostics(ref_diags, trace)
     if diags:
         return diags  # substitution unsound; engine output would duplicate (plan P3)
     try:
@@ -177,8 +208,11 @@ def validate_doc(doc: ExperimentDoc) -> list[dict[str, str]]:
     try:
         validate(workflow)
     except ValidationError as exc:
-        return [
-            {"category": d.category, "path": d.path, "message": d.message}
-            for d in exc.diagnostics
-        ]
+        return _remap_diagnostics(
+            [
+                {"category": d.category, "path": d.path, "message": d.message}
+                for d in exc.diagnostics
+            ],
+            trace,
+        )
     return []

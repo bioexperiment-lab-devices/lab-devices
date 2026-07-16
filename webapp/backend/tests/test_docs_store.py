@@ -12,6 +12,7 @@ from experiment_studio.docs_store import (
     ExperimentsStore,
     NameConflictError,
     UnknownExperimentError,
+    validate_doc,
 )
 
 
@@ -139,3 +140,39 @@ async def test_name_conflict_rolls_back_transaction(tmp_path: Path) -> None:
     assert not db.conn.in_transaction
     assert created["name"] == "A"
     await db.close()
+
+
+def test_a_diagnostic_inside_a_for_each_body_reports_the_authored_path() -> None:
+    doc = ExperimentDoc.model_validate(
+        {
+            "doc_version": 1,
+            "name": "macro",
+            "description": None,
+            "roles": {"od_meter": {"type": "densitometer"}},
+            "workflow": {
+                "schema_version": 1,
+                "metadata": {"name": "macro"},
+                "streams": {"od_1": {"units": None}, "od_2": {"units": None}},
+                "blocks": [
+                    {
+                        "for_each": {
+                            "var": "t",
+                            "in": [1, 2],
+                            "body": [
+                                {"measure": {"device": "od_meter", "verb": "measure", "into": "od_{t}"}},
+                                # `nope` is not a declared stream, binding, or function -> one
+                                # diagnostic per COPY at expanded blocks[1] and blocks[3], both
+                                # authored at blocks[0].body[1].
+                                {"branch": {"if": "nope > 1", "then": []}},
+                            ],
+                        }
+                    }
+                ],
+            },
+        }
+    )
+    diags = validate_doc(doc)
+    assert diags, "expected the bad expression to produce a diagnostic"
+    paths = {d["path"] for d in diags}
+    # Authored, not expanded: every copy points at the one block the author can edit.
+    assert paths == {"blocks[0].body[1] branch if"}
