@@ -22,7 +22,7 @@
         "loop": {
           "body": [
             { "measure": { "device": "od_meter", "verb": "measure", "into": "od" }, "on_error": "continue" },
-            { "compute": { "into": "c", "value": "c * V / (V + 1)" } },
+            { "compute": { "into": "c", "value": "c * V / (V + 1) + 10 * 1 / (V + 1)" } },
             { "record": { "into": "c_series", "value": "c" } },
             { "alarm": { "if": "count(od, last=45s) > 0 and last(od) > 2.0", "message": "tube contaminated" } }
           ],
