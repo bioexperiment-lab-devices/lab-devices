@@ -3,13 +3,17 @@
  * omit empty params, omit null timing keys, `check` only alongside `until`, `else`
  * omitted (not null) when absent, `on_error` omitted unless it is 'continue'. */
 import type {
+  AbortBody,
+  AlarmBody,
   BlockJson,
   BranchBody,
   CommandBody,
+  ComputeBody,
   ExperimentDocJson,
   LoopBody,
   MeasureBody,
   OperatorInputBody,
+  RecordBody,
   StreamDeclJson,
   WorkflowJson,
 } from '../types/doc'
@@ -144,14 +148,29 @@ function blockToNode(block: BlockJson): BlockNode {
         else: b.else !== undefined ? b.else.map(blockToNode) : null,
       }
     }
+    case 'compute': {
+      const b = block.compute as ComputeBody
+      return { ...base, kind, into: b.into, value: b.value }
+    }
+    case 'record': {
+      const b = block.record as RecordBody
+      return { ...base, kind, into: b.into, value: b.value }
+    }
+    case 'abort': {
+      const b = block.abort as AbortBody
+      return { ...base, kind, condition: b.if, message: b.message }
+    }
+    case 'alarm': {
+      const b = block.alarm as AlarmBody
+      return { ...base, kind, condition: b.if, message: b.message }
+    }
     case 'for_each':
       throw new DocConvertError(
         'for_each is not yet supported in the builder (author it as JSON; it runs and charts)',
       )
-    case 'abort':
-    case 'alarm':
+    case 'group_ref':
       throw new DocConvertError(
-        `${kind} is not yet supported in the builder (author it as JSON; it runs and charts)`,
+        'group_ref is not yet supported in the builder (author it as JSON; it runs and charts)',
       )
     default:
       throw new DocConvertError(`unsupported block type '${kind}' in the builder`)
@@ -237,6 +256,25 @@ export function nodeToBlock(node: BlockNode): BlockJson {
       if (node.else !== null) body.else = node.else.map(nodeToBlock)
       out.branch = body
       break
+    }
+    case 'compute':
+      out.compute = { into: node.into, value: node.value }
+      break
+    case 'record':
+      out.record = { into: node.into, value: node.value }
+      break
+    case 'abort':
+      out.abort = { if: node.condition, message: node.message }
+      break
+    case 'alarm':
+      out.alarm = { if: node.condition, message: node.message }
+      break
+    default: {
+      // Exhaustiveness guard: a BlockNode kind with no arm here would emit a block with
+      // zero type keys, which the engine rejects at serialize.py:277 blaming the document
+      // rather than the builder. Keep this a compile error instead (design §6).
+      const unreachable: never = node
+      throw new DocConvertError(`unserializable block node ${JSON.stringify(unreachable)}`)
     }
   }
   if (node.label !== null) out.label = node.label

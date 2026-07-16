@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { BlockJson, ExperimentDocJson } from '../types/doc'
 import { DocConvertError, docToTree, nodeToBlock, treeToDoc } from './convert'
-import type { LoopNode, MeasureNode, SerialNode, WaitNode } from './tree'
+import type { ComputeNode, LoopNode, MeasureNode, SerialNode, WaitNode } from './tree'
 
 const fixture = (name: string): ExperimentDocJson =>
   JSON.parse(
@@ -73,24 +73,6 @@ describe('docToTree', () => {
     ] as unknown as BlockJson[]
     expect(() => docToTree(doc)).toThrow(DocConvertError)
     expect(() => docToTree(doc)).toThrow(/for_each is not yet supported in the builder/)
-  })
-
-  it('reports abort as a specific unsupported-in-builder message', () => {
-    const doc = fixture('valid-od-growth')
-    doc.workflow.blocks = [
-      { abort: { if: 'true', message: 'safety stop' } },
-    ] as unknown as BlockJson[]
-    expect(() => docToTree(doc)).toThrow(DocConvertError)
-    expect(() => docToTree(doc)).toThrow(/abort is not yet supported in the builder/)
-  })
-
-  it('reports alarm as a specific unsupported-in-builder message', () => {
-    const doc = fixture('valid-od-growth')
-    doc.workflow.blocks = [
-      { alarm: { if: 'true', message: 'flagged condition' } },
-    ] as unknown as BlockJson[]
-    expect(() => docToTree(doc)).toThrow(DocConvertError)
-    expect(() => docToTree(doc)).toThrow(/alarm is not yet supported in the builder/)
   })
 })
 
@@ -248,5 +230,51 @@ describe('treeToDoc', () => {
   it('omits the per-stream persistence key entirely for a stream that never had an override', () => {
     const content = docToTree(fixture('valid-od-growth'))
     expect(treeToDoc(content).workflow.streams?.od?.persistence).toBeUndefined()
+  })
+})
+
+describe('control blocks', () => {
+  const doc = (blocks: BlockJson[]): ExperimentDocJson => ({
+    doc_version: 1,
+    name: 'control',
+    description: null,
+    roles: {},
+    workflow: {
+      schema_version: 1,
+      metadata: { name: 'control' },
+      persistence: { default: 'in_memory', format: 'jsonl' },
+      streams: { c_series: { units: null } },
+      blocks,
+    },
+  })
+
+  const BLOCKS: BlockJson[] = [
+    { compute: { into: 'c', value: 'c * 0.9' } },
+    { record: { into: 'c_series', value: 'c' } },
+    { abort: { if: 'emergency_stop', message: 'operator emergency stop' } },
+    { alarm: { if: 'od > 2.0', message: 'tube 1 contaminated' }, on_error: 'continue' },
+  ]
+
+  it('round-trips every control block byte-for-byte', () => {
+    const input = doc(BLOCKS)
+    expect(treeToDoc(docToTree(input))).toEqual(input)
+  })
+
+  it('parses control blocks into their node shapes', () => {
+    const tree = docToTree(doc(BLOCKS)).tree
+    expect(tree[0]).toMatchObject({ kind: 'compute', into: 'c', value: 'c * 0.9' })
+    expect(tree[1]).toMatchObject({ kind: 'record', into: 'c_series', value: 'c' })
+    expect(tree[2]).toMatchObject({
+      kind: 'abort',
+      condition: 'emergency_stop',
+      message: 'operator emergency stop',
+    })
+    expect(tree[3]).toMatchObject({ kind: 'alarm', condition: 'od > 2.0', onError: 'continue' })
+  })
+
+  it('keeps a literal compute value a number, not a string', () => {
+    const tree = docToTree(doc([{ compute: { into: 'V', value: 12 } }])).tree
+    expect((tree[0] as ComputeNode).value).toBe(12)
+    expect(nodeToBlock(tree[0])).toEqual({ compute: { into: 'V', value: 12 } })
   })
 })
