@@ -56,7 +56,6 @@ describe('docToTree', () => {
     expect(new Set(uids).size).toBe(uids.length)
     expect(uids.length).toBe(5)
   })
-
 })
 
 describe('treeToDoc', () => {
