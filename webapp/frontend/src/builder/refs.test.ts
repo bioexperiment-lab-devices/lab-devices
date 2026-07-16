@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { collectBindings, countRoleRefs, countStreamRefs, renameRoleRefs, renameStreamRefs } from './refs'
-import type { BlockNode, CommandNode, LoopNode, MeasureNode, SerialNode } from './tree'
+import type { BlockNode, CommandNode, ComputeNode, LoopNode, MeasureNode, RecordNode, SerialNode } from './tree'
 
 const base = { label: null, gapAfter: null, startOffset: null }
 const cmd = (uid: string, device: string): CommandNode => ({
@@ -8,6 +8,12 @@ const cmd = (uid: string, device: string): CommandNode => ({
 })
 const meas = (uid: string, device: string, into: string): MeasureNode => ({
   uid, kind: 'measure', device, verb: 'measure', into, params: {}, ...base,
+})
+const rec = (uid: string, into: string): RecordNode => ({
+  uid, kind: 'record', into, value: 'c', ...base,
+})
+const comp = (uid: string, into: string, value: string): ComputeNode => ({
+  uid, kind: 'compute', into, value, ...base,
 })
 const tree: BlockNode[] = [
   {
@@ -70,6 +76,17 @@ describe('stream refs', () => {
     const loop = (next[0] as SerialNode).children[1] as LoopNode
     expect(loop.until).toBe('mean(od, last=3) > 0.6')
   })
+
+  it('counts a record block as a stream reference', () => {
+    const t: BlockNode[] = [rec('r1', 'c_series')]
+    expect(countStreamRefs(t, 'c_series')).toBe(1)
+    expect(countStreamRefs(t, 'other')).toBe(0)
+  })
+
+  it('renames record stream references', () => {
+    const out = renameStreamRefs([rec('r1', 'c_series')], 'c_series', 'conc')
+    expect((out[0] as RecordNode).into).toBe('conc')
+  })
 })
 
 describe('collectBindings', () => {
@@ -78,5 +95,18 @@ describe('collectBindings', () => {
     const twice = [...tree, { uid: 'oi2', kind: 'operator_input' as const, name: 'feed_ml',
       inputType: 'float' as const, prompt: null, min: null, max: null, choices: null, ...base }]
     expect(collectBindings(twice)).toEqual(['feed_ml'])
+  })
+
+  it('collects compute targets as bindings alongside operator inputs', () => {
+    const t: BlockNode[] = [
+      {
+        uid: 'oi1', kind: 'operator_input', name: 'od_min', inputType: 'float',
+        prompt: null, min: null, max: null, choices: null, ...base,
+      },
+      comp('k1', 'c', '0'),
+      comp('k2', 'c', 'c * 0.9'),
+    ]
+    // 'c' is written by two computes (the seed-then-accumulate idiom) and must de-duplicate.
+    expect(collectBindings(t)).toEqual(['od_min', 'c'])
   })
 })
