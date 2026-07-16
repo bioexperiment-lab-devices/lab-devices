@@ -12,6 +12,10 @@ export function useValidation(): void {
   const roles = useDocStore((s) => s.roles)
   const streams = useDocStore((s) => s.streams)
   const tree = useDocStore((s) => s.tree)
+  // Group bodies are edited through this same debounced path (docStore's setActiveList
+  // writes to `groups`, not `tree`, whenever `scope` is non-null) — without `groups` in the
+  // trigger list, editing inside a group scope would never schedule a re-validation at all.
+  const groups = useDocStore((s) => s.groups)
   const seq = useRef(0)
 
   useEffect(() => {
@@ -23,7 +27,7 @@ export function useValidation(): void {
         .then((resp) => {
           if (seq.current !== id) return
           const state = useDocStore.getState()
-          state.setDiagnostics(mapDiagnostics(state.tree, resp.diagnostics))
+          state.setDiagnostics(mapDiagnostics(state.tree, state.groups, resp.diagnostics))
           state.setValidationError(null)
           state.setValidating(false)
         })
@@ -35,5 +39,5 @@ export function useValidation(): void {
         })
     }, 500)
     return () => clearTimeout(timer)
-  }, [name, description, roles, streams, tree])
+  }, [name, description, roles, streams, tree, groups])
 }

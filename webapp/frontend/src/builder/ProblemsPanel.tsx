@@ -8,6 +8,8 @@ export function ProblemsPanel() {
   const diagnostics = useDocStore((s) => s.diagnostics)
   const validationError = useDocStore((s) => s.validationError)
   const select = useDocStore((s) => s.select)
+  const setScope = useDocStore((s) => s.setScope)
+  const focusRole = useDocStore((s) => s.focusRole)
   const [open, setOpen] = useState(false)
   if (diagnostics.length === 0 && validationError === null) return null
   return (
@@ -29,13 +31,21 @@ export function ProblemsPanel() {
           {diagnostics.map((d, i) => (
             <li key={i} className="py-0.5 text-xs">
               <button
-                disabled={d.uid === null}
+                disabled={d.uid === null && d.role === null}
                 onClick={() => {
-                  if (!d.uid) return
-                  select(d.uid)
-                  document
-                    .getElementById(`block-${d.uid}`)
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  if (d.uid) {
+                    // Switch scope BEFORE selecting: the uid may live inside a group's body
+                    // (paths.ts's group-scope/compound resolution), and it will not be found
+                    // by the canvas — currently rendering whichever list `scope` names
+                    // (docStore.ts's `activeList`) — until the scope switch lands first.
+                    setScope(d.scope)
+                    select(d.uid)
+                    document
+                      .getElementById(`block-${d.uid}`)
+                      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  } else if (d.role) {
+                    focusRole(d.role)
+                  }
                 }}
                 className="text-left enabled:hover:underline disabled:cursor-default"
               >

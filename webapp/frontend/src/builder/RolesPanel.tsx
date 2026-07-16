@@ -1,16 +1,28 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useDocStore } from '../stores/docStore'
 
 /** Inline rename/delete list for roles (spec §4.2): rename cascades through every
- * referencing block in one undo step; delete is refused with a reference count. */
+ * referencing block in one undo step; delete is refused with a reference count.
+ *
+ * `focusedRole` (docStore.ts) is set by a Problems row click on a role diagnostic
+ * (paths.ts's `MappedDiagnostic.role`) — it scrolls the matching row into view and
+ * highlights it, the same jump-to-block treatment ProblemsPanel already gives a uid. */
 export function RolesPanel() {
   const roles = useDocStore((s) => s.roles)
   const renameRole = useDocStore((s) => s.renameRole)
   const removeRole = useDocStore((s) => s.removeRole)
+  const focusedRole = useDocStore((s) => s.focusedRole)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const cancelled = useRef(false)
+
+  useEffect(() => {
+    if (!focusedRole) return
+    document
+      .getElementById(`role-${focusedRole}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [focusedRole])
 
   const commitRename = (from: string) => {
     const err = draft && draft !== from ? renameRole(from, draft) : null
@@ -25,7 +37,14 @@ export function RolesPanel() {
   return (
     <ul className="space-y-1">
       {entries.map(([name, role]) => (
-        <li key={name} className="flex items-center gap-1 text-sm">
+        <li
+          key={name}
+          id={`role-${name}`}
+          className={
+            'flex items-center gap-1 rounded text-sm ' +
+            (focusedRole === name ? 'ring-2 ring-amber-400 bg-amber-50' : '')
+          }
+        >
           {editing === name ? (
             <input
               autoFocus

@@ -66,6 +66,10 @@ export interface EditorState extends DocSnapshot {
   // §5.2). This is VIEW state, not a document field — it must stay out of the zundo snapshot
   // exactly like selectedUid (file header comment), so undo/redo never rewrites it directly.
   scope: string | null
+  // Which role RolesPanel should scroll to and highlight, set by a Problems row click on a
+  // role diagnostic (paths.ts's `MappedDiagnostic.role`, previously read by nothing). VIEW
+  // state like `scope`/`selectedUid` above — not part of the zundo snapshot.
+  focusedRole: string | null
   collapsed: Record<string, boolean>
   diagnostics: MappedDiagnostic[]
   validating: boolean
@@ -85,6 +89,7 @@ export interface EditorState extends DocSnapshot {
   removeStream: (name: string) => string | null
   setStreamUnits: (name: string, units: string | null) => void
   setScope: (scope: string | null) => void
+  focusRole: (name: string | null) => void
   addGroup: (name: string) => string | null
   renameGroup: (from: string, to: string) => string | null
   removeGroup: (name: string) => string | null
@@ -207,6 +212,7 @@ export const useDocStore = create<EditorState>()(
       savedSnapshot: snapshotOf(emptyContent()),
       selectedUid: null,
       scope: null,
+      focusedRole: null,
       collapsed: {},
       diagnostics: [],
       validating: false,
@@ -319,6 +325,7 @@ export const useDocStore = create<EditorState>()(
         })),
 
       setScope: (scope) => set({ scope, selectedUid: null }),
+      focusRole: (name) => set({ focusedRole: name }),
 
       addGroup: (name) => {
         if (!GROUP_NAME_RE.test(name)) return `group name must be an identifier`
@@ -484,6 +491,7 @@ export function loadDoc(content: DocContent, serverId: string | null): void {
     savedSnapshot: snapshotOf(normalized),
     selectedUid: null,
     scope: null,
+    focusedRole: null,
     collapsed: {},
     diagnostics: [],
     validating: false,
