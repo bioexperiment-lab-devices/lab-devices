@@ -14,6 +14,7 @@ from lab_devices.experiment.context import RunContext
 from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import (
     AbortSignalError,
+    AlarmRecord,
     BlockFailedError,
     EvaluationError,
     InvariantViolationError,
@@ -613,6 +614,8 @@ async def _execute_inner(block: B.Block, ctx: RunContext) -> None:
         await _run_record(block, ctx)
     elif isinstance(block, B.Abort):
         await _run_abort(block, ctx)
+    elif isinstance(block, B.Alarm):
+        await _run_alarm(block, ctx)
     elif isinstance(block, B.GroupRef):
         await execute_blocks(ctx.workflow.groups[block.name].body, ctx)
     else:
@@ -694,6 +697,13 @@ async def _run_abort(block: B.Abort, ctx: RunContext) -> None:
     if _condition(block.if_, ctx):
         _emit(ctx, "abort_raised", block.id, message=block.message)
         raise AbortSignalError(str(block.id), block.message)
+
+
+async def _run_alarm(block: B.Alarm, ctx: RunContext) -> None:
+    """A true condition flags and continues (design 2026-07-16 §2.2)."""
+    if _condition(block.if_, ctx):
+        ctx.alarms.append(AlarmRecord(str(block.id), block.message))
+        ctx.emit("alarm_raised", block.id, message=block.message)
 
 
 async def _run_operator_input(block: B.OperatorInput, ctx: RunContext) -> None:

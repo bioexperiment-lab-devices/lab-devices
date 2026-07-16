@@ -11,6 +11,7 @@ from lab_devices.experiment import blocks as B
 from lab_devices.experiment.context import RunContext, RunOptions
 from lab_devices.experiment.errors import (
     AbortSignalError,
+    AlarmRecord,
     ExperimentRunError,
     FinalizeError,
     PersistenceError,
@@ -74,6 +75,7 @@ class RunReport:
     # 40 samples still reports `completed` — this is what stops it looking like a clean one.
     # Declared last, with a default: the failure path above constructs RunReport positionally.
     tolerated_errors: tuple[ToleratedError, ...] = ()
+    alarms: tuple[AlarmRecord, ...] = ()  # alarm blocks that fired (design 2026-07-16 §4.4)
 
 
 class ExperimentRun:
@@ -206,6 +208,7 @@ class ExperimentRun:
             state=ctx.state, log=sinks.log_sink,
             persistence_errors=sinks.persistence_errors(),
             tolerated_errors=tuple(ctx.tolerated),
+            alarms=tuple(ctx.alarms),
         )
         if cancelled:
             assert error is not None  # isinstance check above guarantees this (mypy narrowing)

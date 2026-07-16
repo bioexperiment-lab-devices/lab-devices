@@ -59,6 +59,16 @@ class ToleratedError:
     error: str
 
 
+@dataclass(frozen=True)
+class AlarmRecord:
+    """An `alarm` block whose condition fired (design 2026-07-16 §4.4). Not an exception: the
+    run continued. The record that it happened, so a run that raised alarms is distinguishable
+    from a silent one."""
+
+    block_id: str
+    message: str
+
+
 class ExperimentRunError(ExperimentError):
     """Base for errors raised while executing a workflow (design 4-exec §15)."""
 
