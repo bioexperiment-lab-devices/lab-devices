@@ -198,6 +198,52 @@ describe('docStore', () => {
     expect(selectDoc(store()).workflow.persistence).toEqual({ default: 'in_memory', format: 'jsonl' })
   })
 
+  it('loading a doc without metadata clears what the PREVIOUS doc left behind, same as ' +
+    'defaults/persistence (I1) — otherwise doc B would inherit doc A\'s author/description', () => {
+    loadDoc(
+      docToTree({
+        doc_version: 1, name: 'A', description: null, roles: {},
+        workflow: {
+          schema_version: 1,
+          metadata: { name: 'A', author: 'someone', description: 'about A' },
+          streams: {},
+          blocks: [],
+        },
+      }),
+      'a-id',
+    )
+    expect(store().metadata).toEqual({ name: 'A', author: 'someone', description: 'about A' })
+
+    loadDoc(
+      docToTree({
+        doc_version: 1, name: 'B', description: null, roles: {},
+        workflow: { schema_version: 1, streams: {}, blocks: [] },
+      }),
+      'b-id',
+    )
+    expect(store().metadata).toBeUndefined()
+    expect(selectDoc(store()).workflow.metadata).toEqual({ name: 'B' })
+  })
+
+  it('the dirty-check covers metadata, not just the visible fields — a hand-authored ' +
+    'author/description must not read clean after being edited underneath the store', () => {
+    loadDoc(
+      docToTree({
+        doc_version: 1, name: 'A', description: null, roles: {},
+        workflow: {
+          schema_version: 1,
+          metadata: { name: 'A', author: 'someone' },
+          streams: {},
+          blocks: [],
+        },
+      }),
+      'a-id',
+    )
+    expect(selectDirty(store())).toBe(false)
+    useDocStore.setState({ metadata: { name: 'A', author: 'someone else' } })
+    expect(selectDirty(store())).toBe(true)
+  })
+
   it('pauseHistory suppresses undo tracking until resumeHistory', () => {
     newDoc()
     pauseHistory()

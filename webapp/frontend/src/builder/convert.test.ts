@@ -164,6 +164,62 @@ describe('treeToDoc', () => {
     })
   })
 
+  it('round-trips workflow.metadata.author/description, which the builder has no UI for but ' +
+    'must not destroy — opening and saving a doc with hand-authored metadata must not erase ' +
+    'its authorship or its scientific description', () => {
+    const doc: ExperimentDocJson = {
+      doc_version: 1,
+      name: 'Metadata test',
+      description: null,
+      roles: {},
+      workflow: {
+        schema_version: 1,
+        metadata: {
+          name: 'Metadata test',
+          author: 'lab-devices examples',
+          description: 'a multi-paragraph scientific description',
+        },
+        persistence: { default: 'in_memory', format: 'jsonl' },
+        streams: {},
+        blocks: [],
+      },
+    }
+    expect(treeToDoc(docToTree(doc)).workflow.metadata).toEqual({
+      name: 'Metadata test',
+      author: 'lab-devices examples',
+      description: 'a multi-paragraph scientific description',
+    })
+  })
+
+  it('renaming the doc updates metadata.name while preserving author/description, and keeps ' +
+    'name first in key order', () => {
+    const doc: ExperimentDocJson = {
+      doc_version: 1,
+      name: 'Original name',
+      description: null,
+      roles: {},
+      workflow: {
+        schema_version: 1,
+        metadata: { name: 'Original name', author: 'someone', description: 'about this doc' },
+        persistence: { default: 'in_memory', format: 'jsonl' },
+        streams: {},
+        blocks: [],
+      },
+    }
+    const renamed = { ...docToTree(doc), name: 'New name' }
+    const metadata = treeToDoc(renamed).workflow.metadata
+    expect(metadata).toEqual({
+      name: 'New name',
+      author: 'someone',
+      description: 'about this doc',
+    })
+    // Key order matters for the byte-exact round trip (spread semantics keep a re-assigned
+    // key's original position) — JSON.stringify is sensitive to it where toEqual is not.
+    expect(JSON.stringify(metadata)).toBe(
+      JSON.stringify({ name: 'New name', author: 'someone', description: 'about this doc' }),
+    )
+  })
+
   it('preserves a custom persistence setting instead of clobbering it with the hardcoded default', () => {
     const doc: ExperimentDocJson = {
       doc_version: 1,

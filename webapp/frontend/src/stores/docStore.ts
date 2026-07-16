@@ -41,6 +41,10 @@ export interface DocSnapshot {
   // pure functions in isolation.
   persistence?: WorkflowJson['persistence']
   defaults?: WorkflowJson['defaults']
+  // Carried opaquely through load -> save, same reason as persistence/defaults above: a
+  // hand-authored workflow.metadata.author/description must survive a round trip through
+  // the store, not just through convert.ts's pure functions in isolation.
+  metadata?: WorkflowJson['metadata']
 }
 
 export interface EditorState extends DocSnapshot {
@@ -81,6 +85,7 @@ export const selectContent = (s: DocSnapshot): DocContent => ({
   tree: s.tree,
   ...(s.persistence !== undefined ? { persistence: s.persistence } : {}),
   ...(s.defaults !== undefined ? { defaults: s.defaults } : {}),
+  ...(s.metadata !== undefined ? { metadata: s.metadata } : {}),
 })
 
 /** The dirty-check, and the value `markSaved`/`loadDoc` compare against. It must cover EVERY
@@ -98,6 +103,7 @@ export const snapshotOf = (content: DocContent): string =>
     tree: content.tree,
     persistence: content.persistence,
     defaults: content.defaults,
+    metadata: content.metadata,
   })
 
 export const selectDoc = (s: DocSnapshot): ExperimentDocJson => treeToDoc(selectContent(s))
@@ -261,6 +267,7 @@ export function loadDoc(content: DocContent, serverId: string | null): void {
     // through: doc B must never inherit doc A's workflow.defaults/persistence).
     persistence: content.persistence,
     defaults: content.defaults,
+    metadata: content.metadata,
     serverId,
     savedSnapshot: snapshotOf(content),
     selectedUid: null,

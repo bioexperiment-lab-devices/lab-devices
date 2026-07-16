@@ -515,8 +515,6 @@
             },
             {
               "loop": {
-                "count": 25,
-                "pace": "60s",
                 "body": [
                   {
                     "abort": {
@@ -534,8 +532,6 @@
                   },
                   {
                     "loop": {
-                      "count": 10,
-                      "pace": "3s",
                       "body": [
                         {
                           "parallel": {
@@ -565,7 +561,9 @@
                           },
                           "label": "read all three tubes at once (independent densitometers); a lane that fails is absorbed in that lane, so its two siblings still read"
                         }
-                      ]
+                      ],
+                      "count": 10,
+                      "pace": "3s"
                     },
                     "label": "growth phase: 10 evenly spaced OD samples -> the slope the decision uses"
                   },
@@ -630,7 +628,9 @@
                     },
                     "label": "park every valve closed for the growth phase (no siphoning)"
                   }
-                ]
+                ],
+                "count": 25,
+                "pace": "60s"
               },
               "label": "the ratchet: 25 growth cycles of 60s"
             }

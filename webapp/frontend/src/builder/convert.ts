@@ -41,6 +41,11 @@ export interface DocContent {
   // documented, supported policy, and a custom persistence setting is a real run knob.
   persistence?: WorkflowJson['persistence']
   defaults?: WorkflowJson['defaults']
+  // Carried opaquely for the same reason as persistence/defaults above: the builder has no
+  // UI for workflow.metadata beyond the doc name (mirrored into metadata.name on save), but
+  // a hand-authored `author` or `description` is real authorial content — destroying it on
+  // save would silently erase a document's authorship and its entire scientific description.
+  metadata?: WorkflowJson['metadata']
   // Reusable group bodies invoked via group_ref (design §2.2/§5). Optional, like persistence/
   // defaults above: the builder has no authoring UI or store scope for groups yet (that lands
   // in a later W9 task), so a DocContent built directly by a caller that predates this field
@@ -85,6 +90,7 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
     streams,
     tree: (wf.blocks ?? []).map(blockToNode),
     groups,
+    ...(wf.metadata !== undefined ? { metadata: wf.metadata } : {}),
     ...(wf.persistence !== undefined ? { persistence: wf.persistence } : {}),
     ...(wf.defaults !== undefined ? { defaults: wf.defaults } : {}),
   }
@@ -224,7 +230,10 @@ export function treeToDoc(content: DocContent): ExperimentDocJson {
   // cannot land a conditional key ahead of keys that must appear unconditionally after it.
   const workflow: WorkflowJson = {
     schema_version: 1,
-    metadata: { name: content.name },
+    // content.name stays authoritative for metadata.name (the builder edits the doc name,
+    // which is mirrored here) — re-assigning an existing key via spread keeps its original
+    // position, so a carried-in metadata.author/description keeps its place after name.
+    metadata: { ...content.metadata, name: content.name },
     // Preserve a custom persistence setting if the doc carried one in; only fall back to
     // the builder's historical default when none was present (2026-07-14 review, Fix 1).
     persistence: content.persistence ?? { default: 'in_memory', format: 'jsonl' },
