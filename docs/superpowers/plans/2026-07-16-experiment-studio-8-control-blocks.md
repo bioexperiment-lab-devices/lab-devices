@@ -641,7 +641,8 @@ git commit -m "feat(studio-frontend): count record stream refs; collect compute 
 - Modify: `webapp/frontend/src/builder/Palette.tsx:5`, `:10-17`, `:104-119`
 - Modify: `webapp/frontend/src/builder/BuilderTab.tsx:15`, `:33-35`, `:98-99`
 - Modify: `webapp/frontend/src/builder/Canvas.tsx:8`, `:195`
-- Test: `webapp/frontend/src/builder/dnd.test.ts` (existing tests must keep passing)
+- Modify: `webapp/frontend/src/stores/docStore.test.ts:3`, `:43`, `:52`, `:58`, `:212`, `:214`
+- Test: `webapp/frontend/src/builder/dnd.test.ts`, `webapp/frontend/src/stores/docStore.test.ts` (existing tests must keep passing)
 
 **Interfaces:**
 - Consumes: `PaletteKind`, `ControlKind`, `newPaletteNode` from Task 2.
@@ -692,7 +693,15 @@ Add a `Section` after the existing Structure section (`:106-119`), reusing `Chip
       </Section>
 ```
 
-- [ ] **Step 3: Update the two `newStructureNode` call sites**
+- [ ] **Step 3: Update the three files that still call `newStructureNode`**
+
+Task 2 renamed `newStructureNode` → `newPaletteNode` without a back-compat alias. **Confirm the full set before editing** — the original plan text said "two call sites" and was wrong, which left `docStore.test.ts` red with no owner:
+
+```bash
+grep -rn "newStructureNode" webapp/frontend/src/
+```
+
+Expect exactly three files: `BuilderTab.tsx`, `Canvas.tsx`, and `stores/docStore.test.ts`. In `docStore.test.ts` the change is purely mechanical — the import on `:3` and the five calls at `:43`, `:52`, `:58`, `:212`, `:214` become `newPaletteNode`, with no other edit. Those four tests are currently **failing at runtime** (`TypeError: newStructureNode is not a function`); this step is what makes them green again. Unlike the `tsc`-only breaks Task 2 deliberately left, that one is a real test failure.
 
 In `BuilderTab.tsx`: line 15 becomes `import { findNode, newPaletteNode, newVerbNode } from './tree'`; line 99 becomes `s.insertBlock(newPaletteNode(payload.kind), at)`.
 
