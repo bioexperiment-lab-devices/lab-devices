@@ -120,4 +120,14 @@ describe('streamSources', () => {
   it('omits streams nothing writes', () => {
     expect(streamSources([])).toEqual({})
   })
+
+  it('first writer wins when a stream is transiently written by both kinds', () => {
+    const t: BlockNode[] = [meas('m1', 'od_meter', 'dual'), rec('r1', 'dual')]
+    expect(streamSources(t)).toEqual({ dual: 'measure' })
+  })
+
+  it('skips a freshly-dragged block with an empty into', () => {
+    const t: BlockNode[] = [meas('m1', 'od_meter', ''), rec('r1', 'c_series')]
+    expect(streamSources(t)).toEqual({ c_series: 'record' })
+  })
 })

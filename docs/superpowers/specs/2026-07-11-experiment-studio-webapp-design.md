@@ -284,8 +284,12 @@ block fails) never triggers here since the provider is always wired.
 ### 7.5 WebSocket contract
 
 - Server messages: `{type: "event", seq, timestamp, kind, block_id, data}` (one per
-  RunEvent — this includes `measure_recorded {stream, value}`, which **is** the live chart
-  feed; no second data path) and `{type: "status", status}` on lifecycle edges
+  RunEvent — this includes `measure_recorded {stream, value}` and, identically,
+  `sample_recorded {stream, value}` from a `record` block, which together **are** the live
+  chart feed; no second data path (amended 2026-07-16 during W8: a `record` block's computed
+  sample feeds the chart too; the engine's disjointness rule — a stream is `measure` XOR
+  `record` — means the two can never collide on one series, see engine-parity spec §4.3)) and
+  `{type: "status", status}` on lifecycle edges
   (running/paused/finished-with-outcome). Status messages carry a `seq` from the same
   counter as events (amended 2026-07-12 during W4) so replay is a single ordered
   buffer.
@@ -398,7 +402,9 @@ status chip.
   permanently un-runnable until a role is added.
 - **Active run:** status header (experiment, lab, state, elapsed), controls
   (Pause/Resume/Abort — abort confirms), **live chart** (uPlot; one series per stream,
-  legend toggles, elapsed-time x-axis, fed from `measure_recorded` WS events), scrolling
+  legend toggles, elapsed-time x-axis, fed from `measure_recorded` and `sample_recorded` WS
+  events (amended 2026-07-16 during W8: `record` blocks feed the chart too; a stream is
+  `measure` XOR `record` so the two can never collide on one series)), scrolling
   **event log** (human-readable renderings per event kind; auto-scroll with pause-on-hover),
   and an **input dialog** whenever `input_requested` arrives / `pending_input` is set
   (typed widget per request type, min/max/choices enforced, submit → `/input`).

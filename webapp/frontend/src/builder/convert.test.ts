@@ -255,7 +255,7 @@ describe('control blocks', () => {
     { alarm: { if: 'od > 2.0', message: 'tube 1 contaminated' }, on_error: 'continue' },
   ]
 
-  it('round-trips every control block byte-for-byte', () => {
+  it('round-trips every control block', () => {
     const input = doc(BLOCKS)
     expect(treeToDoc(docToTree(input))).toEqual(input)
   })
