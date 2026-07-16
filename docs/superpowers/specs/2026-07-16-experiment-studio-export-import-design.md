@@ -62,7 +62,18 @@ This is not a new format. It is byte-compatible with `examples/*.json`, whose to
 verified — is already exactly the Pydantic field order of `ExperimentDoc` (`docs_store.py:32`). So:
 
 - every existing example imports unchanged, and
-- every export drops into `examples/` and commits cleanly.
+- every export drops into `examples/` and runs identically.
+
+**One caveat, measured during the W7 browser proof.** A browser export normalizes float-valued
+integers: `"speed_ml_min": 6.0` comes back out as `"speed_ml_min": 6` (11 such literals in
+`morbidostat.json`). This is JavaScript's number model, not a defect we can engineer away —
+`JSON.parse` collapses `6.0` and `6` onto the same double, and *any* client-side export inherits it.
+It is semantically nil: JSON has one number type, the engine's Pydantic coerces `6` to `6.0` for a
+float param, and `validate_doc` returns **0 diagnostics on both forms** (verified against the real
+`morbidostat.json`). So an export re-imports, validates, and runs identically — but committing one
+back over its source example would show a numeric-formatting diff. The **stored** round-trip is
+byte-exact (§8, verified: zero repr-level differences through Pydantic); this is a property of the
+browser, not of the store.
 
 **No envelope.** No `exported_at`, no studio version, no id, no timestamps. `id`/`created_at`/
 `updated_at` are row state grafted on at serialization (`_summary()`, `docs_store.py:54`) — they
