@@ -217,6 +217,7 @@ def _expand_group_ref(
     # the param would shadow the loop var (no enforcement here).
     body = block["group_ref"]
     if not isinstance(body, dict):
+        trace[f"{dst}[{base}]"] = src
         return [block]
     name = body.get("name")
     raw_args = body.get("args")

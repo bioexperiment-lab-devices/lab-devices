@@ -138,3 +138,48 @@ def test_a_macro_free_workflow_traces_every_block_to_itself():
     _, trace = expand_dict_traced(wf)
     assert trace["blocks[0]"] == "blocks[0]"
     assert trace["blocks[0].children[0]"] == "blocks[0].children[0]"
+
+
+def test_plain_group_ref_traces_itself_after_a_splice():
+    wf = {
+        "schema_version": 1,
+        "groups": {"wash": {"body": [{"wait": {"duration": "9s"}}]}},
+        "blocks": [
+            {"for_each": {"var": "t", "in": [1, 2], "body": [{"wait": {"duration": "{t}s"}}]}},
+            {"group_ref": {"name": "wash"}},
+        ],
+    }
+    expanded, trace = expand_dict_traced(wf)
+    # The for_each splices to 2 blocks, so the plain group_ref (authored blocks[1]) shifts to
+    # expanded blocks[2] -- the exact wrong-highlight scenario this trace exists to prevent.
+    assert len(expanded["blocks"]) == 3
+    assert "group_ref" in expanded["blocks"][2]
+    assert trace["blocks[2]"] == "blocks[1]"
+
+
+def test_malformed_block_traces_after_a_splice_and_does_not_raise():
+    wf = {
+        "schema_version": 1,
+        "blocks": [
+            {"for_each": {"var": "t", "in": [1, 2], "body": [{"wait": {"duration": "{t}s"}}]}},
+            {"wait": {"duration": "1s"}, "nonsense": {"extra": True}},  # two type keys
+        ],
+    }
+    # expand_dict_traced runs before workflow_from_dict ever sees the doc, so a malformed
+    # block must not raise here -- it is traced and passed through untouched.
+    expanded, trace = expand_dict_traced(wf)
+    assert len(expanded["blocks"]) == 3
+    assert trace["blocks[2]"] == "blocks[1]"
+
+
+def test_malformed_group_ref_body_traces_after_a_splice():
+    wf = {
+        "schema_version": 1,
+        "blocks": [
+            {"for_each": {"var": "t", "in": [1, 2], "body": [{"wait": {"duration": "{t}s"}}]}},
+            {"group_ref": "wash"},  # string body, not an object
+        ],
+    }
+    expanded, trace = expand_dict_traced(wf)
+    assert len(expanded["blocks"]) == 3
+    assert trace["blocks[2]"] == "blocks[1]"

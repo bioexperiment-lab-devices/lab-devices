@@ -801,6 +801,8 @@ git commit -m "feat(studio-frontend): scope switcher, repeat chips, for_each/gro
 
 Also: `MappedDiagnostic.role` is written today and **read by nothing** — role diagnostics land unclickable. Wire it to focus the offending role in `RolesPanel`, since this file is being rewritten anyway.
 
+**Caveat from Task 1's review: group-name quoting is data-dependent.** The `groups['name'].body[i]` prefix is built with `f"groups[{name!r}].body"` (`expand.py`, and identically in `validate.py:64` and `roles.py:71` — same expression, so all three agree by construction). Python's `repr()` picks the quote style per string: `repr("x")` gives `groups['x']` (single quotes), but `repr("o'brien")` gives `groups["o'brien"]` (Python flips to double quotes when the string contains a single quote and no double quote). The `paths.ts` parser must accept **both** `groups['name']` and `groups["name"]` — a group name containing an apostrophe is a realistic authored value, not just a theoretical edge case.
+
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
