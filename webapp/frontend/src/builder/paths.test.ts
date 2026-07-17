@@ -151,6 +151,26 @@ describe('resolveDiagnosticPath', () => {
     expect(r).toMatchObject({ uid: waitNode.uid, scope: 'mygroup' })
   })
 
+  it('resolves a compound path whose call-site HEAD is itself a quoted group (Finding 1 + 3)', () => {
+    // The file header used to claim a quoted `groups[...]` head and a compound path are
+    // "mutually exclusive grammars" -- false: docs_store.py's `_remap_group_segment`
+    // preserves exactly this shape when a plain group_ref's call site sits inside a
+    // PARAMETRIZED group (test_docs_store.py:254, `groups['paramgroup'].body[0]->plaingroup
+    // .body[0] compute value`). The group name here also carries a space, so this doubles
+    // as the cross-language seam for Finding 1: the head's embedded space must not be
+    // mistaken for the suffix boundary, nor should it hide the real compound arrow.
+    const groups: GroupsMap = {
+      'param group': { params: ['tube'], body: [] },
+      plaingroup: { params: [], body: [waitNode] },
+    }
+    const r = resolveDiagnosticPath(
+      [],
+      groups,
+      "groups['param group'].body[0]->plaingroup.body[0] compute value",
+    )
+    expect(r).toMatchObject({ uid: waitNode.uid, scope: 'plaingroup' })
+  })
+
   it('resolves a doubly-compound path to the INNERMOST group, not the first', () => {
     const inner = wait('g2w0')
     const groups: GroupsMap = {

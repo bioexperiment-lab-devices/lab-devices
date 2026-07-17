@@ -1,5 +1,5 @@
 /** Doc v1 JSON <-> editor tree. treeToDoc(docToTree(doc)) must round-trip the golden
- * fixture byte-for-byte (deep equality); emission rules mirror the engine serializer:
+ * fixture byte-for-byte; emission rules mirror the engine serializer:
  * omit empty params, omit null timing keys, `check` only alongside `until`, `else`
  * omitted (not null) when absent, `on_error` omitted unless it is 'continue'. `groups`
  * omitted entirely when empty; a for_each's `var` omitted when null, its JSON key `in` maps

@@ -28,9 +28,15 @@ import {
 
 export const ROLE_NAME_RE = /^[a-z][a-z0-9_]*$/
 export const STREAM_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
-// A group name is interpolated into `{holes}` (engine expand.py's `_HOLE_RE`/validate.py's
-// `_IDENT_RE`), so it must be a plain identifier — the same character class as STREAM_NAME_RE,
-// kept as its own constant since roles/streams/groups are three separate namespaces.
+// A group name is a dict key the engine looks up verbatim (group_ref.name, expand.py's
+// `groups.get(name)`) — never a `{hole}` (only for_each vars and group `params` are holes,
+// engine expand.py's `_HOLE_RE`), so the engine itself accepts any string key. This
+// identifier restriction is a builder-authored convention (mirrors STREAM_NAME_RE's
+// character class), enforced here so add/rename never produce a name the canvas can't
+// address by typing it back in — not an engine requirement. It is NOT enforced on import
+// (convert.ts loads keys verbatim), so a non-identifier name is real, reachable state; see
+// docs_store.py's `_remap`/paths.ts's `quotedGroupHeadEnd` (Finding 1 review).
+// Kept as its own constant since roles/streams/groups are three separate namespaces.
 export const GROUP_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 export interface DocSnapshot {

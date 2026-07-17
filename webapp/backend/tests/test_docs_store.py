@@ -390,3 +390,124 @@ def test_an_unmappable_diagnostic_path_passes_through_unchanged() -> None:
     diags = validate_doc(doc)
     paths = {d["path"] for d in diags}
     assert "groups['selfref']" in paths
+
+
+def test_a_spaced_group_name_still_dedups_to_the_authored_path() -> None:
+    """Critical fix (final W9 review, Finding 1): `_remap` partitioned on the FIRST space
+    ANYWHERE in the path, but `groups[{name!r}]` places no restriction on `name` -- a group
+    named 'wash cycle' puts a space INSIDE the quoted head. Pre-fix, that corrupted the
+    head into 'groups['wash' (an unmappable string), so `_remap` fell back to identity and
+    handed the diagnostic back with its EXPANDED index intact -- and since the for_each
+    inside the group's body produces one diagnostic per copy at two different expanded
+    indices, dedup (keyed on the post-remap path) never collapsed them: 2 diagnostics
+    instead of 1, at 'body[0]' and 'body[1]' rather than the single authored 'body[0].body[0]'.
+    Downstream, resolveDiagnosticPath (quote-aware since Task 8) would happily resolve
+    'body[1]' onto the tree's authored body[1] -- the unrelated `wait` block, not the
+    command inside the for_each that was actually flagged. A non-identifier group name is
+    real, reachable state: GROUP_NAME_RE (docStore.ts) guards only addGroup/renameGroup,
+    never import (convert.ts loads keys verbatim), and this is the increment's headline use
+    case (hand-authored/imported JSON)."""
+    doc = ExperimentDoc.model_validate(
+        {
+            "doc_version": 1,
+            "name": "spaced-group-name",
+            "description": None,
+            "roles": {},
+            "workflow": {
+                "schema_version": 1,
+                "groups": {
+                    "wash cycle": {
+                        "body": [
+                            {
+                                "for_each": {
+                                    "var": "t",
+                                    "in": [1, 2],
+                                    "body": [
+                                        {"command": {"device": "FE", "verb": "nope_verb"}}
+                                    ],
+                                }
+                            },
+                            {"wait": {"duration": "1s"}},
+                        ]
+                    }
+                },
+                "blocks": [{"group_ref": {"name": "wash cycle"}}],
+            },
+        }
+    )
+    diags = validate_doc(doc)
+    assert len(diags) == 1, f"expected the two per-copy diagnostics to dedup to one, got {diags}"
+    assert diags[0]["path"] == "groups['wash cycle'].body[0].body[0]"
+
+
+def test_dedup_key_includes_the_message_not_just_category_and_path() -> None:
+    """Minor 1 (final W9 review): two per-copy diagnostics that remap to the SAME authored
+    path but carry DIFFERENT messages must both survive -- only exact duplicates collapse.
+    Here a for_each's 'into' hole is substituted with the loop variable itself, so each
+    copy names a different (equally unusable) binding: 'compute into '1'/'2' is not a
+    usable binding name'. Dropping `message` from the dedup key would wrongly collapse
+    these two distinct diagnostics into one, silently hiding one copy's report."""
+    doc = ExperimentDoc.model_validate(
+        {
+            "doc_version": 1,
+            "name": "distinct-messages-one-path",
+            "description": None,
+            "roles": {},
+            "workflow": {
+                "schema_version": 1,
+                "blocks": [
+                    {
+                        "for_each": {
+                            "var": "t",
+                            "in": [1, 2],
+                            "body": [{"compute": {"into": "{t}", "value": 1}}],
+                        }
+                    }
+                ],
+            },
+        }
+    )
+    diags = validate_doc(doc)
+    assert len(diags) == 2, f"expected both distinct-message copies to survive, got {diags}"
+    assert {d["path"] for d in diags} == {"blocks[0].body[0]"}
+    messages = {d["message"] for d in diags}
+    assert messages == {
+        "compute into '1' is not a usable binding name",
+        "compute into '2' is not a usable binding name",
+    }
+
+
+def test_a_plain_group_calling_a_parametrized_group_does_not_corrupt_the_path() -> None:
+    """Minor 2 (final W9 review): `_remap_group_segment`'s `not mapped.startswith(prefix)`
+    containment guard is load-bearing. Plain group G's body calls parametrized group P
+    (with matching args), so expand.py's group-body pre-pass inlines P's body INTO G's
+    body before G is ever referenced; the trace key for G's slot then points into P's
+    authored body, a DIFFERENT group entirely. Without the guard, the buggy slice produces
+    'G.body[0]' -- a plausible-looking but WRONG path (that slot in G is the group_ref to
+    P, not the compute block actually flagged). With the guard, the raw compound path is
+    carried through unchanged: unclickable, but honest (design §5.3's documented
+    passthrough) -- never guess at the wrong block."""
+    doc = ExperimentDoc.model_validate(
+        {
+            "doc_version": 1,
+            "name": "plain-group-calling-parametrized-group",
+            "description": None,
+            "roles": {},
+            "workflow": {
+                "schema_version": 1,
+                "groups": {
+                    "P": {
+                        "params": ["x"],
+                        "body": [
+                            {"compute": {"into": "y", "value": "nope_undeclared_thing"}}
+                        ],
+                    },
+                    "G": {"body": [{"group_ref": {"name": "P", "args": {"x": 1}}}]},
+                },
+                "blocks": [{"group_ref": {"name": "G"}}],
+            },
+        }
+    )
+    diags = validate_doc(doc)
+    assert len(diags) == 1
+    assert diags[0]["path"] == "blocks[0]->G.body[0].children[0] compute value"

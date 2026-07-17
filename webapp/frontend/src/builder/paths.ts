@@ -116,8 +116,10 @@ export function resolveDiagnosticPath(tree: BlockNode[], groups: GroupsMap, path
   // Compound: only the INNERMOST (last) `->` segment is the edit target — everything
   // before it is call-site context (see file header, point 3). Skip the same opaque
   // `headEnd` prefix here too, so an arrow inside a quoted group name is never mistaken
-  // for one (in practice a quoted `groups[...]` head and a compound path are mutually
-  // exclusive grammars — see file header, points 2 vs. 3 — but this stays correct even so).
+  // for one. A quoted `groups[...]` head and a compound path are NOT mutually exclusive:
+  // docs_store.py's `_remap_group_segment` preserves a quoted head that is itself a
+  // call site into a plain group (test_docs_store.py's parametrized-group regression
+  // guard), so this file must resolve that combination too — see the test below.
   const arrowTail = structural.slice(headEnd).lastIndexOf('->')
   const arrowIndex = arrowTail === -1 ? -1 : arrowTail + headEnd
   if (arrowIndex !== -1) {
