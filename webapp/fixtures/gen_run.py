@@ -31,21 +31,16 @@ import json
 import pathlib
 from typing import Any
 
+# Reuse gen_torture.py's `cmd`/`meas` instead of re-typing the same block shape here — both
+# scripts live in this directory and both are plain, uncompiled entry points (each guarded by
+# `if __name__ == "__main__":`), so importing gen_torture's module-level helpers for their
+# side-effect-free definitions is safe: it does not run gen_torture's `build()` or write its
+# fixture. Python puts a script's own directory on sys.path first, so this import resolves
+# regardless of the caller's cwd (e.g. `python3 webapp/fixtures/gen_run.py` from the repo
+# root). Keeping one definition means the two scripts cannot drift if the block shape changes.
+from gen_torture import cmd, meas
+
 OUT = pathlib.Path(__file__).parent / "ui-audit-run.json"
-
-
-def cmd(role: str, verb: str, **params: Any) -> dict[str, Any]:
-    body: dict[str, Any] = {"device": role, "verb": verb}
-    if params:
-        body["params"] = params
-    return {"command": body}
-
-
-def meas(role: str, verb: str, into: str, **params: Any) -> dict[str, Any]:
-    body: dict[str, Any] = {"device": role, "verb": verb, "into": into}
-    if params:
-        body["params"] = params
-    return {"measure": body}
 
 
 def cycle(wait_s: str) -> list[dict[str, Any]]:

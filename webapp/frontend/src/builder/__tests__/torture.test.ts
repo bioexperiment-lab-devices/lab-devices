@@ -107,12 +107,13 @@ describe('ui-audit torture fixture', () => {
     expect(Object.keys(groups).some((n) => n.includes(' '))).toBe(true)
   })
 
-  it('carries block labels as siblings of the type key, per convert.ts:36/43', () => {
+  it('carries block labels as siblings of the type key, per convert.ts:65/109', () => {
     // The engine grammar is one type key per block PLUS sibling block-level keys (label,
-    // gap_after, start_offset, retry, on_error) — never nested inside the body. If the
-    // fixture writes `label` inside the body instead, blockToNode's `label: block.label ??
-    // null` (convert.ts:43) reads it off the OUTER object and silently gets `null`: every
-    // label in the fixture disappears with no error, no throw, nothing. That's exactly the
+    // gap_after, start_offset, retry, on_error) — never nested inside the body
+    // (`BLOCK_KEYS`, convert.ts:65; the type-key filter, convert.ts:102). If the fixture
+    // writes `label` inside the body instead, blockToNode's `label: block.label ?? null`
+    // (convert.ts:109) reads it off the OUTER object and silently gets `null`: every label
+    // in the fixture disappears with no error, no throw, nothing. That's exactly the
     // failure mode this test exists to catch — the other tests above (kinds, verbs, counts)
     // would all still pass on a fixture where every label was dropped.
     //
@@ -129,15 +130,25 @@ describe('ui-audit torture fixture', () => {
     walk(content.tree)
     for (const g of Object.values(content.groups ?? {})) walk(g.body)
 
-    // LONG_LABEL (~130 chars): the W7 truncate-without-title class Canvas.tsx:199 renders
-    // (`<span className="truncate ...">` with no `title` attribute) — the probe boundary
-    // this fixture exists to plant. If labels are dropped, no label survives at all, let
-    // alone one this long.
+    // LONG_LABEL_WAIT / LONG_LABEL_GROUP_WAIT (~130 chars each): the W7 truncate-without-title
+    // class Canvas.tsx:199 renders (`<span className="truncate ...">` with no `title`
+    // attribute) — the probe boundary this fixture exists to plant. If labels are dropped, no
+    // label survives at all, let alone one this long. This check is deliberately generic (any
+    // label >=120 chars) and is NOT a substitute for the named checks below — see why.
     expect([...labels].some((l) => l.length >= 120)).toBe(true)
 
-    // The specific sites gen_torture.py plants a label at, incl. the per-lane labels inside
-    // wide_parallel() and the long_label_group's wait — every one of these lives inside a
-    // body key in a naively-nested fixture and would be absent from `labels` if so.
+    // The specific sites gen_torture.py plants a label at, named so each site is pinned
+    // independently. Every one of these lives inside a body key in a naively-nested fixture
+    // and would be absent from `labels` if so.
+    //
+    // The two long-label entries used to be a single shared LONG_LABEL string reused at both
+    // gen_torture.py's top-level wait and long_label_group's wait. A reviewer
+    // showed that made this test blind to re-nesting either site alone: with identical text at
+    // both sites, the generic `length >= 120` check above is satisfied by whichever site
+    // survives, and a named-list check can't pin LONG_LABEL by value because the two sites are
+    // textually indistinguishable in the emitted JSON. gen_torture.py now emits two distinct
+    // strings (LONG_LABEL_WAIT, LONG_LABEL_GROUP_WAIT) so each is named here and re-nesting
+    // either site alone fails this exact assertion, naming that string.
     for (const expected of [
       'Every catalog verb',
       '8 lanes — S1 says parallelism is spatially visible',
@@ -147,8 +158,18 @@ describe('ui-audit torture fixture', () => {
       'Nested 4 deep',
       'Empty serial (bare drop slot)',
       'Empty loop body',
+      // LONG_LABEL_WAIT — gen_torture.py's top-level wait, pushed as a bare block.
+      'Label that keeps going Label that keeps going Label that keeps going Label that keeps ' +
+        'going Label that keeps going Label that keeps going ',
+      // LONG_LABEL_GROUP_WAIT — gen_torture.py's long_label_group, inside `groups`.
+      "long_label_group's wait: a differently-worded label that is also long enough to " +
+        "overflow Canvas.tsx's truncated span, on purpose",
     ]) {
-      expect(labels.has(expected)).toBe(true)
+      // Custom message so a failure names the missing label instead of just "false !== true" —
+      // that's the whole point of pinning each site by name.
+      expect(labels.has(expected), `missing expected label: ${JSON.stringify(expected)}`).toBe(
+        true,
+      )
     }
   })
 })

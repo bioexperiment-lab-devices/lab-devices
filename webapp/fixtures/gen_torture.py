@@ -20,7 +20,19 @@ OUT = pathlib.Path(__file__).parent / "ui-audit-torture.json"
 # --- The boundaries, each one named so it can be tuned -------------------------------------
 LONG_NAME = "role_" + "n" * 75                    # 80-char identifier
 LONG_STREAM = "stream_" + "s" * 73                # 80-char stream name
-LONG_LABEL = "Label that keeps going " * 6        # ~130 chars — the W7 truncate class
+LONG_LABEL_WAIT = "Label that keeps going " * 6   # 138 chars — the W7 truncate class
+# A second, independently-worded long label for long_label_group's wait (below, in `groups`).
+# Deliberately different TEXT from LONG_LABEL_WAIT, not just a second binding to the same
+# string: torture.test.ts's label test used to assert only a generic `length >= 120` check
+# plus a named list that never named either LONG_LABEL site by value, so with one shared
+# string the two call sites were textually indistinguishable in the emitted JSON — re-nesting
+# either site alone (moving its `label` inside the body) left an identical string surviving
+# at the other site, and the suite stayed green. Giving each site its own text lets the test
+# pin both sites independently, by exact string value (see torture.test.ts).
+LONG_LABEL_GROUP_WAIT = (
+    "long_label_group's wait: a differently-worded label that is also long enough to "
+    "overflow Canvas.tsx's truncated span, on purpose"
+)                                                  # 128 chars, distinct from LONG_LABEL_WAIT
 LONG_MSG = (
     "Culture temperature has been outside the permitted band for more than five consecutive "
     "cycles; the thermostat may have failed open. Check the heater block and the tube seating "
@@ -40,11 +52,21 @@ METERS = [f"od_meter_{i:02d}" for i in range(1, 4)]
 def blk(type_key: str, body: dict[str, Any], **block_keys: Any) -> dict[str, Any]:
     """Build a block the way the engine grammar actually wants it: ONE type key holding the
     body, and block-level keys (`label`, `gap_after`, `start_offset`, `retry`, `on_error`) as
-    SIBLINGS of that type key — never nested inside the body. convert.ts:36 computes the type
-    key as the block's non-block-level keys and convert.ts:43 reads `label` (etc.) off the
-    outer object; a label left inside the body is silently invisible to it. Route every
-    block-level key through this helper instead of hand-assembling `{type: {...}}` dicts so a
-    future edit cannot re-nest one by accident.
+    SIBLINGS of that type key — never nested inside the body. `BLOCK_KEYS` (convert.ts:65) is
+    what the frontend treats as block-level; the type-key filter (convert.ts:102) computes a
+    block's kind from its non-block-level keys, and `block.label ?? null` (convert.ts:109)
+    reads `label` off the OUTER object — a label left inside the body is silently invisible to
+    it and reads back as `null`, with no error and no throw.
+
+    Using this helper is a convenience, not an enforced guarantee: it saves you from having to
+    get the sibling-key shape right by hand, but Python does not stop a bare
+    `{"kind": {..., "label": ...}}` literal from compiling and running just as well, and this
+    file does not route every block through it — `operator_input`, `compute`, `record`,
+    `abort`, `alarm`, `for_each`, and `group_ref` below are hand-assembled dicts, not `blk()`
+    calls. Nothing here would catch one of them (or a future block) drifting the key inside
+    the body; that requires an explicit structural check over the emitted JSON (walk
+    `blocks[]` and every `groups[*].body`, and assert `BLOCK_KEYS` never appears inside a
+    type-key's body), run separately, not this function.
     """
     out: dict[str, Any] = {type_key: body}
     out.update(block_keys)
@@ -191,8 +213,8 @@ def build() -> dict[str, Any]:
         {"group_ref": {"name": "wash cycle", "args": {"port": 2}}},
         {"group_ref": {"name": "long_label_group"}},
 
-        # --- a label long enough to truncate a card --------------------------------------------
-        blk("wait", {"duration": "1h"}, label=LONG_LABEL),
+        # --- a label long enough to truncate a card (top-level site — see LONG_LABEL_WAIT) ------
+        blk("wait", {"duration": "1h"}, label=LONG_LABEL_WAIT),
 
         # --- DELIBERATE validation errors: ENGINE-level only, not role-level. These fill
         #     ProblemsPanel and must NOT break docToTree. Structure is legal; only the
@@ -222,7 +244,9 @@ def build() -> dict[str, Any]:
             cmd(VALVES[0], "set_position", position=1),
             cmd(PUMPS[1], "dispense", volume_ml=5.0, speed_ml_min=5.0),
         ]},
-        "long_label_group": {"body": [blk("wait", {"duration": "5s"}, label=LONG_LABEL)]},
+        "long_label_group": {"body": [
+            blk("wait", {"duration": "5s"}, label=LONG_LABEL_GROUP_WAIT),
+        ]},
         "empty_body_group": {"body": []},
         "deep_group": {"params": ["a", "b", "c", "d", "e"], "body": [deep_nest(4)]},
     }

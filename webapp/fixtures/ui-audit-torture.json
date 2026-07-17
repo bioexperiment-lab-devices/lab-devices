@@ -208,7 +208,7 @@
             "wait": {
               "duration": "5s"
             },
-            "label": "Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going "
+            "label": "long_label_group's wait: a differently-worded label that is also long enough to overflow Canvas.tsx's truncated span, on purpose"
           }
         ]
       },
