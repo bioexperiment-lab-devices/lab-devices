@@ -1,0 +1,846 @@
+{
+  "doc_version": 1,
+  "name": "UI audit torture",
+  "description": "Boundary-stress fixture for the UI audit (design 2026-07-17 \u00a76.2). NOT a runnable experiment and NOT a design reference \u2014 it deliberately contains invalid role and stream references so ProblemsPanel has something to render. Regenerate with `python3 webapp/fixtures/gen_torture.py`.",
+  "roles": {
+    "pump_01": {
+      "type": "pump"
+    },
+    "pump_02": {
+      "type": "pump"
+    },
+    "pump_03": {
+      "type": "pump"
+    },
+    "pump_04": {
+      "type": "pump"
+    },
+    "pump_05": {
+      "type": "pump"
+    },
+    "pump_06": {
+      "type": "pump"
+    },
+    "valve_01": {
+      "type": "valve"
+    },
+    "valve_02": {
+      "type": "valve"
+    },
+    "valve_03": {
+      "type": "valve"
+    },
+    "valve_04": {
+      "type": "valve"
+    },
+    "valve_05": {
+      "type": "valve"
+    },
+    "od_meter_01": {
+      "type": "densitometer"
+    },
+    "od_meter_02": {
+      "type": "densitometer"
+    },
+    "od_meter_03": {
+      "type": "densitometer"
+    },
+    "role_nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn": {
+      "type": "pump"
+    }
+  },
+  "workflow": {
+    "schema_version": 1,
+    "metadata": {
+      "author": "ui-audit",
+      "description": "torture"
+    },
+    "streams": {
+      "od_01": {
+        "units": "AU"
+      },
+      "od_02": {
+        "units": "AU"
+      },
+      "od_03": {
+        "units": "AU"
+      },
+      "od_04": {
+        "units": "AU"
+      },
+      "od_05": {
+        "units": "AU"
+      },
+      "od_06": {
+        "units": "AU"
+      },
+      "od_07": {
+        "units": "AU"
+      },
+      "od_08": {
+        "units": "AU"
+      },
+      "od_09": {
+        "units": "AU"
+      },
+      "od_10": {
+        "units": "AU"
+      },
+      "od_11": {
+        "units": "AU"
+      },
+      "od_12": {
+        "units": "AU"
+      },
+      "blank_01": {
+        "units": "AU"
+      },
+      "blank_02": {
+        "units": "AU"
+      },
+      "blank_03": {
+        "units": "AU"
+      },
+      "c_series_01": {
+        "units": "ug/ml"
+      },
+      "c_series_02": {
+        "units": "ug/ml"
+      },
+      "c_series_03": {
+        "units": "ug/ml"
+      },
+      "c_series_04": {
+        "units": "ug/ml"
+      },
+      "c_series_05": {
+        "units": "ug/ml"
+      },
+      "c_series_06": {
+        "units": "ug/ml"
+      },
+      "c_series_07": {
+        "units": "ug/ml"
+      },
+      "c_series_08": {
+        "units": "ug/ml"
+      },
+      "r_series_01": {
+        "units": "1/h"
+      },
+      "r_series_02": {
+        "units": "1/h"
+      },
+      "r_series_03": {
+        "units": "1/h"
+      },
+      "r_series_04": {
+        "units": "1/h"
+      },
+      "r_series_05": {
+        "units": "1/h"
+      },
+      "r_series_06": {
+        "units": "1/h"
+      },
+      "r_series_07": {
+        "units": "1/h"
+      },
+      "r_series_08": {
+        "units": "1/h"
+      },
+      "stream_sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss": {
+        "units": "arbitrary units with a long name"
+      }
+    },
+    "groups": {
+      "service": {
+        "params": [
+          "tube"
+        ],
+        "body": [
+          {
+            "command": {
+              "device": "pump_01",
+              "verb": "dispense",
+              "params": {
+                "volume_ml": 1.0,
+                "speed_ml_min": 2.0
+              }
+            }
+          },
+          {
+            "wait": {
+              "duration": "10s"
+            }
+          }
+        ]
+      },
+      "wash cycle": {
+        "params": [
+          "port"
+        ],
+        "body": [
+          {
+            "command": {
+              "device": "valve_01",
+              "verb": "set_position",
+              "params": {
+                "position": 1
+              }
+            }
+          },
+          {
+            "command": {
+              "device": "pump_02",
+              "verb": "dispense",
+              "params": {
+                "volume_ml": 5.0,
+                "speed_ml_min": 5.0
+              }
+            }
+          }
+        ]
+      },
+      "long_label_group": {
+        "body": [
+          {
+            "wait": {
+              "duration": "5s",
+              "label": "Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going "
+            }
+          }
+        ]
+      },
+      "empty_body_group": {
+        "body": []
+      },
+      "deep_group": {
+        "params": [
+          "a",
+          "b",
+          "c",
+          "d",
+          "e"
+        ],
+        "body": [
+          {
+            "serial": {
+              "label": "Nested 4 deep",
+              "children": [
+                {
+                  "branch": {
+                    "if": "od_01 > 0.4",
+                    "then": [
+                      {
+                        "parallel": {
+                          "children": [
+                            {
+                              "loop": {
+                                "count": 2,
+                                "body": [
+                                  {
+                                    "serial": {
+                                      "children": [
+                                        {
+                                          "command": {
+                                            "device": "pump_01",
+                                            "verb": "stop"
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "blocks": [
+      {
+        "operator_input": {
+          "name": "cycles",
+          "type": "int",
+          "prompt": "Culture temperature has been outside the permitted band for more than five consecutive cycles; the thermostat may have failed open. Check the heater block and the tube seating before allowing the run to continue past the next dilution.",
+          "min": 1,
+          "max": 999
+        }
+      },
+      {
+        "operator_input": {
+          "name": "od_thr",
+          "type": "float",
+          "prompt": "OD threshold",
+          "min": 0.01,
+          "max": 1.0
+        }
+      },
+      {
+        "operator_input": {
+          "name": "dry_run",
+          "type": "bool",
+          "prompt": "Dry run?"
+        }
+      },
+      {
+        "operator_input": {
+          "name": "mode",
+          "type": "enum",
+          "prompt": "Feedback mode",
+          "choices": [
+            "bang-bang",
+            "proportional",
+            "off",
+            "a choice label that is really quite long indeed"
+          ]
+        }
+      },
+      {
+        "serial": {
+          "label": "Every catalog verb",
+          "children": [
+            {
+              "command": {
+                "device": "pump_01",
+                "verb": "dispense",
+                "params": {
+                  "volume_ml": 1.0,
+                  "speed_ml_min": 2.5,
+                  "direction": "forward",
+                  "drop_suckback_ml": 0.05
+                }
+              }
+            },
+            {
+              "command": {
+                "device": "pump_02",
+                "verb": "rotate",
+                "params": {
+                  "direction": "reverse",
+                  "speed_ml_min": 1.0
+                }
+              }
+            },
+            {
+              "command": {
+                "device": "pump_03",
+                "verb": "stop"
+              }
+            },
+            {
+              "command": {
+                "device": "pump_04",
+                "verb": "set_calibration",
+                "params": {
+                  "measured_volume_ml": 1.02,
+                  "ml_per_step": 0.001
+                }
+              }
+            },
+            {
+              "command": {
+                "device": "valve_01",
+                "verb": "set_position",
+                "params": {
+                  "position": 3,
+                  "rotation": "cw"
+                }
+              }
+            },
+            {
+              "command": {
+                "device": "valve_02",
+                "verb": "home",
+                "params": {
+                  "position": 1
+                }
+              }
+            },
+            {
+              "command": {
+                "device": "valve_03",
+                "verb": "configure",
+                "params": {
+                  "default_rotation": "ccw",
+                  "hold_torque": true
+                }
+              }
+            },
+            {
+              "command": {
+                "device": "valve_04",
+                "verb": "stop"
+              }
+            },
+            {
+              "measure": {
+                "device": "od_meter_01",
+                "verb": "measure",
+                "into": "od_01",
+                "params": {
+                  "include_raw": true
+                }
+              }
+            },
+            {
+              "measure": {
+                "device": "od_meter_01",
+                "verb": "measure_blank",
+                "into": "blank_01"
+              }
+            },
+            {
+              "command": {
+                "device": "od_meter_01",
+                "verb": "set_led",
+                "params": {
+                  "level": 128
+                }
+              }
+            },
+            {
+              "command": {
+                "device": "od_meter_02",
+                "verb": "set_thermostat",
+                "params": {
+                  "enabled": true,
+                  "target_c": 37.0
+                }
+              }
+            },
+            {
+              "command": {
+                "device": "od_meter_02",
+                "verb": "set_tube_correction",
+                "params": {
+                  "factor": 1.02
+                }
+              }
+            },
+            {
+              "command": {
+                "device": "od_meter_03",
+                "verb": "calibrate_tube",
+                "params": {
+                  "reference_absorbance": 0.5
+                }
+              }
+            },
+            {
+              "command": {
+                "device": "od_meter_03",
+                "verb": "stop"
+              }
+            },
+            {
+              "command": {
+                "device": "od_meter_03",
+                "verb": "stop_monitoring"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "parallel": {
+          "label": "8 lanes \u2014 S1 says parallelism is spatially visible",
+          "children": [
+            {
+              "serial": {
+                "label": "lane 1",
+                "children": [
+                  {
+                    "command": {
+                      "device": "pump_01",
+                      "verb": "dispense",
+                      "params": {
+                        "volume_ml": 1.0,
+                        "speed_ml_min": 2.0
+                      }
+                    }
+                  },
+                  {
+                    "wait": {
+                      "duration": "30s"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "serial": {
+                "label": "lane 2",
+                "children": [
+                  {
+                    "command": {
+                      "device": "pump_02",
+                      "verb": "dispense",
+                      "params": {
+                        "volume_ml": 1.0,
+                        "speed_ml_min": 2.0
+                      }
+                    }
+                  },
+                  {
+                    "wait": {
+                      "duration": "30s"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "serial": {
+                "label": "lane 3",
+                "children": [
+                  {
+                    "command": {
+                      "device": "pump_03",
+                      "verb": "dispense",
+                      "params": {
+                        "volume_ml": 1.0,
+                        "speed_ml_min": 2.0
+                      }
+                    }
+                  },
+                  {
+                    "wait": {
+                      "duration": "30s"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "serial": {
+                "label": "lane 4",
+                "children": [
+                  {
+                    "command": {
+                      "device": "pump_04",
+                      "verb": "dispense",
+                      "params": {
+                        "volume_ml": 1.0,
+                        "speed_ml_min": 2.0
+                      }
+                    }
+                  },
+                  {
+                    "wait": {
+                      "duration": "30s"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "serial": {
+                "label": "lane 5",
+                "children": [
+                  {
+                    "command": {
+                      "device": "pump_05",
+                      "verb": "dispense",
+                      "params": {
+                        "volume_ml": 1.0,
+                        "speed_ml_min": 2.0
+                      }
+                    }
+                  },
+                  {
+                    "wait": {
+                      "duration": "30s"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "serial": {
+                "label": "lane 6",
+                "children": [
+                  {
+                    "command": {
+                      "device": "pump_06",
+                      "verb": "dispense",
+                      "params": {
+                        "volume_ml": 1.0,
+                        "speed_ml_min": 2.0
+                      }
+                    }
+                  },
+                  {
+                    "wait": {
+                      "duration": "30s"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "serial": {
+                "label": "lane 7",
+                "children": [
+                  {
+                    "command": {
+                      "device": "pump_01",
+                      "verb": "dispense",
+                      "params": {
+                        "volume_ml": 1.0,
+                        "speed_ml_min": 2.0
+                      }
+                    }
+                  },
+                  {
+                    "wait": {
+                      "duration": "30s"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "serial": {
+                "label": "lane 8",
+                "children": [
+                  {
+                    "command": {
+                      "device": "pump_02",
+                      "verb": "dispense",
+                      "params": {
+                        "volume_ml": 1.0,
+                        "speed_ml_min": 2.0
+                      }
+                    }
+                  },
+                  {
+                    "wait": {
+                      "duration": "30s"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "serial": {
+          "label": "Nested 8 deep",
+          "children": [
+            {
+              "branch": {
+                "if": "od_01 > 0.4",
+                "then": [
+                  {
+                    "parallel": {
+                      "children": [
+                        {
+                          "loop": {
+                            "count": 2,
+                            "body": [
+                              {
+                                "serial": {
+                                  "children": [
+                                    {
+                                      "branch": {
+                                        "if": "od_01 > 0.4",
+                                        "then": [
+                                          {
+                                            "parallel": {
+                                              "children": [
+                                                {
+                                                  "loop": {
+                                                    "count": 2,
+                                                    "body": [
+                                                      {
+                                                        "serial": {
+                                                          "children": [
+                                                            {
+                                                              "command": {
+                                                                "device": "pump_01",
+                                                                "verb": "stop"
+                                                              }
+                                                            }
+                                                          ]
+                                                        }
+                                                      }
+                                                    ]
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "serial": {
+          "label": "Empty serial (bare drop slot)",
+          "children": []
+        }
+      },
+      {
+        "loop": {
+          "count": 3,
+          "label": "Empty loop body",
+          "body": []
+        }
+      },
+      {
+        "compute": {
+          "into": "r_est",
+          "value": "mean(od_01, last=5) + mean(od_02, last=5) + mean(od_03, last=5) + mean(od_04, last=5) + mean(od_05, last=5) + mean(od_06, last=5) + mean(od_07, last=5) + mean(od_08, last=5) + mean(od_09, last=5) + mean(od_10, last=5) + mean(od_11, last=5) + mean(od_12, last=5) > 0.6"
+        }
+      },
+      {
+        "compute": {
+          "into": "literal_int",
+          "value": 12
+        }
+      },
+      {
+        "record": {
+          "into": "c_series_01",
+          "value": "r_est * 2"
+        }
+      },
+      {
+        "abort": {
+          "if": "mean(od_01, last=5) + mean(od_02, last=5) + mean(od_03, last=5) + mean(od_04, last=5) + mean(od_05, last=5) + mean(od_06, last=5) + mean(od_07, last=5) + mean(od_08, last=5) + mean(od_09, last=5) + mean(od_10, last=5) + mean(od_11, last=5) + mean(od_12, last=5) > 0.6",
+          "message": "Culture temperature has been outside the permitted band for more than five consecutive cycles; the thermostat may have failed open. Check the heater block and the tube seating before allowing the run to continue past the next dilution."
+        }
+      },
+      {
+        "alarm": {
+          "if": "od_01 > 0.95",
+          "message": "Culture temperature has been outside the permitted band for more than five consecutive cycles; the thermostat may have failed open. Check the heater block and the tube seating before allowing the run to continue past the next dilution."
+        }
+      },
+      {
+        "for_each": {
+          "var": "tube",
+          "in": [
+            1,
+            2,
+            3
+          ],
+          "body": [
+            {
+              "measure": {
+                "device": "od_meter_01",
+                "verb": "measure",
+                "into": "od_01"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "for_each": {
+          "in": [
+            {
+              "tube": 1,
+              "port": 2
+            },
+            {
+              "tube": 2,
+              "port": 3
+            }
+          ],
+          "body": [
+            {
+              "command": {
+                "device": "valve_01",
+                "verb": "set_position",
+                "params": {
+                  "position": 1
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "group_ref": {
+          "name": "service",
+          "args": {
+            "tube": 1
+          }
+        }
+      },
+      {
+        "group_ref": {
+          "name": "wash cycle",
+          "args": {
+            "port": 2
+          }
+        }
+      },
+      {
+        "group_ref": {
+          "name": "long_label_group"
+        }
+      },
+      {
+        "wait": {
+          "duration": "1h",
+          "label": "Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going "
+        }
+      },
+      {
+        "command": {
+          "device": "role_that_does_not_exist",
+          "verb": "dispense",
+          "params": {
+            "volume_ml": 1.0
+          }
+        }
+      },
+      {
+        "record": {
+          "into": "stream_that_was_never_declared",
+          "value": 1.0
+        }
+      },
+      {
+        "branch": {
+          "if": "no_such_binding > 1",
+          "then": [
+            {
+              "command": {
+                "device": "pump_01",
+                "verb": "stop"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
