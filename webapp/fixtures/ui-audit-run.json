@@ -1,0 +1,129 @@
+{
+  "doc_version": 1,
+  "name": "UI audit run",
+  "description": "Minimal runnable fixture (design 2026-07-17 addendum): the only seeded doc that both validates clean and completes a run against the devserver's FakeLab, so the Run tab's post-preflight states and the Records viewer are reachable. NOT a realistic experiment. Regenerate with `python3 webapp/fixtures/gen_run.py`.",
+  "roles": {
+    "feed": {
+      "type": "pump"
+    },
+    "meter": {
+      "type": "densitometer"
+    }
+  },
+  "workflow": {
+    "schema_version": 1,
+    "metadata": {
+      "name": "UI audit run"
+    },
+    "persistence": {
+      "default": "in_memory",
+      "format": "jsonl"
+    },
+    "streams": {
+      "od": {
+        "units": "AU"
+      }
+    },
+    "blocks": [
+      {
+        "serial": {
+          "children": [
+            {
+              "command": {
+                "device": "feed",
+                "verb": "dispense",
+                "params": {
+                  "volume_ml": 1.0
+                }
+              }
+            },
+            {
+              "measure": {
+                "device": "meter",
+                "verb": "measure",
+                "into": "od"
+              }
+            },
+            {
+              "wait": {
+                "duration": "2s"
+              }
+            },
+            {
+              "command": {
+                "device": "feed",
+                "verb": "dispense",
+                "params": {
+                  "volume_ml": 1.0
+                }
+              }
+            },
+            {
+              "measure": {
+                "device": "meter",
+                "verb": "measure",
+                "into": "od"
+              }
+            },
+            {
+              "wait": {
+                "duration": "2s"
+              }
+            },
+            {
+              "command": {
+                "device": "feed",
+                "verb": "dispense",
+                "params": {
+                  "volume_ml": 1.0
+                }
+              }
+            },
+            {
+              "measure": {
+                "device": "meter",
+                "verb": "measure",
+                "into": "od"
+              }
+            },
+            {
+              "wait": {
+                "duration": "2s"
+              }
+            },
+            {
+              "operator_input": {
+                "name": "cycles",
+                "type": "int",
+                "prompt": "How many more cycles?",
+                "min": 1,
+                "max": 5
+              }
+            },
+            {
+              "command": {
+                "device": "feed",
+                "verb": "dispense",
+                "params": {
+                  "volume_ml": 1.0
+                }
+              }
+            },
+            {
+              "measure": {
+                "device": "meter",
+                "verb": "measure",
+                "into": "od"
+              }
+            },
+            {
+              "wait": {
+                "duration": "1s"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
