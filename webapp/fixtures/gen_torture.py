@@ -171,10 +171,18 @@ def build() -> dict[str, Any]:
         # --- a label long enough to truncate a card --------------------------------------------
         {"wait": {"duration": "1h", "label": LONG_LABEL}},
 
-        # --- DELIBERATE validation errors: these fill ProblemsPanel and must NOT break
-        #     docToTree. Structure is legal; only the semantics are wrong, and validation is a
-        #     backend concern (experiments.py:45 — "Never 409; no validate_doc gate").
-        cmd("role_that_does_not_exist", "dispense", volume_ml=1.0),
+        # --- DELIBERATE validation errors: ENGINE-level only, not role-level. These fill
+        #     ProblemsPanel and must NOT break docToTree. Structure is legal; only the
+        #     semantics are wrong, and validation is a backend concern (experiments.py:45 —
+        #     "Never 409; no validate_doc gate"). validate_doc (docs_store.py:264) returns
+        #     right after role diagnostics, before the engine validate() pass ever runs — so
+        #     a single unknown-role reference here would silently suppress every engine
+        #     diagnostic below. Measured on this fixture: an unknown-role `command` block
+        #     collapses the panel to 1 diagnostic (category `roles`); removing it and keeping
+        #     only the undeclared-stream `record` and unknown-binding `branch` yields 33
+        #     diagnostics across 4 categories (declaration 1, affinity 2, mode 4, data-flow 26).
+        #     Do not add a role-level error back here — it would trade the dense, four-category
+        #     panel this fixture exists to produce for a single row.
         {"record": {"into": "stream_that_was_never_declared", "value": 1.0}},
         {"branch": {"if": "no_such_binding > 1", "then": [cmd(PUMPS[0], "stop")]}},
     ]
@@ -202,8 +210,8 @@ def build() -> dict[str, Any]:
         "name": "UI audit torture",
         "description": (
             "Boundary-stress fixture for the UI audit (design 2026-07-17 §6.2). NOT a runnable "
-            "experiment and NOT a design reference — it deliberately contains invalid role and "
-            "stream references so ProblemsPanel has something to render. Regenerate with "
+            "experiment and NOT a design reference — it deliberately contains invalid stream and "
+            "binding references so ProblemsPanel has something to render. Regenerate with "
             "`python3 webapp/fixtures/gen_torture.py`."
         ),
         "roles": roles,

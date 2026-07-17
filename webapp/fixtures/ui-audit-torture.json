@@ -1,7 +1,7 @@
 {
   "doc_version": 1,
   "name": "UI audit torture",
-  "description": "Boundary-stress fixture for the UI audit (design 2026-07-17 \u00a76.2). NOT a runnable experiment and NOT a design reference \u2014 it deliberately contains invalid role and stream references so ProblemsPanel has something to render. Regenerate with `python3 webapp/fixtures/gen_torture.py`.",
+  "description": "Boundary-stress fixture for the UI audit (design 2026-07-17 \u00a76.2). NOT a runnable experiment and NOT a design reference \u2014 it deliberately contains invalid stream and binding references so ProblemsPanel has something to render. Regenerate with `python3 webapp/fixtures/gen_torture.py`.",
   "roles": {
     "pump_01": {
       "type": "pump"
@@ -811,15 +811,6 @@
         "wait": {
           "duration": "1h",
           "label": "Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going "
-        }
-      },
-      {
-        "command": {
-          "device": "role_that_does_not_exist",
-          "verb": "dispense",
-          "params": {
-            "volume_ml": 1.0
-          }
         }
       },
       {
