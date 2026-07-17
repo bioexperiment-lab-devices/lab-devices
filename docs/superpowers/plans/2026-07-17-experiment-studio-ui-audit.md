@@ -575,7 +575,7 @@ oklch, `bg-black/30` scrims, and bare `fixed inset-0` dialogs.
      only understands rgb() reads BOTH of these as null: #oklch-bad goes silent on a genuine
      AA failure, and #oklch-ok gets walked up to body's white and reported as white-on-white. */
   #oklch-bad { color: oklch(0.704 0.04 256.788); background: #fff; }   /* text-slate-400, ~2.6 */
-  #oklch-ok  { color: #fff; background: oklch(0.546 0.245 262.881); }  /* bg-blue-600, ~5.5 — legible */
+  #oklch-ok  { color: #fff; background: oklch(0.546 0.245 262.881); }  /* bg-blue-600, ~5.25 — legible */
 
   /* --- contrast: partial alpha ------------------------------------------------------------ */
   /* Treating alpha as opaque reads both of these as 21:1 and stays silent. */
@@ -630,9 +630,33 @@ oklch, `bg-black/30` scrims, and bare `fixed inset-0` dialogs.
   .items-center { align-items: center; }
   .justify-center { justify-content: center; }
   .bg-black\/30 { background-color: oklab(0 0 0 / 0.3); }
-  .dlg-panel { position: relative; width: 220px; height: 100px; background: #fff; }
-  #dlg-a, #dlg-b { position: absolute; top: 20px; width: 100px; height: 40px; }
-  #dlg-a { left: 0; } #dlg-b { left: 60px; }
+  /* Tall enough for two non-overlapping buttons (a/b) AND a second, genuinely overlapping pair
+     (c/d) in the same panel — the blanket exclusion tested only "dialog vs page is silent" and
+     "dialog vs dialog is ALSO silent" with the SAME pair, which is the bug: those are two
+     different guarantees and only the first one is correct. */
+  .dlg-panel { position: relative; width: 220px; height: 150px; background: #fff; }
+  /* dialog-vs-page silence only: these two do NOT overlap each other. */
+  #dlg-a, #dlg-b { position: absolute; left: 0; width: 100px; height: 30px; }
+  #dlg-a { top: 10px; } #dlg-b { top: 60px; }
+  /* dialog-vs-dialog MUST still fire: two controls colliding inside the SAME overlay. */
+  #dlg-c, #dlg-d { position: absolute; top: 110px; width: 100px; height: 30px; }
+  #dlg-c { left: 0; } #dlg-d { left: 60px; }
+
+  /* --- must NOT fire: a page control sitting, on screen, exactly where a dialog control sits.
+     The backdrop is `position:fixed; inset:0`, centering a 220x150 panel in the selftest's fixed
+     800x600 viewport: panel top-left is ((800-220)/2, (600-150)/2) = (290, 225). #dlg-a sits at
+     panel-relative (0, 10), so on screen at (290, 235). This page-layer button is placed at the
+     exact same screen rect, OUTSIDE the overlay: dialog-vs-page must stay silent even though the
+     rects coincide 100%. */
+  #page-under-dlg { position: absolute; top: 235px; left: 290px; width: 100px; height: 30px; }
+
+  /* --- must NOT fire: an `absolute` (not `fixed`) floating layer, z-index >= 10, with an
+     interactive child sitting over a plain page button below it. Mirrors fields.tsx:169's
+     expression-help popover shape (no interactive descendants there today, but the shape is
+     generic and the structural fallback used to only recognise `position:fixed`). */
+  #pop-under { position: absolute; top: 1400px; left: 0; width: 100px; height: 40px; }
+  #pop-layer { position: absolute; top: 1400px; left: 0; width: 120px; height: 60px; z-index: 10; }
+  #pop-btn   { position: absolute; top: 0; left: 0; width: 90px; height: 36px; }
 
   /* --- page-h-scroll ---------------------------------------------------------------------- */
   /* Nested so the first offender in document order (#wide-outer, shrink-wrapped to 3000px) is
@@ -705,13 +729,23 @@ oklch, `bg-black/30` scrims, and bare `fixed inset-0` dialogs.
   <button id="fade-b">B</button>
 </div>
 
-<!-- must NOT fire: the app's real dialog markup — bare divs, no role="dialog" -->
+<!-- must NOT fire (dialog-vs-page): the app's real dialog markup — bare divs, no role="dialog" -->
 <div class="fixed inset-0 z-20 flex items-center justify-center bg-black/30" id="dlg-backdrop">
   <div class="dlg-panel">
     <button id="dlg-a">A</button>
     <button id="dlg-b">B</button>
+    <!-- must FIRE (dialog-vs-dialog): two controls genuinely colliding inside the SAME overlay -->
+    <button id="dlg-c">C</button>
+    <button id="dlg-d">D</button>
   </div>
 </div>
+
+<!-- must NOT fire: a page-layer control sitting, on screen, exactly where #dlg-a sits -->
+<button id="page-under-dlg">under</button>
+
+<!-- must NOT fire: absolute (not fixed) z-index popover, interactive child over a page button -->
+<button id="pop-under">under</button>
+<div id="pop-layer"><button id="pop-btn">pop</button></div>
 
 <!-- page-h-scroll -->
 <div id="wide-outer"><div id="wide"></div></div>
@@ -793,6 +827,11 @@ for (const sel of ['a#tiny-link', 'input#tiny-input', 'select#tiny-select',
 }
 
 assert.ok(hit('overlap', 'button#over-a'), 'overlap missed the A/B pair')
+// Two controls colliding with EACH OTHER inside the SAME overlay must still be reported: a
+// blanket "drop every overlay member" filter makes this whole defect class invisible (the
+// cramped-InputDialog-at-1024x720 case), which is exactly what grouping-by-overlay-root fixes.
+assert.ok(hit('overlap', 'button#dlg-c'),
+  'overlap missed the in-dialog dlg-c/dlg-d pair: two controls colliding inside the SAME overlay must still be reported')
 
 // ---------------------------------------------------------------------------------------------
 // And the false-positive traps must stay silent. These assertions are the point of the file:
@@ -811,7 +850,7 @@ assert.ok(!hit('low-contrast', 'div#ok-contrast'),
 // The fabricated white-on-white: an unparsed oklch background walks up to body's white and a
 // perfectly legible button gets reported at ratio 1.
 assert.ok(!hit('low-contrast', 'div#oklch-ok'),
-  'FALSE POSITIVE: flagged white on Tailwind bg-blue-600 (real ratio ~5.5 — fabricated white-on-white?)')
+  'FALSE POSITIVE: flagged white on Tailwind bg-blue-600 (real ratio ~5.25 — fabricated white-on-white?)')
 assert.ok(!hit('low-contrast', 'div#txt-24-large'),
   'FALSE POSITIVE: 24px text is WCAG large text and passes at 3.0')
 assert.ok(!hit('low-contrast', 'div#txt-19-bold'),
@@ -828,8 +867,18 @@ const overlapRows = rows('overlap')
 assert.ok(!overlapRows.some((v) => /fade-/.test(v.selector) || /fade-/.test(String(v.detail.with))),
   'FALSE POSITIVE: flagged an overlapping pair under an opacity:0 ancestor')
 // The app's dialogs are bare `fixed inset-0` divs — no role="dialog" for the probe to key on.
-assert.ok(!overlapRows.some((v) => /dlg-/.test(v.selector) || /dlg-/.test(String(v.detail.with))),
-  'FALSE POSITIVE: flagged a deliberate dialog overlay (the app renders no role="dialog")')
+// This tests dialog-vs-PAGE silence ONLY: #page-under-dlg sits, on screen, exactly where #dlg-a
+// sits (100% coincident rects) but is a page-layer control, outside the overlay. A dialog member
+// and the page control underneath its backdrop must never be compared — the whole Critical-3
+// guarantee — but that is a DIFFERENT guarantee from "dlg-c/dlg-d must fire" above: conflating the
+// two into one assertion (as an earlier version of this trap did, by making dlg-a/dlg-b overlap
+// EACH OTHER and asserting silence) meant no mutation could tell the fix from the bug it fixes.
+assert.ok(!overlapRows.some((v) => v.selector === 'button#page-under-dlg' || v.detail.with === 'button#page-under-dlg'),
+  'FALSE POSITIVE: flagged a dialog control overlapping a page control underneath the backdrop')
+// The `absolute` (not `fixed`) structural-fallback plant: an absolute z-10 popover's interactive
+// child sitting over a plain page button below it must not be reported either.
+assert.ok(!overlapRows.some((v) => /pop-/.test(v.selector) || /pop-/.test(String(v.detail.with))),
+  'FALSE POSITIVE: flagged an absolute z-index popover control overlapping the page control beneath it')
 
 // ---------------------------------------------------------------------------------------------
 // Severity split (design §5.1). auto-scroll and small targets are judgment calls, never
@@ -975,28 +1024,44 @@ export function probeRules() {
 
   // --- overlay detection ------------------------------------------------------------------------
   // Deliberate overlays (modals, drag previews) are SUPPOSED to sit on top of the page, so their
-  // members must not be fed to the overlap rule. The ARIA selectors alone match NOTHING in this
-  // app: its dialogs are bare `<div class="fixed inset-0 z-20 flex items-center justify-center
-  // bg-black/30">` (run/InputDialog.tsx:101, builder/LoadDialog.tsx:71) with no role="dialog", and
-  // @dnd-kit's DragOverlay carries no data-dnd-overlay attribute. Every open dialog therefore
-  // fabricated overlap S1s. Match what is actually rendered:
+  // members must not be compared against the page underneath them. The ARIA selectors alone match
+  // NOTHING in this app: its dialogs are bare `<div class="fixed inset-0 z-20 flex items-center
+  // justify-center bg-black/30">` (run/InputDialog.tsx:101, builder/LoadDialog.tsx:71) with no
+  // role="dialog", and @dnd-kit's DragOverlay carries no data-dnd-overlay attribute. Match what is
+  // actually rendered:
   //   1. the ARIA/attribute hooks, for generality and in case the app gains them;
   //   2. the app's own backdrop classes;
-  //   3. a structural fallback — any position:fixed ancestor stacked above the page, which is
-  //      what catches @dnd-kit's DragOverlay (position:fixed, z-index:999).
+  //   3. a structural fallback — any position:fixed OR position:absolute ancestor stacked above
+  //      the page (z-index >= 10). Covers @dnd-kit's DragOverlay (fixed, z-index:999) and floating
+  //      popovers built with `absolute` instead of `fixed` — this app's expression-help popover
+  //      (fields.tsx:169) has no interactive descendants today, but the shape is generic: an
+  //      `absolute z-10` layer with an interactive child sitting over a button below it used to
+  //      fabricate a 93% overlap violation, because only `fixed` was ever treated as a stacking
+  //      layer here.
   // Class/structure coupling is acceptable in a scratchpad probe. Adding role="dialog" to the app
   // to make the ARIA selector work is NOT (constraint D4); the missing role is recorded as an
   // accessibility finding in the report instead.
+  //
+  // `overlayRoot(el)` returns the nearest overlay-establishing element (or `el` itself, if it is
+  // the one establishing the stacking layer), or `null` for the base page. It is a GROUP KEY, not
+  // a boolean: a blanket `!inOverlay(el)` filter drops every control inside every overlay from the
+  // overlap rule entirely, which means two controls that collide with EACH OTHER inside the same
+  // dialog are never compared either — a real defect class (a cramped InputDialog at 1024x720)
+  // went invisible this way. The overlap rule below groups controls by this key and compares pairs
+  // only WITHIN a group: a dialog control and a page control underneath are in different groups and
+  // are never compared (the backdrop still cannot fabricate an overlap), but two controls sharing a
+  // group — both on the page, or both inside the SAME dialog — are compared exactly as before.
   const OVERLAY_SEL = '[role="dialog"], [aria-modal="true"], [data-dnd-overlay], .fixed.inset-0'
-  const inOverlay = (el) => {
-    if (el.closest(OVERLAY_SEL)) return true
+  const overlayRoot = (el) => {
+    const via = el.closest(OVERLAY_SEL)
+    if (via) return via
     for (let e = el; e && e.nodeType === 1; e = e.parentElement) {
       const s = getComputedStyle(e)
-      if (s.position !== 'fixed') continue
+      if (s.position !== 'fixed' && s.position !== 'absolute') continue
       const z = parseInt(s.zIndex, 10)
-      if (Number.isFinite(z) && z >= 10) return true
+      if (Number.isFinite(z) && z >= 10) return e
     }
-    return false
+    return null
   }
 
   // --- rule: page-h-scroll ----------------------------------------------------------------------
@@ -1099,24 +1164,33 @@ export function probeRules() {
   }
 
   // --- rule: overlap ----------------------------------------------------------------------------
-  // Overlay members are excluded per-element via inOverlay(): deliberate overlays are the whole
-  // point of an overlay. (An earlier draft additionally gated the *entire* rule on "a dialog
-  // exists anywhere in the DOM", which goes blind for the whole page the moment any dialog node
-  // is present — e.g. one that stays mounted but hidden. Per-element exclusion is the precise
-  // fix; the page-wide gate is gone.)
-  const rects = controls.filter((el) => !inOverlay(el))
-    .map((el) => [el, el.getBoundingClientRect()])
-    .filter(([, r]) => r.width > 0 && r.height > 0)
-  for (let i = 0; i < rects.length; i++) {
-    for (let j = i + 1; j < rects.length; j++) {
-      const [ea, a] = rects[i], [eb, b] = rects[j]
-      if (ea.contains(eb) || eb.contains(ea)) continue   // nesting is not overlap
-      const w = Math.min(a.right, b.right) - Math.max(a.left, b.left)
-      const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
-      if (w <= 0 || h <= 0) continue
-      const smaller = Math.min(a.width * a.height, b.width * b.height)
-      if ((w * h) / smaller > 0.25) {
-        push('overlap', 'violation', ea, { with: cssPath(eb), overlapPct: +((w * h) / smaller * 100).toFixed(0) })
+  // Controls are grouped by overlayRoot() (see above) and compared for overlap ONLY within their
+  // own group. A dialog member and a page member underneath the backdrop fall into different
+  // groups and are never compared — that is the whole Critical-3 guarantee. Two controls sharing
+  // a group (both on the page, or both inside the SAME dialog) are compared exactly as before.
+  // (An earlier draft gated the *entire* rule on "a dialog exists anywhere in the DOM", which goes
+  // blind for the whole page the moment any dialog node is present — e.g. one that stays mounted
+  // but hidden. Per-element grouping is the precise fix; no page-wide gate.)
+  const groups = new Map()
+  for (const el of controls) {
+    const r = el.getBoundingClientRect()
+    if (r.width === 0 || r.height === 0) continue
+    const key = overlayRoot(el)
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push([el, r])
+  }
+  for (const rects of groups.values()) {
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        const [ea, a] = rects[i], [eb, b] = rects[j]
+        if (ea.contains(eb) || eb.contains(ea)) continue   // nesting is not overlap
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+        if (w <= 0 || h <= 0) continue
+        const smaller = Math.min(a.width * a.height, b.width * b.height)
+        if ((w * h) / smaller > 0.25) {
+          push('overlap', 'violation', ea, { with: cssPath(eb), overlapPct: +((w * h) / smaller * 100).toFixed(0) })
+        }
       }
     }
   }
@@ -1178,7 +1252,7 @@ export function probeRules() {
 cd $SP && node probe-selftest.mjs
 ```
 
-Expected: `probe self-test OK — 23 rows (13 violations, 10 suspicions), no false positives`.
+Expected: `probe self-test OK — 24 rows (14 violations, 10 suspicions), no false positives`.
 
 **This is a real TDD cycle — expect to iterate.** Every assertion that fails is telling you the
 probe is wrong, not the plant. Do not delete an assertion to get green; that converts the
