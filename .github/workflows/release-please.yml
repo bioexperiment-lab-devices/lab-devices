@@ -17,10 +17,23 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # Mint an installation token so release-please's PRs and tags are authored
+      # by the App rather than github-actions[bot]. A GITHUB_TOKEN-authored release
+      # PR has its CI held at `action_required` until a maintainer clicks
+      # "Approve and run" — every release here was merged that way (#23/#26/#29 are
+      # all attempt=2). Since `main` now requires those checks, that click became
+      # mandatory rather than skippable. App-authored PRs fire CI at attempt=1
+      # (verified on serialhop), and the App is the bypass actor for the v* tag
+      # ruleset, so release tagging still works.
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_KEY }}
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
