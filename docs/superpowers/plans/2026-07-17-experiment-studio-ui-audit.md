@@ -537,7 +537,15 @@ anything.**
 
 - [ ] **Step 1: Write the planted-violation page**
 
-`$SP/probe-selftest.html` — one deliberate instance per rule, and traps that must **not** fire:
+`$SP/probe-selftest.html` — one deliberate instance per rule, plus the traps that must **not**
+fire.
+
+**Every plant here exists to make a specific way of getting the probe wrong go red**, and the
+comments say which. This matters more than it looks: an earlier version of this page planted
+contrast cases as `#bbb` on `#111` — colours a naive `rgb()` regex parses perfectly — and so
+sat green over a contrast rule that was *inverted* against the app's actual palette. A plant
+that uses colours the app never emits tests nothing. Use the app's real shapes: Tailwind 4
+oklch, `bg-black/30` scrims, and bare `fixed inset-0` dialogs.
 
 ```html
 <!doctype html>
@@ -545,22 +553,99 @@ anything.**
 <style>
   body { margin: 0; font: 16px system-ui; }
   .box { width: 120px; }
-  #clipped { overflow: hidden; white-space: nowrap; }
-  #trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #trunc-ok { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #scrolls { overflow-x: auto; white-space: nowrap; }
+
+  /* --- overflow / truncation ------------------------------------------------------------- */
+  #clipped   { overflow: hidden; white-space: nowrap; }
+  #clipped-y { overflow: hidden; height: 20px; }                 /* wraps, clipped on Y */
+  #trunc     { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #trunc-ok  { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #trunc-aria{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* truncate + a title, clipped on the BLOCK axis: the ellipsis exemption must not cover Y,
+     because truncate-no-title only ever inspects X. Nobody reports this if it does. */
+  #trunc-y   { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+               height: 8px; line-height: 20px; }
+  #scrolls   { overflow-x: auto; white-space: nowrap; }
+
+  /* --- contrast: plain sRGB ------------------------------------------------------------- */
   #faint { color: #bbb; background: #fff; }
   #ok-contrast { color: #111; background: #fff; }
+
+  /* --- contrast: Tailwind 4's real oklch palette ----------------------------------------- */
+  /* Tailwind 4 ships every palette colour as oklch (only white/black stay hex). A regex that
+     only understands rgb() reads BOTH of these as null: #oklch-bad goes silent on a genuine
+     AA failure, and #oklch-ok gets walked up to body's white and reported as white-on-white. */
+  #oklch-bad { color: oklch(0.704 0.04 256.788); background: #fff; }   /* text-slate-400, ~2.6 */
+  #oklch-ok  { color: #fff; background: oklch(0.546 0.245 262.881); }  /* bg-blue-600, ~5.5 — legible */
+
+  /* --- contrast: partial alpha ------------------------------------------------------------ */
+  /* Treating alpha as opaque reads both of these as 21:1 and stays silent. */
+  #alpha-text { color: rgba(0, 0, 0, 0.3); }                     /* over white => ~2.1 */
+  #alpha-bg   { color: #fff; background: rgba(0, 0, 0, 0.3); }   /* white on grey => ~2.1 */
+
+  /* --- contrast: image background => suspicion, never a verdict --------------------------- */
+  #img-bg { color: #bbb; background-image: linear-gradient(#fff, #fff); }
+
+  /* --- contrast: the WCAG large-text boundary --------------------------------------------- */
+  /* All four are #7f7f7f on white == ratio ~4.0, which sits between the 3.0 large-text
+     threshold and the 4.5 normal-text one. Large text is >=24px, or >=18.66px bold — those
+     are the pt figures (18pt/14pt) converted to px, NOT 18.66px/14px. The two that must FIRE
+     catch the swapped thresholds; the two that must stay SILENT catch the large-text rule
+     being disabled outright. */
+  .g { color: #7f7f7f; background: #fff; }
+  #txt-20-normal { font-size: 20px; font-weight: 400; }   /* not large => 4.5 => must fire   */
+  #txt-16-bold   { font-size: 16px; font-weight: 700; }   /* not large => 4.5 => must fire   */
+  #txt-24-large  { font-size: 24px; font-weight: 400; }   /* large     => 3.0 => must be silent */
+  #txt-19-bold   { font-size: 19px; font-weight: 700; }   /* large     => 3.0 => must be silent */
+
+  /* --- controls --------------------------------------------------------------------------- */
   #zero { width: 0; height: 0; padding: 0; border: 0; }
   #tiny { width: 12px; height: 12px; padding: 0; }
-  #big { width: 40px; height: 40px; }
-  #over-a, #over-b { position: absolute; top: 300px; width: 100px; height: 40px; }
+  #big  { width: 40px; height: 40px; }
+  /* INTERACTIVE breadth: narrowing the selector to `button` must not go unnoticed. */
+  #controls-row { display: flex; gap: 8px; align-items: flex-start; }
+  #controls-row > * { width: 12px; height: 12px; padding: 0; }
+  #tiny-link, #tiny-role, #tiny-tab { display: inline-block; background: #ddd; }
+
+  /* display:none ANCESTOR: `display` is not inherited, so #buried-btn still computes
+     display:inline-block and its rect is 0x0 — a fabricated zero-area-control S1. */
+  #buried { display: none; }
+
+  /* --- overlap ---------------------------------------------------------------------------- */
+  #over-a, #over-b { position: absolute; top: 1200px; width: 100px; height: 40px; }
   #over-a { left: 0; } #over-b { left: 60px; }
+  /* opacity:0 ANCESTOR — opacity is not inherited, so the children still compute opacity:1.
+     Any fade transition looks exactly like this. Must stay silent. */
+  #fade { opacity: 0; }
+  #fade-a, #fade-b { position: absolute; top: 1300px; width: 100px; height: 40px; }
+  #fade-a { left: 0; } #fade-b { left: 60px; }
+
+  /* --- the app's real dialog markup -------------------------------------------------------- */
+  /* run/InputDialog.tsx:101 and builder/LoadDialog.tsx:71 render exactly this: no role="dialog",
+     no data-dnd-overlay. The ARIA selectors match nothing, so every dialog state fabricates
+     overlap S1s. These are Tailwind 4's actual emitted declarations. */
+  .fixed { position: fixed; }
+  .inset-0 { inset: 0; }
+  .z-20 { z-index: 20; }
+  .flex { display: flex; }
+  .items-center { align-items: center; }
+  .justify-center { justify-content: center; }
+  .bg-black\/30 { background-color: oklab(0 0 0 / 0.3); }
+  .dlg-panel { position: relative; width: 220px; height: 100px; background: #fff; }
+  #dlg-a, #dlg-b { position: absolute; top: 20px; width: 100px; height: 40px; }
+  #dlg-a { left: 0; } #dlg-b { left: 60px; }
+
+  /* --- page-h-scroll ---------------------------------------------------------------------- */
+  /* Nested so the first offender in document order (#wide-outer, shrink-wrapped to 3000px) is
+     an innocent ancestor of the real culprit. */
+  #wide-outer { display: inline-block; }
   #wide { width: 3000px; height: 10px; background: #eee; }
 </style>
 
-<!-- clipped-overflow: content unreachable -->
+<!-- clipped-overflow: content unreachable, X axis -->
 <div class="box" id="clipped">This text is far too wide for its hidden-overflow box</div>
+
+<!-- clipped-overflow: content unreachable, Y axis -->
+<div class="box" id="clipped-y">This text wraps onto several lines and is clipped vertically by a short box</div>
 
 <!-- truncate-no-title: the W7 bug -->
 <div class="box" id="trunc">This ellipsised text has no title attribute at all</div>
@@ -568,35 +653,77 @@ anything.**
 <!-- must NOT fire: same truncation, but recoverable -->
 <div class="box" id="trunc-ok" title="full text">This ellipsised text does have a title</div>
 
+<!-- must NOT fire: recoverable via aria-label instead of title -->
+<div class="box" id="trunc-aria" aria-label="full text">This ellipsised text has an aria-label</div>
+
+<!-- clipped-overflow on Y: has a title, so truncate-no-title stays silent by design -->
+<div class="box" id="trunc-y" title="full text">Ellipsised, titled, and also clipped vertically</div>
+
 <!-- unexpected-scroll: suspicion, not violation -->
 <div class="box" id="scrolls">This text is wide but its box scrolls on purpose</div>
 
 <!-- low-contrast -->
 <div id="faint">Faint grey on white</div>
 <div id="ok-contrast">Near-black on white</div>
+<div id="oklch-bad">Tailwind text-slate-400 on white</div>
+<div id="oklch-ok">White on Tailwind bg-blue-600</div>
+<div id="alpha-text">Thirty percent black text on white</div>
+<div id="alpha-bg">White text on a thirty percent black scrim</div>
+<div id="img-bg">Faint grey over an image background</div>
+
+<!-- low-contrast: the WCAG large-text boundary -->
+<div class="g" id="txt-20-normal">Twenty px normal weight</div>
+<div class="g" id="txt-16-bold">Sixteen px bold</div>
+<div class="g" id="txt-24-large">Twenty four px normal weight</div>
+<div class="g" id="txt-19-bold">Nineteen px bold</div>
 
 <!-- controls -->
 <button id="zero">zero</button>
 <button id="tiny">t</button>
 <button id="big">ok</button>
 
+<!-- INTERACTIVE breadth: none of these is a <button> -->
+<div id="controls-row">
+  <a href="#" id="tiny-link">l</a>
+  <input id="tiny-input">
+  <select id="tiny-select"><option>o</option></select>
+  <textarea id="tiny-textarea"></textarea>
+  <div role="button" id="tiny-role">r</div>
+  <span tabindex="0" id="tiny-tab">t</span>
+</div>
+
+<!-- must NOT fire: button under a display:none ancestor -->
+<div id="buried"><button id="buried-btn">buried</button></div>
+
 <!-- overlap -->
 <button id="over-a">A</button>
 <button id="over-b">B</button>
 
-<!-- must NOT fire: dialog overlaps are deliberate -->
-<div role="dialog">
-  <button id="dlg-a" style="position:absolute;top:400px;left:0;width:100px;height:40px">A</button>
-  <button id="dlg-b" style="position:absolute;top:400px;left:60px;width:100px;height:40px">B</button>
+<!-- must NOT fire: overlapping pair under an opacity:0 ancestor -->
+<div id="fade">
+  <button id="fade-a">A</button>
+  <button id="fade-b">B</button>
+</div>
+
+<!-- must NOT fire: the app's real dialog markup — bare divs, no role="dialog" -->
+<div class="fixed inset-0 z-20 flex items-center justify-center bg-black/30" id="dlg-backdrop">
+  <div class="dlg-panel">
+    <button id="dlg-a">A</button>
+    <button id="dlg-b">B</button>
+  </div>
 </div>
 
 <!-- page-h-scroll -->
-<div id="wide"></div>
+<div id="wide-outer"><div id="wide"></div></div>
 ```
 
 - [ ] **Step 2: Write the self-test to assert the expected set**
 
-`$SP/probe-selftest.mjs`:
+`$SP/probe-selftest.mjs`. Note the two habits that keep the assertions honest: **exact selector
+matching** (`some(s => s.includes('trunc'))` is satisfied by `div#trunc-ok`, the very trap it is
+supposed to disprove), and asserting contrast plants are **measured violations with a plausible
+ratio** rather than merely present — a `suspicion` is never promoted to an S1, so a real failure
+that gets downgraded is still a defect that ships.
 
 ```js
 import { chromium } from 'playwright'
@@ -609,38 +736,123 @@ const p = await b.newPage({ viewport: { width: 800, height: 600 } })
 await p.goto('file://' + fileURLToPath(new URL('./probe-selftest.html', import.meta.url)))
 
 const found = await p.evaluate(probeRules)
-const by = (r) => found.filter((v) => v.rule === r).map((v) => v.selector)
+const rows = (r) => found.filter((v) => v.rule === r)
+// Exact selector match, not .includes(): `some(s => s.includes('trunc'))` is satisfied by
+// div#trunc-ok, so the false-positive trap could pass off as the plant it exists to disprove.
+const hit = (r, sel) => rows(r).some((v) => v.selector === sel)
 
+// ---------------------------------------------------------------------------------------------
 // Every rule must fire on its plant.
-assert.ok(by('page-h-scroll').length === 1, 'page-h-scroll missed the 3000px child')
-assert.ok(by('clipped-overflow').some((s) => s.includes('clipped')), 'clipped-overflow missed')
-assert.ok(by('truncate-no-title').some((s) => s.includes('trunc')), 'truncate-no-title missed')
-assert.ok(by('low-contrast').some((s) => s.includes('faint')), 'low-contrast missed #faint')
-assert.ok(by('zero-area-control').some((s) => s.includes('zero')), 'zero-area-control missed')
-assert.ok(by('tiny-target').some((s) => s.includes('tiny')), 'tiny-target missed')
-assert.ok(by('unexpected-scroll').some((s) => s.includes('scrolls')), 'unexpected-scroll missed')
-assert.ok(by('overlap').length >= 1, 'overlap missed the A/B pair')
+// ---------------------------------------------------------------------------------------------
+assert.equal(rows('page-h-scroll').length, 1, 'page-h-scroll missed the 3000px child')
+assert.equal(rows('page-h-scroll')[0].selector, 'div#wide',
+  'page-h-scroll named an ancestor rather than the deepest offender')
 
-// And the false-positive traps must stay silent. These assertions are the point of the file:
-// a probe that cries wolf stops being read, which is the same as having no probe.
-assert.ok(!by('truncate-no-title').some((s) => s.includes('trunc-ok')),
-  'FALSE POSITIVE: flagged truncation that has a title')
-assert.ok(!by('clipped-overflow').some((s) => s.includes('scrolls')),
-  'FALSE POSITIVE: overflow:auto reported as a clip')
-assert.ok(!by('low-contrast').some((s) => s.includes('ok-contrast')),
-  'FALSE POSITIVE: flagged near-black on white')
-assert.ok(!by('tiny-target').some((s) => s.includes('big')),
-  'FALSE POSITIVE: flagged a 40px button')
-assert.ok(!by('overlap').some((s) => s.includes('dlg-')),
-  'FALSE POSITIVE: flagged a deliberate dialog overlay')
+assert.ok(rows('clipped-overflow').some((v) => v.selector === 'div#clipped' && v.detail.axis === 'x'),
+  'clipped-overflow missed the X-axis clip')
+assert.ok(rows('clipped-overflow').some((v) => v.selector === 'div#clipped-y' && v.detail.axis === 'y'),
+  'clipped-overflow missed the Y-axis clip')
+// The axis-blind ellipsis exemption's blind spot: truncate-no-title only inspects X, so if the
+// exemption also covers Y, a titled truncation clipped on Y is reported by no rule at all.
+assert.ok(rows('clipped-overflow').some((v) => v.selector === 'div#trunc-y' && v.detail.axis === 'y'),
+  'ellipsis exemption is axis-blind: a titled truncation clipped on Y is reported by neither rule')
 
-// Severity split (design §5.1): auto-scroll and small targets are judgment calls, not verdicts.
-for (const v of found) {
-  const expected = ['unexpected-scroll', 'tiny-target'].includes(v.rule) ? 'suspicion' : 'violation'
-  assert.equal(v.severity, expected, `${v.rule} has the wrong severity`)
+assert.ok(hit('truncate-no-title', 'div#trunc'), 'truncate-no-title missed')
+assert.ok(hit('unexpected-scroll', 'div#scrolls'), 'unexpected-scroll missed')
+
+// Each of these must be a MEASURED VIOLATION, with a ratio close to the hand-computed truth.
+// Existence alone is too weak an assertion: a `suspicion` is never promoted to an S1 in the
+// report, so a genuine AA failure that gets downgraded is still a defect that ships. And a rule
+// that fires with a fabricated number is worse than one that stays quiet.
+const measured = (sel, expected, why) => {
+  const v = rows('low-contrast').find((r) => r.selector === sel)
+  assert.ok(v, `low-contrast missed ${sel} — ${why}`)
+  assert.equal(v.severity, 'violation',
+    `low-contrast downgraded ${sel} to a suspicion — its colour should be measurable (${why})`)
+  assert.equal(v.detail.measured, true, `low-contrast did not actually measure ${sel} (${why})`)
+  assert.ok(Math.abs(v.detail.ratio - expected) < 0.25,
+    `low-contrast mismeasured ${sel}: expected ~${expected}, got ${v.detail.ratio} (${why})`)
+  return v
+}
+measured('div#faint', 1.92, 'plain sRGB grey on white')
+// Tailwind 4's palette is oklch. This is the one that matters: #bbb/#111 parse fine under a
+// naive rgb() regex and hide the bug completely.
+measured('div#oklch-bad', 2.63, 'Tailwind text-slate-400 on white — a real AA failure')
+measured('div#alpha-text', 2.12, 'translucent text must be composited, not treated as opaque')
+measured('div#alpha-bg', 2.12, 'a translucent scrim over white is grey, not black')
+// WCAG large text is >=24px / >=18.66px bold. Both of these are ~4.0 and must fail at 4.5.
+measured('div#txt-20-normal', 4.0, 'large text is >=24px, not >=18.66px: 20px normal owes 4.5')
+measured('div#txt-16-bold', 4.0, 'bold large text is >=18.66px, not >=14px: 16px bold owes 4.5')
+
+assert.ok(hit('zero-area-control', 'button#zero'), 'zero-area-control missed')
+assert.ok(hit('tiny-target', 'button#tiny'), 'tiny-target missed')
+// INTERACTIVE breadth — none of these is a <button>.
+for (const sel of ['a#tiny-link', 'input#tiny-input', 'select#tiny-select',
+  'textarea#tiny-textarea', 'div#tiny-role', 'span#tiny-tab']) {
+  assert.ok(hit('tiny-target', sel), `INTERACTIVE narrowed: tiny-target missed ${sel}`)
 }
 
-console.log(`probe self-test OK — ${found.length} violations, no false positives`)
+assert.ok(hit('overlap', 'button#over-a'), 'overlap missed the A/B pair')
+
+// ---------------------------------------------------------------------------------------------
+// And the false-positive traps must stay silent. These assertions are the point of the file:
+// a probe that cries wolf stops being read, which is the same as having no probe. Every
+// violation row here is promoted into the published report as an S1/S2 with no human check,
+// so each of these is a false accusation waiting to be printed.
+// ---------------------------------------------------------------------------------------------
+assert.ok(!hit('truncate-no-title', 'div#trunc-ok'),
+  'FALSE POSITIVE: flagged truncation that has a title')
+assert.ok(!hit('truncate-no-title', 'div#trunc-aria'),
+  'FALSE POSITIVE: flagged truncation that has an aria-label')
+assert.ok(!hit('clipped-overflow', 'div#scrolls'),
+  'FALSE POSITIVE: overflow:auto reported as a clip')
+assert.ok(!hit('low-contrast', 'div#ok-contrast'),
+  'FALSE POSITIVE: flagged near-black on white')
+// The fabricated white-on-white: an unparsed oklch background walks up to body's white and a
+// perfectly legible button gets reported at ratio 1.
+assert.ok(!hit('low-contrast', 'div#oklch-ok'),
+  'FALSE POSITIVE: flagged white on Tailwind bg-blue-600 (real ratio ~5.5 — fabricated white-on-white?)')
+assert.ok(!hit('low-contrast', 'div#txt-24-large'),
+  'FALSE POSITIVE: 24px text is WCAG large text and passes at 3.0')
+assert.ok(!hit('low-contrast', 'div#txt-19-bold'),
+  'FALSE POSITIVE: 19px bold is WCAG large text and passes at 3.0')
+assert.ok(!hit('tiny-target', 'button#big'),
+  'FALSE POSITIVE: flagged a 40px button')
+// display is not inherited: without an ancestor check this button reports a 0x0 rect.
+assert.ok(!hit('zero-area-control', 'button#buried-btn'),
+  'FALSE POSITIVE: flagged a button under a display:none ancestor as zero-area')
+assert.ok(!found.some((v) => v.selector === 'button#buried-btn'),
+  'FALSE POSITIVE: reported an element inside a display:none subtree')
+// opacity is not inherited either: any element mid-fade-transition looks like this.
+const overlapRows = rows('overlap')
+assert.ok(!overlapRows.some((v) => /fade-/.test(v.selector) || /fade-/.test(String(v.detail.with))),
+  'FALSE POSITIVE: flagged an overlapping pair under an opacity:0 ancestor')
+// The app's dialogs are bare `fixed inset-0` divs — no role="dialog" for the probe to key on.
+assert.ok(!overlapRows.some((v) => /dlg-/.test(v.selector) || /dlg-/.test(String(v.detail.with))),
+  'FALSE POSITIVE: flagged a deliberate dialog overlay (the app renders no role="dialog")')
+
+// ---------------------------------------------------------------------------------------------
+// Severity split (design §5.1). auto-scroll and small targets are judgment calls, never
+// verdicts. low-contrast is a verdict only when it was actually measured: an image background
+// or a colour the browser could not read downgrades it to a suspicion rather than inventing a
+// ratio. probe.mjs and this file disagreed about that until now.
+// ---------------------------------------------------------------------------------------------
+for (const v of found) {
+  let expected
+  if (['unexpected-scroll', 'tiny-target'].includes(v.rule)) expected = 'suspicion'
+  else if (v.rule === 'low-contrast') expected = v.detail.measured ? 'violation' : 'suspicion'
+  else expected = 'violation'
+  assert.equal(v.severity, expected, `${v.rule} on ${v.selector} has the wrong severity`)
+}
+// An unmeasurable background must still be reported — as a suspicion, with no ratio asserted.
+const img = rows('low-contrast').find((v) => v.selector === 'div#img-bg')
+assert.ok(img, 'low-contrast missed the image-background case')
+assert.equal(img.severity, 'suspicion', 'an image background cannot be measured: must be a suspicion')
+assert.equal(img.detail.measured, false, 'image-background contrast must not claim to be measured')
+
+const bySev = found.reduce((a, v) => ((a[v.severity] = (a[v.severity] || 0) + 1), a), {})
+console.log(`probe self-test OK — ${found.length} rows `
+  + `(${bySev.violation || 0} violations, ${bySev.suspicion || 0} suspicions), no false positives`)
 await b.close()
 ```
 
@@ -658,7 +870,12 @@ Expected: FAIL — `Cannot find module './probe.mjs'`.
 
 ```js
 /** Track A rules — audit design §5.1. Runs in-page via page.evaluate.
- * Returns Violation[] = {rule, severity, selector, text, detail}. */
+ * Returns Violation[] = {rule, severity, selector, text, detail}.
+ *
+ * Every `severity:"violation"` row is promoted into the published report as an S1/S2 defect
+ * with no further verification, so a false positive is a false accusation. Where this probe
+ * cannot actually measure what it would be asserting, it emits `suspicion` and says why —
+ * it never fabricates a number. */
 export function probeRules() {
   const out = []
   const push = (rule, severity, el, detail) =>
@@ -682,21 +899,116 @@ export function probeRules() {
     return parts.join(' > ')
   }
 
+  // --- colour reader ----------------------------------------------------------------------------
+  // Declared up here, not with the other helpers at the bottom: the rule loop below calls
+  // parseColor(), and `const` bindings placed after the loop would still be in the temporal dead
+  // zone when it runs. (Only `function` declarations hoist.)
+  //
+  // Tailwind 4 emits the entire palette as oklch()/oklab() — only --color-white and --color-black
+  // stay hex — so a /rgba?\(...\)/ regex parses almost nothing in this app. It returned null for
+  // the foreground (the rule went silent on genuine failures like text-slate-400, ratio 2.6) and
+  // null for the background (walked through to body's white, fabricating white-on-white on every
+  // bg-blue-600 button). Let the browser do the conversion instead: paint the colour into a 1x1
+  // sRGB canvas and read the pixel back. That handles oklch/oklab/color()/named/hex/rgb/hsl alike.
+  //
+  // NB: ctx.fillStyle does NOT normalise oklch to #rrggbb in current Chromium — it round-trips
+  // `oklch(...)` verbatim, so reading fillStyle back is not enough. The *pixel* is. Verified
+  // against screenshots of the painted swatch: readback matches what Chromium actually paints,
+  // exactly, including out-of-gamut colours (which it gamut-maps, as WCAG's sRGB model needs).
+  const _cv = document.createElement('canvas')
+  _cv.width = _cv.height = 1
+  const _ctx = _cv.getContext('2d', { willReadFrequently: true })
+  _ctx.globalCompositeOperation = 'copy'   // fillRect replaces the pixel outright, alpha included
+  const _colorCache = new Map()
+
+  /** @returns {{rgb: number[], a: number}|null} null = the browser could not parse it. */
+  function parseColor(css) {
+    if (typeof css !== 'string' || !css.trim()) return null
+    if (_colorCache.has(css)) return _colorCache.get(css)
+    let v = null
+    // Assigning an invalid value leaves fillStyle at its previous value, so an invalid string
+    // would silently read back as whatever we last set. Two different sentinels disambiguate:
+    // a valid colour reads back identically both times, an invalid one reads back the sentinels.
+    _ctx.fillStyle = '#010203'
+    _ctx.fillStyle = css
+    const first = _ctx.fillStyle
+    _ctx.fillStyle = '#040506'
+    _ctx.fillStyle = css
+    if (_ctx.fillStyle === first) {
+      _ctx.fillRect(0, 0, 1, 1)             // fillStyle is now the parsed colour
+      const d = _ctx.getImageData(0, 0, 1, 1).data
+      v = { rgb: [d[0], d[1], d[2]], a: d[3] / 255 }
+    }
+    _colorCache.set(css, v)
+    return v
+  }
+
+  // --- visibility -------------------------------------------------------------------------------
+  // `display` and `opacity` are NOT inherited: getComputedStyle(child).display inside a
+  // display:none parent still reports `inline-block`, and .opacity still reports '1' inside an
+  // opacity:0 parent. An own-style-only check therefore fabricates a zero-area-control S1 for
+  // every control in a hidden subtree, and overlap S1s for every element mid-fade.
+  // checkVisibility() resolves the whole ancestor chain; the explicit walk backs it up (engines
+  // have disagreed about checkOpacity's ancestor handling) and covers engines without it.
+  // Deliberately does NOT test for a zero-size box: a 0x0 control is exactly what
+  // zero-area-control exists to report.
   const visible = (el) => {
-    const s = getComputedStyle(el)
-    return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0'
+    if (typeof el.checkVisibility === 'function' &&
+        !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true, contentVisibilityAuto: true })) {
+      return false
+    }
+    const own = getComputedStyle(el)
+    // `visibility` IS inherited and a descendant may re-declare `visible`, so an ancestor walk
+    // would be wrong here — the element's own computed value already carries the answer.
+    if (own.visibility === 'hidden' || own.visibility === 'collapse') return false
+    for (let e = el; e && e.nodeType === 1; e = e.parentElement) {
+      const s = e === el ? own : getComputedStyle(e)
+      if (s.display === 'none') return false
+      if (parseFloat(s.opacity) === 0) return false
+      // content-visibility:hidden skips an element's *contents*, not the element itself.
+      if (e !== el && s.contentVisibility === 'hidden') return false
+    }
+    return true
   }
 
   const INTERACTIVE = 'button, a[href], input, select, textarea, [role="button"], [tabindex]'
-  const inDialog = (el) => !!el.closest('[role="dialog"], [data-dnd-overlay]')
-  const dialogOpen = !!document.querySelector('[role="dialog"]')
 
-  // --- rule: page-h-scroll ------------------------------------------------------------------
+  // --- overlay detection ------------------------------------------------------------------------
+  // Deliberate overlays (modals, drag previews) are SUPPOSED to sit on top of the page, so their
+  // members must not be fed to the overlap rule. The ARIA selectors alone match NOTHING in this
+  // app: its dialogs are bare `<div class="fixed inset-0 z-20 flex items-center justify-center
+  // bg-black/30">` (run/InputDialog.tsx:101, builder/LoadDialog.tsx:71) with no role="dialog", and
+  // @dnd-kit's DragOverlay carries no data-dnd-overlay attribute. Every open dialog therefore
+  // fabricated overlap S1s. Match what is actually rendered:
+  //   1. the ARIA/attribute hooks, for generality and in case the app gains them;
+  //   2. the app's own backdrop classes;
+  //   3. a structural fallback — any position:fixed ancestor stacked above the page, which is
+  //      what catches @dnd-kit's DragOverlay (position:fixed, z-index:999).
+  // Class/structure coupling is acceptable in a scratchpad probe. Adding role="dialog" to the app
+  // to make the ARIA selector work is NOT (constraint D4); the missing role is recorded as an
+  // accessibility finding in the report instead.
+  const OVERLAY_SEL = '[role="dialog"], [aria-modal="true"], [data-dnd-overlay], .fixed.inset-0'
+  const inOverlay = (el) => {
+    if (el.closest(OVERLAY_SEL)) return true
+    for (let e = el; e && e.nodeType === 1; e = e.parentElement) {
+      const s = getComputedStyle(e)
+      if (s.position !== 'fixed') continue
+      const z = parseInt(s.zIndex, 10)
+      if (Number.isFinite(z) && z >= 10) return true
+    }
+    return false
+  }
+
+  // --- rule: page-h-scroll ----------------------------------------------------------------------
   // A desktop app should never scroll its own body sideways.
   if (document.documentElement.scrollWidth > window.innerWidth + 1) {
-    const culprit = [...document.querySelectorAll('*')].find(
+    const culprits = [...document.querySelectorAll('*')].filter(
       (e) => visible(e) && e.getBoundingClientRect().right > window.innerWidth + 1,
     )
+    // Prefer the deepest offender. The first in document order is usually an ancestor that is
+    // only over-wide because of the descendant that actually overflows — naming it sends the
+    // reader to a container that is innocent.
+    const culprit = culprits.find((e) => !culprits.some((o) => o !== e && e.contains(o))) || culprits[0]
     push('page-h-scroll', 'violation', culprit || document.documentElement, {
       scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth,
     })
@@ -708,7 +1020,7 @@ export function probeRules() {
     const overflowsX = el.scrollWidth > el.clientWidth + 1
     const overflowsY = el.scrollHeight > el.clientHeight + 1
 
-    // --- rule: clipped-overflow / unexpected-scroll ------------------------------------------
+    // --- rule: clipped-overflow / unexpected-scroll ----------------------------------------------
     // hidden|clip => content is unreachable, a fact. auto|scroll => intended (S1's parallel
     // lanes are SUPPOSED to scroll), so it is a suspicion for judgment, never a verdict.
     for (const [axis, overflows] of [['x', overflowsX], ['y', overflowsY]]) {
@@ -716,7 +1028,11 @@ export function probeRules() {
       const mode = s[`overflow${axis.toUpperCase()}`]
       if (mode === 'hidden' || mode === 'clip') {
         // text-overflow:ellipsis is a deliberate, *labelled* clip — handled by its own rule.
-        if (s.textOverflow !== 'ellipsis') {
+        // But only on the inline axis, which is the only axis it renders on. Exempting BOTH
+        // axes opens a hole: truncate-no-title only inspects X, so a `truncate`d element that
+        // HAS a title and is clipped on Y is reported by neither rule.
+        const ellipsisExempt = axis === 'x' && s.textOverflow === 'ellipsis'
+        if (!ellipsisExempt) {
           push('clipped-overflow', 'violation', el, {
             axis, mode, scroll: el[axis === 'x' ? 'scrollWidth' : 'scrollHeight'],
             client: el[axis === 'x' ? 'clientWidth' : 'clientHeight'],
@@ -727,34 +1043,50 @@ export function probeRules() {
       }
     }
 
-    // --- rule: truncate-no-title -------------------------------------------------------------
+    // --- rule: truncate-no-title -----------------------------------------------------------------
     // The W7 bug, exactly: a truncated string with no way to recover the full text.
     if (s.textOverflow === 'ellipsis' && overflowsX &&
         !el.getAttribute('title') && !el.getAttribute('aria-label')) {
       push('truncate-no-title', 'violation', el, { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth })
     }
 
-    // --- rule: low-contrast ------------------------------------------------------------------
+    // --- rule: low-contrast ----------------------------------------------------------------------
     const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())
     if (own) {
-      const fg = parseRGB(s.color)
+      const fg = parseColor(s.color)
       const bg = effectiveBg(el)
-      if (fg && bg) {
-        const ratio = contrast(fg, bg.rgb)
+      if (!fg || bg.kind === 'unparseable') {
+        // Honest dead end. Emitting a fabricated ratio here is how "white on white" gets
+        // published as an S1 against a button that is perfectly legible.
+        push('low-contrast', 'suspicion', el, {
+          measured: false, reason: 'unreadable-colour',
+          color: s.color, bg: bg.css, fontSize: parseFloat(s.fontSize),
+        })
+      } else if (fg.a > 0) {   // fully transparent text is invisible, not a contrast defect
+        const fgRgb = composite(fg.rgb, fg.a, bg.rgb)
+        const ratio = contrast(fgRgb, bg.rgb)
         const px = parseFloat(s.fontSize)
-        const large = px >= 18.66 || (px >= 14 && parseInt(s.fontWeight, 10) >= 700)
+        // WCAG 2.x large text = >=18pt or >=14pt bold. Those are POINTS: as CSS px they are
+        // >=24px and >=18.66px bold. Using 18.66/14 as the px thresholds hands 20px-normal and
+        // 16px-bold the lenient 3.0 they are not entitled to, and both then pass at ~4.0.
+        const large = px >= 24 || (px >= 18.66 && parseInt(s.fontWeight, 10) >= 700)
         const min = large ? 3.0 : 4.5
         if (ratio < min) {
-          // An image background cannot be resolved to a single colour — downgrade rather
-          // than assert something we cannot actually measure.
-          push('low-contrast', bg.image ? 'suspicion' : 'violation', el,
-            { ratio: +ratio.toFixed(2), min, fontSize: px, color: s.color, bg: bg.css })
+          // An image background cannot be resolved to a single colour — report it, but as a
+          // suspicion: we cannot actually measure what we would be asserting.
+          // colorRgb/bgRgb are the resolved, composited sRGB the ratio was actually computed
+          // from: `color: "oklch(0.704 0.04 256.788)"` alone leaves a reader with no way to
+          // check the number they are being asked to publish.
+          push('low-contrast', bg.kind === 'image' ? 'suspicion' : 'violation', el, {
+            measured: bg.kind === 'color', ratio: +ratio.toFixed(2), min, large,
+            fontSize: px, color: s.color, colorRgb: round(fgRgb), bg: bg.css, bgRgb: round(bg.rgb),
+          })
         }
       }
     }
   }
 
-  // --- rules: zero-area-control / tiny-target ------------------------------------------------
+  // --- rules: zero-area-control / tiny-target ---------------------------------------------------
   const controls = [...document.querySelectorAll(INTERACTIVE)].filter(visible)
   for (const el of controls) {
     const r = el.getBoundingClientRect()
@@ -766,46 +1098,66 @@ export function probeRules() {
     }
   }
 
-  // --- rule: overlap --------------------------------------------------------------------------
-  // Skipped entirely while a dialog is open, and dialog/drag-overlay members are excluded:
-  // deliberate overlays are the whole point of an overlay.
-  if (!dialogOpen) {
-    const rects = controls.filter((el) => !inDialog(el))
-      .map((el) => [el, el.getBoundingClientRect()])
-      .filter(([, r]) => r.width > 0 && r.height > 0)
-    for (let i = 0; i < rects.length; i++) {
-      for (let j = i + 1; j < rects.length; j++) {
-        const [ea, a] = rects[i], [eb, b] = rects[j]
-        if (ea.contains(eb) || eb.contains(ea)) continue   // nesting is not overlap
-        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left)
-        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
-        if (w <= 0 || h <= 0) continue
-        const smaller = Math.min(a.width * a.height, b.width * b.height)
-        if ((w * h) / smaller > 0.25) {
-          push('overlap', 'violation', ea, { with: cssPath(eb), overlapPct: +((w * h) / smaller * 100).toFixed(0) })
-        }
+  // --- rule: overlap ----------------------------------------------------------------------------
+  // Overlay members are excluded per-element via inOverlay(): deliberate overlays are the whole
+  // point of an overlay. (An earlier draft additionally gated the *entire* rule on "a dialog
+  // exists anywhere in the DOM", which goes blind for the whole page the moment any dialog node
+  // is present — e.g. one that stays mounted but hidden. Per-element exclusion is the precise
+  // fix; the page-wide gate is gone.)
+  const rects = controls.filter((el) => !inOverlay(el))
+    .map((el) => [el, el.getBoundingClientRect()])
+    .filter(([, r]) => r.width > 0 && r.height > 0)
+  for (let i = 0; i < rects.length; i++) {
+    for (let j = i + 1; j < rects.length; j++) {
+      const [ea, a] = rects[i], [eb, b] = rects[j]
+      if (ea.contains(eb) || eb.contains(ea)) continue   // nesting is not overlap
+      const w = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+      const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+      if (w <= 0 || h <= 0) continue
+      const smaller = Math.min(a.width * a.height, b.width * b.height)
+      if ((w * h) / smaller > 0.25) {
+        push('overlap', 'violation', ea, { with: cssPath(eb), overlapPct: +((w * h) / smaller * 100).toFixed(0) })
       }
     }
   }
 
   // --- colour helpers ---------------------------------------------------------------------------
-  function parseRGB(css) {
-    const m = /rgba?\(([^)]+)\)/.exec(css || '')
-    if (!m) return null
-    const [r, g, b, a] = m[1].split(',').map((x) => parseFloat(x))
-    return a === 0 ? null : [r, g, b]
+  /** Composite a (possibly translucent) source over an already-opaque backdrop. */
+  function composite(rgb, a, bg) {
+    return [0, 1, 2].map((i) => rgb[i] * a + bg[i] * (1 - a))
   }
+  // `function`, not `const`: the rule loop above calls this, and a const would still be in the
+  // temporal dead zone at that point.
+  function round(rgb) { return rgb.map((c) => Math.round(c)) }
+  /** Flatten translucent layers (innermost first) down onto an opaque base. */
+  function flatten(layers, base) {
+    let r = base
+    for (let i = layers.length - 1; i >= 0; i--) r = composite(layers[i].rgb, layers[i].a, r)
+    return r
+  }
+  /** Three outcomes, kept distinct on purpose. The old code conflated "transparent, keep
+   *  walking" with "unparseable, give up" into a single null, which is how an oklch background
+   *  got walked through to body's white. */
   function effectiveBg(el) {
+    const layers = []   // translucent layers seen so far, innermost first
+    // "rgba(0,0,0,0.3) over assumed white" reads honestly; naming only the layer we happened to
+    // stop on would print `bg: "assumed white"` for text sitting on a 30% black scrim.
+    const label = (terminal) => [...layers.map((l) => l.css), terminal].join(' over ')
     for (let e = el; e; e = e.parentElement) {
       const s = getComputedStyle(e)
       if (s.backgroundImage && s.backgroundImage !== 'none') {
-        const rgb = parseRGB(s.backgroundColor) || [255, 255, 255]
-        return { rgb, css: s.backgroundImage, image: true }
+        const c = parseColor(s.backgroundColor)
+        const base = c && c.a > 0 ? composite(c.rgb, c.a, [255, 255, 255]) : [255, 255, 255]
+        return { kind: 'image', rgb: flatten(layers, base), css: label(s.backgroundImage) }
       }
-      const rgb = parseRGB(s.backgroundColor)
-      if (rgb) return { rgb, css: s.backgroundColor, image: false }
+      const c = parseColor(s.backgroundColor)
+      if (!c) return { kind: 'unparseable', css: label(s.backgroundColor) }
+      if (c.a === 0) continue                                              // transparent: keep walking
+      if (c.a >= 1) return { kind: 'color', rgb: flatten(layers, c.rgb), css: label(s.backgroundColor) }
+      layers.push({ ...c, css: s.backgroundColor })   // bg-black/30 over a white panel is grey, not black
     }
-    return { rgb: [255, 255, 255], css: 'assumed white', image: false }
+    // Ran out of ancestors: the canvas behind the root paints white.
+    return { kind: 'color', rgb: flatten(layers, [255, 255, 255]), css: label('assumed white') }
   }
   function lum([r, g, b]) {
     const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }
@@ -826,7 +1178,7 @@ export function probeRules() {
 cd $SP && node probe-selftest.mjs
 ```
 
-Expected: `probe self-test OK — <n> violations, no false positives`.
+Expected: `probe self-test OK — 23 rows (13 violations, 10 suspicions), no false positives`.
 
 **This is a real TDD cycle — expect to iterate.** Every assertion that fails is telling you the
 probe is wrong, not the plant. Do not delete an assertion to get green; that converts the
@@ -834,17 +1186,28 @@ self-test into the vacuous kind this repo has already shipped once.
 
 - [ ] **Step 6: Mutation-verify the self-test itself**
 
-The self-test can also be vacuous. Prove it fails when the probe is broken:
+The self-test can also be vacuous — and *deletion* is the easy case. The dangerous case is
+**narrowing**: a rule that still fires, just less. A previous version of this probe passed its
+own self-test while five of these six narrowings survived undetected.
 
-```bash
-# Temporarily break one rule, e.g. change the truncate-no-title condition to `if (false)`.
-node probe-selftest.mjs   # MUST fail with 'truncate-no-title missed'
-# Revert.
-node probe-selftest.mjs   # green again
-```
+Break one rule at a time, run `node probe-selftest.mjs`, confirm the expected RED, revert,
+confirm green. Automate it (`$SP/mutate.mjs`) and **assert each mutation's search string
+matched exactly once** — a mutation that silently fails to apply reports a meaningless "caught".
 
-Do this for at least `truncate-no-title` and `clipped-overflow`. If breaking a rule does not
-turn the self-test red, the self-test is decoration.
+| # | Mutation | Expected RED |
+|---|---|---|
+| 1 | `clipped-overflow` → X axis only | `clipped-overflow missed the Y-axis clip` |
+| 2 | `low-contrast` threshold `4.5` → `2.5` | `low-contrast missed div#oklch-bad — Tailwind text-slate-400 on white — a real AA failure` |
+| 3 | large-text rule disabled (thresholds → 9999) | `FALSE POSITIVE: 24px text is WCAG large text and passes at 3.0` |
+| 4 | `INTERACTIVE` → `'button'` only | `INTERACTIVE narrowed: tiny-target missed a#tiny-link` |
+| 5 | `truncate-no-title` aria-label hatch removed | `FALSE POSITIVE: flagged truncation that has an aria-label` |
+| 6 | `overlap` threshold `0.25` → `0.95` | `overlap missed the A/B pair` |
+
+If breaking a rule does not turn the self-test red, the self-test is decoration.
+
+**Also re-introduce each historical defect** (`$SP/bug-revert.mjs`) — the three Criticals and four
+Importants the review found — and confirm each is pinned by a plant. Fixing a bug without leaving
+a plant behind means the next rewrite reintroduces it silently.
 
 ---
 
