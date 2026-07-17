@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { docToTree } from '../convert'
 import { childSlots } from '../tree'
-import type { BlockNode } from '../tree'
+import type { BlockKind, BlockNode } from '../tree'
 import type { ExperimentDocJson } from '../../types/doc'
 
 const FIXTURE = fileURLToPath(
@@ -11,11 +11,29 @@ const FIXTURE = fileURLToPath(
 )
 
 /** Every BlockNode kind in tree.ts:26-117. The audit's Inspector matrix is one state per
- * entry (design §7), so a fixture missing a kind silently shrinks the audit. */
-const ALL_KINDS = [
-  'command', 'measure', 'operator_input', 'wait', 'serial', 'parallel', 'loop',
-  'branch', 'for_each', 'group_ref', 'compute', 'record', 'abort', 'alarm',
-] as const
+ * entry (design §7), so a fixture missing a kind silently shrinks the audit.
+ *
+ * Type-level exhaustiveness, not a hand-maintained count: `Record<BlockKind, true>` forces
+ * this object literal to have exactly one key per member of BlockKind. Omitting a kind here
+ * (or letting tree.ts add one nobody added here) is a compile error, not a silent gap — the
+ * same failure mode the ALL_KINDS list itself would otherwise be. */
+const ALL_KINDS_MAP: Record<BlockKind, true> = {
+  command: true,
+  measure: true,
+  operator_input: true,
+  wait: true,
+  serial: true,
+  parallel: true,
+  loop: true,
+  branch: true,
+  for_each: true,
+  group_ref: true,
+  compute: true,
+  record: true,
+  abort: true,
+  alarm: true,
+}
+const ALL_KINDS = Object.keys(ALL_KINDS_MAP) as BlockKind[]
 
 /** Walks via the app's own `childSlots` (tree.ts:157) rather than a hand-listed slot set.
  * A local list of ['children','body','then','else'] would silently stop descending the day a
@@ -47,16 +65,35 @@ describe('ui-audit torture fixture', () => {
 
   it('carries every catalog verb so every generated param form is photographed', () => {
     const content = docToTree(doc)
+    // `n.device` on a CommandNode/MeasureNode holds a ROLE name (e.g. `pump_01`), not a
+    // device type — keying the set by role.verb double-counts every role that shares a
+    // type (six pumps, five valves, three densitometers) and lets six deleted catalog
+    // verbs hide behind six unrelated role.verb pairs from wide_parallel/deep_nest.
+    // Resolving role -> content.roles[role].type collapses that padding, so the set is
+    // exactly the catalog's type.verb pairs with zero slack.
     const verbs = new Set<string>()
     const walk = (nodes: BlockNode[]) => {
       for (const n of nodes) {
-        if (n.kind === 'command' || n.kind === 'measure') verbs.add(`${n.device}.${n.verb}`)
+        if (n.kind === 'command' || n.kind === 'measure') {
+          const type = content.roles[n.device]?.type
+          verbs.add(`${type}.${n.verb}`)
+        }
         for (const [, slot] of childSlots(n)) walk(slot)
       }
     }
     walk(content.tree)
     for (const g of Object.values(content.groups ?? {})) walk(g.body)
-    expect(verbs.size).toBeGreaterThanOrEqual(16)
+    // Exact set, not just a count: when this fails, the diff names which catalog verb
+    // went missing instead of just reporting a number that no longer means 16.
+    expect([...verbs].sort()).toEqual(
+      [
+        'pump.dispense', 'pump.rotate', 'pump.stop', 'pump.set_calibration',
+        'valve.set_position', 'valve.home', 'valve.configure', 'valve.stop',
+        'densitometer.measure', 'densitometer.measure_blank', 'densitometer.set_led',
+        'densitometer.set_thermostat', 'densitometer.set_tube_correction',
+        'densitometer.calibrate_tube', 'densitometer.stop', 'densitometer.stop_monitoring',
+      ].sort(),
+    )
   })
 
   it('plants the boundary cases the probe exists to catch', () => {

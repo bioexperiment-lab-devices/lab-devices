@@ -54,8 +54,12 @@ def meas(role: str, verb: str, into: str, **params: Any) -> dict[str, Any]:
 def every_catalog_verb() -> list[dict[str, Any]]:
     """All 16 verbs at 0.7.0 — one block each, so every generated param form is photographed.
 
-    Verified against lab_devices.experiment.verb_catalog(). If the catalog grows, this list is
-    the thing that silently goes stale: torture.test.ts asserts >= 16 as the tripwire.
+    Verified against lab_devices.experiment.verb_catalog(). torture.test.ts resolves each
+    command/measure block's role to its device *type* (content.roles[role].type) and asserts
+    the resulting {type}.{verb} set equals exactly these 16 pairs — not a >= count, which
+    would tolerate losing verbs, and not a role.verb set, which would over-count every role
+    that shares a type. If this list changes, that assertion is the tripwire that goes stale;
+    update both together.
     """
     return [
         cmd(PUMPS[0], "dispense", volume_ml=1.0, speed_ml_min=2.5,
