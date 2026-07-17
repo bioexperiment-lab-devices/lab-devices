@@ -181,7 +181,10 @@ function BlockView({ node }: { node: BlockNode }) {
         select(node.uid)
       }}
       className={
-        'rounded border bg-white text-sm shadow-sm ' +
+        // min-w-0: a card that sits in a flex lane/branch-arm must be able to shrink to its
+        // container instead of forcing it wide (flex min-width:auto is the classic culprit
+        // behind a card painting past its box — audit F11). See BranchLanes' overflow clip.
+        'min-w-0 rounded border bg-white text-sm shadow-sm ' +
         (selected ? 'border-blue-500 ring-1 ring-blue-300 ' : 'border-slate-300 ') +
         (isDragging ? 'opacity-40' : '')
       }
@@ -276,7 +279,7 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
   const insertBlock = useDocStore((s) => s.insertBlock)
   const isEmptyLane = (lane: BlockNode) => lane.kind === 'serial' && lane.children.length === 0
   return (
-    <div className="flex items-stretch overflow-x-auto">
+    <div className="flex items-stretch overflow-x-auto scroll-x-shadow">
       <DropSlot
         at={{ parentUid: node.uid, slot: 'children', index: 0 }}
         horizontal
@@ -314,7 +317,7 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
             index: node.children.length,
           })
         }}
-        className="m-1 shrink-0 self-center rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-caption hover:text-slate-600"
+        className="m-1 shrink-0 self-center rounded border border-dashed border-slate-300 bg-white px-2 py-1 text-xs text-caption hover:text-slate-600"
       >
         <Plus size={12} aria-hidden className="mr-0.5 inline" />lane
       </button>
@@ -325,7 +328,11 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
 function BranchLanes({ node }: { node: BranchNode }) {
   const patchBlock = useDocStore((s) => s.patchBlock)
   return (
-    <div className="flex gap-2 px-2 pb-2">
+    // overflow-x-auto (audit F11): a too-wide arm — e.g. a nested parallel whose lanes hold
+    // their min-w-48 floor — now scrolls inside the branch card instead of painting its
+    // content past the card edge over a sibling's action icons. The arms keep min-w-48 flex-1
+    // (the design floor); the container scrolling is what contains the overflow.
+    <div className="flex gap-2 overflow-x-auto px-2 pb-2">
       <div className="min-w-48 flex-1">
         <p className="text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
