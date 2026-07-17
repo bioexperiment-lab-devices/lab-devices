@@ -2,6 +2,7 @@ import type { ExperimentDocJson } from '../types/doc'
 import { DocConvertError, docToTree } from '../builder/convert'
 import { blockSummary } from '../builder/summary'
 import type { BlockNode } from '../builder/tree'
+import { KindIcon } from '../ui/icons'
 
 function NodeCard(props: { node: BlockNode }) {
   const { node } = props
@@ -11,10 +12,13 @@ function NodeCard(props: { node: BlockNode }) {
   ].filter(Boolean).join(' · ')
   return (
     <div className="rounded border border-slate-200 bg-white px-2 py-1">
-      <p className="text-xs">
-        {blockSummary(node)}
-        {node.label !== null && <span className="ml-1 text-slate-400">“{node.label}”</span>}
-        {timing && <span className="ml-1 text-[10px] text-slate-400">{timing}</span>}
+      <p className="flex items-center gap-1 text-xs">
+        <KindIcon kind={node.kind} />
+        <span>
+          {blockSummary(node)}
+          {node.label !== null && <span className="ml-1 text-slate-400">“{node.label}”</span>}
+          {timing && <span className="ml-1 text-[10px] text-slate-400">{timing}</span>}
+        </span>
       </p>
       {node.kind === 'serial' && <NodeList items={node.children} />}
       {node.kind === 'parallel' && (

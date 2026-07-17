@@ -6,6 +6,7 @@ import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
 import { blockSummary } from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
+import { KindIcon } from '../ui/icons'
 
 const DiagContext = createContext<Map<string, MappedDiagnostic[]>>(new Map())
 
@@ -195,6 +196,7 @@ function BlockView({ node }: { node: BlockNode }) {
             {collapsed ? '▸' : '▾'}
           </button>
         )}
+        <KindIcon kind={node.kind} />
         <span className="truncate">{blockSummary(node)}</span>
         {node.label && <span className="truncate text-xs italic text-slate-400">“{node.label}”</span>}
         <span className="ml-auto flex items-center gap-1">
