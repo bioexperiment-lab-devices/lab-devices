@@ -77,16 +77,27 @@ Two deliberate omissions:
 
 ### 3.2 Tag ruleset — `protect-release-tags`
 
-Targets `refs/tags/v*`. Rules: `creation`, `deletion`, `non_fast_forward`. Bypass: the GitHub
-Actions app (id `15368`), mode `always`, so release-please can still tag on merge.
+Targets `refs/tags/v*`. **The fallback shipped, not the first choice.** Rules: `deletion`,
+`non_fast_forward`. Bypass: `OrganizationAdmin`.
 
-The risk this addresses is a local `git push --tags` minting a tag that looks like a release the
-changelog never recorded. Blocking `creation` is what actually prevents that; blocking deletion and
-update prevents an existing release tag being silently moved.
+The intended design blocked `creation` too — the risk being a local `git push --tags` minting a tag
+that looks like a release the changelog never recorded — with the GitHub Actions app (id `15368`)
+bypassing so release-please could still tag on merge. **The API rejects that:**
 
-**Fallback:** if the API rejects app `15368` as a bypass actor, drop the `creation` rule and keep
-`deletion` + `non_fast_forward`, which release-please never needs to bypass. This trades away
-stray-tag prevention but keeps published tags immutable.
+```
+422: Actor GitHub Actions integration must be part of the ruleset source or owner organization
+```
+
+A repository ruleset will not accept the Actions app as a bypass actor. Probing the org's own
+`bioexperiment-release-please` app (id `3575497`) as a substitute returns the identical error, so
+this is not specific to the Actions app. That installation is `repository_selection: "selected"`,
+and confirming whether `lab-devices` is in the selected set needs `read:user`/`admin:org` scope not
+held here — so *why* it is rejected is unresolved.
+
+Consequence: `creation` cannot be blocked without also blocking release-please, which would break
+every release. So it is not blocked. **Stray `v*` tags remain possible**; what is now guaranteed is
+that a tag, once pushed, cannot be deleted or moved by a non-admin. release-please only ever creates
+tags, so neither rule is on its path.
 
 ### 3.3 Repository settings
 
@@ -130,13 +141,24 @@ Applying config proves nothing about whether it works. The check is behavioral:
 
 1. Open a PR from `chore/repo-governance` and confirm it reports the ruleset as blocking until the
    seven checks are green — i.e. this design's own PR is its first test case.
-2. Confirm a direct `git push` to `main` is rejected for a non-bypassing actor.
-3. Re-read the ruleset and repo settings back from the API after applying.
+2. Re-read the rulesets and repo settings back from the API after applying.
+
+**"Direct push to `main` is rejected" is not verifiable from this account.** The sole maintainer
+holds `OrganizationAdmin` bypass in mode `always` (§3.1), so their push is *supposed* to succeed —
+a successful push proves nothing, and a rejected one would mean the bypass is broken. Confirming the
+block would need a second, non-bypassing account, which the org does not have. This is the direct
+cost of the bypass decision, accepted knowingly: the rule that stops a force-push is the same rule
+its only tester is exempt from.
 
 ## 6. Follow-up (not in scope — requires a human)
 
 Wire `release-please.yml` to the installed `bioexperiment-release-please` app instead of
 `GITHUB_TOKEN`, via `actions/create-github-app-token`. App-authored PRs trigger workflows normally,
-which removes the `action_required` click from §2 without weakening the fork policy, and gives the
-tag ruleset a first-party bypass actor. It needs the app's private key pasted into an Actions
-secret, so it cannot be automated from here.
+which would remove the `action_required` click from §2 without weakening the fork policy. It needs
+the app's private key pasted into an Actions secret, so it cannot be automated from here.
+
+Whether that would also let §3.2 block tag `creation` is **unknown**: the app was rejected as a
+bypass actor today (§3.2). If it is rejected because the installation does not currently include
+`lab-devices`, granting it access should fix both; if repository rulesets refuse app bypass actors
+generally, the `creation` rule stays off the table regardless. Grant repo access first and re-probe
+before assuming.
