@@ -1,7 +1,11 @@
 /** Doc v1 JSON <-> editor tree. treeToDoc(docToTree(doc)) must round-trip the golden
- * fixture byte-for-byte (deep equality); emission rules mirror the engine serializer:
+ * fixture byte-for-byte; emission rules mirror the engine serializer:
  * omit empty params, omit null timing keys, `check` only alongside `until`, `else`
- * omitted (not null) when absent, `on_error` omitted unless it is 'continue'. */
+ * omitted (not null) when absent, `on_error` omitted unless it is 'continue'. `groups`
+ * omitted entirely when empty; a for_each's `var` omitted when null, its JSON key `in` maps
+ * to the node field `items`; a group_ref's `args` omitted when empty (repetition design
+ * 2026-07-15 §5 `serialize.py:288-347`; W9 removes the `groups`/`for_each`/`group_ref`
+ * hard-reject this file carried since Increment 7 §9/§10). */
 import type {
   AbortBody,
   AlarmBody,
@@ -10,6 +14,9 @@ import type {
   CommandBody,
   ComputeBody,
   ExperimentDocJson,
+  ForEachBody,
+  GroupJson,
+  GroupRefBody,
   LoopBody,
   MeasureBody,
   OperatorInputBody,
@@ -34,6 +41,18 @@ export interface DocContent {
   // documented, supported policy, and a custom persistence setting is a real run knob.
   persistence?: WorkflowJson['persistence']
   defaults?: WorkflowJson['defaults']
+  // Carried opaquely for the same reason as persistence/defaults above: the builder has no
+  // UI for workflow.metadata beyond the doc name (mirrored into metadata.name on save), but
+  // a hand-authored `author` or `description` is real authorial content — destroying it on
+  // save would silently erase a document's authorship and its entire scientific description.
+  metadata?: WorkflowJson['metadata']
+  // Reusable group bodies invoked via group_ref (design §2.2/§5). Optional, like persistence/
+  // defaults above, for the same structural reason: docStore.ts's store now has a full
+  // authoring API for groups (addGroup/renameGroup/removeGroup/setGroupParams/setScope) and
+  // treats `groups` as a required field there, like `tree` — this type just stays permissive
+  // for any DocContent built directly by a caller that predates this field. docToTree always
+  // populates it.
+  groups?: Record<string, { params: string[]; body: BlockNode[] }>
 }
 
 export class DocConvertError extends Error {
@@ -53,8 +72,9 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
   if (wf.schema_version !== 1) {
     throw new DocConvertError(`unsupported workflow schema_version ${String(wf.schema_version)}`)
   }
-  if (wf.groups && Object.keys(wf.groups).length > 0) {
-    throw new DocConvertError('workflow groups are not supported in the builder (v2 backlog)')
+  const groups: NonNullable<DocContent['groups']> = {}
+  for (const [name, g] of Object.entries(wf.groups ?? {})) {
+    groups[name] = { params: g.params ?? [], body: (g.body ?? []).map(blockToNode) }
   }
   const streams: DocContent['streams'] = {}
   for (const [name, decl] of Object.entries(wf.streams ?? {})) {
@@ -71,6 +91,8 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
     roles,
     streams,
     tree: (wf.blocks ?? []).map(blockToNode),
+    groups,
+    ...(wf.metadata !== undefined ? { metadata: wf.metadata } : {}),
     ...(wf.persistence !== undefined ? { persistence: wf.persistence } : {}),
     ...(wf.defaults !== undefined ? { defaults: wf.defaults } : {}),
   }
@@ -164,14 +186,19 @@ function blockToNode(block: BlockJson): BlockNode {
       const b = block.alarm as AlarmBody
       return { ...base, kind, condition: b.if, message: b.message }
     }
-    case 'for_each':
-      throw new DocConvertError(
-        'for_each is not yet supported in the builder (author it as JSON; it runs and charts)',
-      )
-    case 'group_ref':
-      throw new DocConvertError(
-        'group_ref is not yet supported in the builder (author it as JSON; it runs and charts)',
-      )
+    case 'for_each': {
+      // Splice macro (design §2.1): JSON key `in`, node field `items` — doc.ts:55-63 states the
+      // translation, the same role this function already plays for branch.if <-> condition.
+      // body is a real child slot (tree.ts childSlots), so it recurses like loop.body.
+      const b = block.for_each as ForEachBody
+      return { ...base, kind, var: b.var ?? null, items: [...b.in], body: (b.body ?? []).map(blockToNode) }
+    }
+    case 'group_ref': {
+      // Parametrized group reference (design §2.2). args is data carried on the node, not a
+      // child slot — the referenced group's body lives in DocContent.groups, not here.
+      const b = block.group_ref as GroupRefBody
+      return { ...base, kind, name: b.name, args: { ...(b.args ?? {}) } }
+    }
     default:
       throw new DocConvertError(`unsupported block type '${kind}' in the builder`)
   }
@@ -187,16 +214,38 @@ export function treeToDoc(content: DocContent): ExperimentDocJson {
   }
   const roles: ExperimentDocJson['roles'] = {}
   for (const [name, role] of Object.entries(content.roles)) roles[name] = { type: role.type }
+  const groupEntries = Object.entries(content.groups ?? {})
+  let groups: Record<string, GroupJson> | undefined
+  if (groupEntries.length > 0) {
+    groups = {}
+    for (const [name, g] of groupEntries) {
+      groups[name] = {
+        ...(g.params.length > 0 ? { params: [...g.params] } : {}),
+        body: g.body.map(nodeToBlock),
+      }
+    }
+  }
+  // Key order mirrors workflow_to_dict (serialize.py:426-450): schema_version, metadata,
+  // persistence, defaults, streams, groups, blocks. defaults and groups are conditional
+  // (omitted when absent/empty), so they are spread into the literal at their canonical
+  // position rather than assigned afterward — an object-literal-plus-post-assignment
+  // cannot land a conditional key ahead of keys that must appear unconditionally after it.
   const workflow: WorkflowJson = {
     schema_version: 1,
-    metadata: { name: content.name },
+    // content.name stays authoritative for metadata.name (the builder edits the doc name,
+    // which is mirrored here) — re-assigning an existing key via spread keeps its original
+    // position, so a carried-in metadata.author/description keeps its place after name.
+    metadata: { ...content.metadata, name: content.name },
     // Preserve a custom persistence setting if the doc carried one in; only fall back to
     // the builder's historical default when none was present (2026-07-14 review, Fix 1).
     persistence: content.persistence ?? { default: 'in_memory', format: 'jsonl' },
+    ...(content.defaults !== undefined ? { defaults: content.defaults } : {}),
     streams,
+    // groups omitted entirely when empty (serialize.py:445 `if w.groups:`), so a group-less
+    // doc round-trips byte-identically to today.
+    ...(groups !== undefined ? { groups } : {}),
     blocks: content.tree.map(nodeToBlock),
   }
-  if (content.defaults !== undefined) workflow.defaults = content.defaults
   return {
     doc_version: 1,
     name: content.name,
@@ -269,6 +318,24 @@ export function nodeToBlock(node: BlockNode): BlockJson {
     case 'alarm':
       out.alarm = { if: node.condition, message: node.message }
       break
+    case 'for_each': {
+      // Mirrors serialize.py _dump_body's ForEach arm: var emitted only when set, then in,
+      // then body, in that order (design §5) — the conditional spread controls the key order.
+      const body: ForEachBody = {
+        ...(node.var !== null ? { var: node.var } : {}),
+        in: [...node.items],
+        body: node.body.map(nodeToBlock),
+      }
+      out.for_each = body
+      break
+    }
+    case 'group_ref': {
+      // Mirrors serialize.py _dump_body's GroupRef arm: name always, args only when non-empty.
+      const body: GroupRefBody = { name: node.name }
+      if (Object.keys(node.args).length > 0) body.args = { ...node.args }
+      out.group_ref = body
+      break
+    }
     default: {
       // Exhaustiveness guard: a BlockNode kind with no arm here would emit a block with
       // zero type keys, which the engine rejects at serialize.py:279 blaming the document

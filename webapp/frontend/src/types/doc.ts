@@ -52,8 +52,24 @@ export interface BranchBody {
   else?: BlockJson[]
 }
 
+/** for_each is a SPLICING macro: it copies `body` once per item and splices the copies into the
+ * ENCLOSING list, so mode is inherited — sole child of a parallel becomes N lanes; inside a
+ * serial, an N-step sequence (engine design 2026-07-15 §2). The JSON key is `in`; the node
+ * field is `items` (convert.ts translates, as it already does for branch.if <-> condition). */
+export interface ForEachBody {
+  var?: string
+  in: Array<ParamValue | Record<string, ParamValue>>
+  body: BlockJson[]
+}
+
+export interface GroupJson {
+  params?: string[]
+  body: BlockJson[]
+}
+
 export interface GroupRefBody {
   name: string
+  args?: Record<string, ParamValue>
 }
 
 /** compute binds a scalar into RunState.bindings; record appends a numeric sample to a
@@ -103,6 +119,7 @@ export interface BlockJson {
   parallel?: ParallelBody
   loop?: LoopBody
   branch?: BranchBody
+  for_each?: ForEachBody
   group_ref?: GroupRefBody
   compute?: ComputeBody
   record?: RecordBody
@@ -120,7 +137,7 @@ export interface WorkflowJson {
   metadata?: Record<string, unknown>
   persistence?: Record<string, unknown>
   streams?: Record<string, StreamDeclJson>
-  groups?: Record<string, unknown>
+  groups?: Record<string, GroupJson>
   defaults?: { retry?: RetryJson }
   blocks: BlockJson[]
 }

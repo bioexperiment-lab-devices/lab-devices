@@ -8,6 +8,9 @@ export function ProblemsPanel() {
   const diagnostics = useDocStore((s) => s.diagnostics)
   const validationError = useDocStore((s) => s.validationError)
   const select = useDocStore((s) => s.select)
+  const setScope = useDocStore((s) => s.setScope)
+  const focusRole = useDocStore((s) => s.focusRole)
+  const scrollToBlock = useDocStore((s) => s.scrollToBlock)
   const [open, setOpen] = useState(false)
   if (diagnostics.length === 0 && validationError === null) return null
   return (
@@ -29,13 +32,28 @@ export function ProblemsPanel() {
           {diagnostics.map((d, i) => (
             <li key={i} className="py-0.5 text-xs">
               <button
-                disabled={d.uid === null}
+                disabled={d.uid === null && d.role === null}
                 onClick={() => {
-                  if (!d.uid) return
-                  select(d.uid)
-                  document
-                    .getElementById(`block-${d.uid}`)
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  if (d.uid) {
+                    // Switch scope BEFORE selecting: the uid may live inside a group's body
+                    // (paths.ts's group-scope/compound resolution), and it will not be found
+                    // by the canvas — currently rendering whichever list `scope` names
+                    // (docStore.ts's `activeList`) — until the scope switch lands first.
+                    setScope(d.scope)
+                    select(d.uid)
+                    // NOT a same-tick `document.getElementById(...).scrollIntoView(...)` here
+                    // (2026-07-16 review, Finding 2): when `d.scope` differs from what is
+                    // currently displayed, Canvas has not yet re-rendered the new scope's
+                    // blocks at this point in the handler — React's batching commits `setScope`
+                    // /`select` only after this function returns — so the element would not
+                    // exist yet and the query would silently no-op. `scrollToBlock` instead
+                    // records the target uid; Canvas's own `useEffect` (same shape as
+                    // RolesPanel's `focusedRole` effect) does the actual scroll once its
+                    // render for the new scope has committed.
+                    scrollToBlock(d.uid)
+                  } else if (d.role) {
+                    focusRole(d.role)
+                  }
                 }}
                 className="text-left enabled:hover:underline disabled:cursor-default"
               >

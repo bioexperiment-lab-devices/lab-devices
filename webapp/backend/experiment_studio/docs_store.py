@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import re
 import sqlite3
 import uuid
 from datetime import UTC, datetime
@@ -19,7 +20,7 @@ from lab_devices.experiment import (
     verb_catalog,
     workflow_from_dict,
 )
-from lab_devices.experiment.expand import expand_dict
+from lab_devices.experiment.expand import expand_dict_traced
 
 from experiment_studio import roles as roles_mod
 from experiment_studio.db import Database
@@ -156,18 +157,111 @@ class ExperimentsStore:
         )
 
 
+def _quoted_group_head_end(path: str) -> int:
+    """If `path` opens with a quoted `groups['name']`/`groups["name"]` head, return the
+    index just past the closing quote — the point after which the space/arrow scans in
+    `_remap` may safely resume. Mirrors paths.ts's `quotedGroupHeadEnd` on the read side
+    (Finding 1 review): a quoted group name carries no identifier restriction (Python's
+    `repr`, and Studio's own import path — GROUP_NAME_RE guards only add/rename, never
+    load), so it may contain a literal space or `->` that must not be mistaken for the
+    suffix/compound boundary those scans look for. Returns 0 for every other path form,
+    which then scans from the very start exactly as before."""
+    m = re.match(r"groups\[(['\"])", path)
+    if not m:
+        return 0
+    close = path.find(m.group(1), m.end())
+    return close + 1 if close != -1 else 0
+
+
+def _remap_group_segment(seg: str, trace: dict[str, str]) -> str:
+    """Remap one `<group>.body[i]...` segment of a compound path.
+
+    validate.py names the group BARE (`g1.body[0]`, :894/:940) while the trace keys group
+    bodies the way validate.py's own _iter_all_blocks does (`groups['g1'].body[0]`, :63-64).
+    The indices genuinely need mapping: expand.py expands a plain group's body IN PLACE
+    (:270-274), so a for_each inside it shifts them.
+    """
+    name, dot, rest = seg.partition(".")
+    if not dot:
+        return seg
+    prefix = f"groups[{name!r}]."
+    mapped = trace.get(prefix + rest)
+    # A plain group calling a parametrized one traces into a DIFFERENT group's body; without
+    # this containment check the slice below produces a corrupted path that looks plausible
+    # but points at the wrong block. Carrying the raw segment through (unclickable but
+    # honest) is the documented passthrough (design §5.3) — never guess.
+    if mapped is None or not mapped.startswith(prefix):
+        return seg
+    return name + "." + mapped[len(prefix):]
+
+
+def _remap(path: str, trace: dict[str, str]) -> str:
+    """Rewrite a diagnostic's structural path from expanded indices to authored ones.
+
+    A path is a structural prefix plus an optional context suffix the validator appends
+    (" branch if", " param 'x'"); only the prefix is a path. Every structural token is
+    space- and arrow-free EXCEPT a quoted `groups['name']`/`groups["name"]` head: Python's
+    `!r` places no restriction on `name` (roles.py:71, validate.py:64's `_iter_all_blocks`),
+    so a group named with a literal space or `->` is real, reachable state via a
+    hand-authored or imported doc (docStore.ts's `GROUP_NAME_RE` guards only add/rename,
+    never load) — `groups['wash cycle'].body[0]` is a real path. `_quoted_group_head_end`
+    treats that head as opaque so the space/arrow scans below never resume inside it,
+    mirroring paths.ts's `quotedGroupHeadEnd` on the read side (Finding 1 review: fixing
+    only the reader turned a safe `uid: null` into a wrong-block highlight). The prefix may
+    itself be compound — "<call site>-><group>.body[i]" — when an analysis walks into a
+    plain group's body; every segment is mapped with its own key form. An unmappable
+    segment is carried through: a raw path beats no path (design §5.3).
+    """
+    head_end = _quoted_group_head_end(path)
+    space_index = path.find(" ", head_end)
+    if space_index == -1:
+        prefix, sep, suffix = path, "", ""
+    else:
+        prefix, sep, suffix = path[:space_index], " ", path[space_index + 1 :]
+    arrow_index = prefix.find("->", head_end)
+    if arrow_index == -1:
+        head, segments = prefix, []
+    else:
+        head = prefix[:arrow_index]
+        segments = prefix[arrow_index + 2 :].split("->")
+    out = trace.get(head, head)
+    for seg in segments:
+        out += "->" + _remap_group_segment(seg, trace)
+    return out + sep + suffix
+
+
+def _remap_diagnostics(
+    diags: list[dict[str, str]], trace: dict[str, str]
+) -> list[dict[str, str]]:
+    """Remap every diagnostic's path from expanded to authored, then dedup: a for_each
+    body diagnosed once per copy collapses to a single authored diagnostic. Order-preserving
+    (first occurrence wins) — some tests assert on diagnostic order."""
+    out: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for d in diags:
+        remapped = {**d, "path": _remap(d["path"], trace)}
+        key = (remapped["category"], remapped["path"], remapped["message"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(remapped)
+    return out
+
+
 def validate_doc(doc: ExperimentDoc) -> list[dict[str, str]]:
     """§4.3: doc-level role checks, placeholder substitution, engine parse + validate."""
     role_types = {name: role.type for name, role in doc.roles.items()}
     diags = roles_mod.role_diagnostics(role_types, set(verb_catalog()))
     try:
-        expanded = expand_dict(doc.workflow)  # for_each/group(tube) -> concrete roles (§9)
+        # for_each/group(tube) -> concrete roles (§9); trace maps expanded -> authored paths
+        # so every diagnostic downstream of the expand can be reported where the author edits.
+        expanded, trace = expand_dict_traced(doc.workflow)
     except WorkflowLoadError as exc:
         return diags + [{"category": "expansion", "path": "workflow", "message": str(exc)}]
     substituted, ref_diags = roles_mod.substitute(
         expanded, roles_mod.placeholder_ids(role_types)
     )
-    diags += ref_diags
+    diags += _remap_diagnostics(ref_diags, trace)
     if diags:
         return diags  # substitution unsound; engine output would duplicate (plan P3)
     try:
@@ -177,8 +271,11 @@ def validate_doc(doc: ExperimentDoc) -> list[dict[str, str]]:
     try:
         validate(workflow)
     except ValidationError as exc:
-        return [
-            {"category": d.category, "path": d.path, "message": d.message}
-            for d in exc.diagnostics
-        ]
+        return _remap_diagnostics(
+            [
+                {"category": d.category, "path": d.path, "message": d.message}
+                for d in exc.diagnostics
+            ],
+            trace,
+        )
     return []

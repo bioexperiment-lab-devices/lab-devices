@@ -1,6 +1,6 @@
-import { Fragment, createContext, useContext, useMemo } from 'react'
+import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
-import { useDocStore } from '../stores/docStore'
+import { useActiveTree, useDocStore } from '../stores/docStore'
 import { diagnosticsByUid, type MappedDiagnostic } from './paths'
 import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
@@ -10,24 +10,133 @@ import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } fr
 const DiagContext = createContext<Map<string, MappedDiagnostic[]>>(new Map())
 
 export function Canvas() {
-  const tree = useDocStore((s) => s.tree)
+  // The canvas renders whichever list `scope` names (design §5.2): the main workflow tree
+  // when null, else the active group's body. docStore's own `activeList`/`setActiveList`
+  // (docStore.ts) resolve the same scope for every block op, so reads here always agree
+  // with what insertBlock/moveBlock/etc. would write to.
+  const activeTree = useActiveTree()
   const select = useDocStore((s) => s.select)
   const diagnostics = useDocStore((s) => s.diagnostics)
   const byUid = useMemo(() => diagnosticsByUid(diagnostics), [diagnostics])
+
+  // `scrollToUid` (docStore.ts) is set by a Problems row click on a block diagnostic
+  // (ProblemsPanel.tsx). Reading it here and scrolling in a reactive effect — the same shape
+  // as RolesPanel's `focusedRole` effect — rather than querying the DOM synchronously inside
+  // that click handler is what makes this immune to the cross-scope race (2026-07-16 review,
+  // Finding 2): when the click also calls `setScope`, `activeTree` above is what re-renders
+  // this component for the new scope, and this effect only runs after that render commits, so
+  // `block-${scrollToUid}` is guaranteed to already be in the DOM by the time it queries.
+  const scrollToUid = useDocStore((s) => s.scrollToUid)
+  useEffect(() => {
+    if (!scrollToUid) return
+    document
+      .getElementById(`block-${scrollToUid}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [scrollToUid])
+
   return (
     <DiagContext.Provider value={byUid}>
       <div
         className="min-w-0 flex-1 overflow-auto bg-slate-100 p-4"
         onClick={() => select(null)}
       >
-        {tree.length === 0 && (
+        <ScopeSwitcher />
+        {activeTree.length === 0 && (
           <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-slate-400">
             Drag blocks from the palette to start building.
           </p>
         )}
-        <BlockList parentUid={null} slot="blocks" items={tree} />
+        <BlockList parentUid={null} slot="blocks" items={activeTree} />
       </div>
     </DiagContext.Provider>
+  )
+}
+
+/** "Editing: [ Main workflow ▾ ]" (design §5.2) — the Palette/Inspector/drag-drop are
+ * unchanged by which scope is active; only this selector and the two reads above (Canvas's
+ * `activeTree`, Inspector's mirror of it) know that "the current tree" is now a choice
+ * rather than a fixed field. "+ New group…" follows the AddRoleForm precedent
+ * (Palette.tsx's inline-error-under-the-control pattern) rather than a native prompt(). */
+function ScopeSwitcher() {
+  const scope = useDocStore((s) => s.scope)
+  const groups = useDocStore((s) => s.groups)
+  const setScope = useDocStore((s) => s.setScope)
+  const addGroup = useDocStore((s) => s.addGroup)
+  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const groupNames = Object.keys(groups)
+
+  const create = () => {
+    const err = addGroup(name)
+    setError(err)
+    if (!err) {
+      setScope(name)
+      setAdding(false)
+      setName('')
+    }
+  }
+
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className="mb-2 flex flex-wrap items-center gap-2 text-xs"
+    >
+      <span className="font-semibold text-slate-500">Editing:</span>
+      <select
+        value={scope ?? ''}
+        onChange={(e) => setScope(e.target.value === '' ? null : e.target.value)}
+        className="rounded border border-slate-300 bg-white px-1.5 py-0.5"
+      >
+        <option value="">Main workflow</option>
+        {groupNames.map((g) => (
+          <option key={g} value={g}>
+            {g}
+            {groups[g].params.length > 0 ? `(${groups[g].params.join(', ')})` : ''}
+          </option>
+        ))}
+      </select>
+      {adding ? (
+        <div className="flex items-center gap-1">
+          <input
+            autoFocus
+            value={name}
+            placeholder="group name"
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') create()
+              if (e.key === 'Escape') {
+                setAdding(false)
+                setName('')
+                setError(null)
+              }
+            }}
+            className="w-28 rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
+          />
+          <button onClick={create} className="rounded bg-slate-200 px-2 py-0.5 hover:bg-slate-300">
+            Add
+          </button>
+          <button
+            onClick={() => {
+              setAdding(false)
+              setName('')
+              setError(null)
+            }}
+            className="text-slate-400 hover:text-slate-600"
+          >
+            cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setAdding(true)}
+          className="rounded border border-dashed border-slate-300 px-2 py-0.5 text-slate-500 hover:text-slate-700"
+        >
+          + New group…
+        </button>
+      )}
+      {error && <span className="text-red-600">{error}</span>}
+    </div>
   )
 }
 
@@ -59,7 +168,7 @@ function BlockView({ node }: { node: BlockNode }) {
     data: { source: 'canvas', uid: node.uid } satisfies DragPayload,
   })
   const isContainer =
-    node.kind === 'serial' || node.kind === 'parallel' || node.kind === 'loop' || node.kind === 'branch'
+    node.kind === 'serial' || node.kind === 'parallel' || node.kind === 'loop' || node.kind === 'branch' || node.kind === 'for_each'
   return (
     <div
       id={`block-${node.uid}`}
@@ -142,6 +251,12 @@ function ContainerBody({ node }: { node: BlockNode }) {
         </div>
       )
     case 'loop':
+      return (
+        <div className="ml-2 border-l-2 border-slate-200 px-2 pb-2">
+          <BlockList parentUid={node.uid} slot="body" items={node.body} />
+        </div>
+      )
+    case 'for_each':
       return (
         <div className="ml-2 border-l-2 border-slate-200 px-2 pb-2">
           <BlockList parentUid={node.uid} slot="body" items={node.body} />

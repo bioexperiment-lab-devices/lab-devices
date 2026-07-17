@@ -9,7 +9,8 @@ export type StructureKind = 'serial' | 'parallel' | 'loop' | 'branch' | 'wait' |
 /** Leaf blocks that act on run state rather than on a device (Increments 6 and 8). None
  * takes retry — retry is command/measure only (design 2026-07-14 §2.1). */
 export type ControlKind = 'compute' | 'record' | 'abort' | 'alarm'
-export type PaletteKind = StructureKind | ControlKind
+export type RepeatKind = 'for_each' | 'group_ref'
+export type PaletteKind = StructureKind | ControlKind | RepeatKind
 
 interface NodeBase {
   uid: string
@@ -79,6 +80,19 @@ export interface BranchNode extends NodeBase {
   else: BlockNode[] | null
 }
 
+export interface ForEachNode extends NodeBase {
+  kind: 'for_each'
+  var: string | null
+  items: Array<ParamValue | Record<string, ParamValue>>
+  body: BlockNode[]
+}
+
+export interface GroupRefNode extends NodeBase {
+  kind: 'group_ref'
+  name: string
+  args: Record<string, ParamValue>
+}
+
 export interface ComputeNode extends NodeBase {
   kind: 'compute'
   into: string
@@ -114,6 +128,8 @@ export type BlockNode =
   | ParallelNode
   | LoopNode
   | BranchNode
+  | ForEachNode
+  | GroupRefNode
   | ComputeNode
   | RecordNode
   | AbortNode
@@ -152,6 +168,8 @@ export function childSlots(node: BlockNode): Array<[string, BlockNode[]]> {
             ['then', node.then],
             ['else', node.else],
           ]
+    case 'for_each':
+      return [['body', node.body]]
     default:
       return []
   }
@@ -163,6 +181,7 @@ export function replaceSlot(node: BlockNode, slot: string, list: BlockNode[]): B
   if (node.kind === 'branch') {
     return slot === 'then' ? { ...node, then: list } : { ...node, else: list }
   }
+  if (node.kind === 'for_each') return { ...node, body: list }
   throw new Error(`${node.kind} has no child slot ${slot}`)
 }
 
@@ -348,6 +367,13 @@ export function newPaletteNode(kind: PaletteKind): BlockNode {
     case 'abort':
     case 'alarm':
       return { ...base, kind, condition: '', message: '' }
+    case 'for_each':
+      // Seeded with a concrete example rather than blanks: an empty `in` is a load error
+      // (expand.py:99 "for_each 'in' must be a non-empty list"), so a freshly-dragged empty
+      // for_each would make the whole doc unsavable until filled.
+      return { ...base, kind, var: 'tube', items: [1, 2, 3], body: [] }
+    case 'group_ref':
+      return { ...base, kind, name: '', args: {} }
   }
 }
 

@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import type { BlockJson, ExperimentDocJson } from '../types/doc'
-import { DocConvertError, docToTree, nodeToBlock, treeToDoc } from './convert'
-import type { ComputeNode, LoopNode, MeasureNode, SerialNode, WaitNode } from './tree'
+import type { BlockJson, ExperimentDocJson, WorkflowJson } from '../types/doc'
+import { docToTree, nodeToBlock, treeToDoc } from './convert'
+import type { ComputeNode, ForEachNode, LoopNode, MeasureNode, SerialNode, WaitNode } from './tree'
 
 const fixture = (name: string): ExperimentDocJson =>
   JSON.parse(
@@ -55,24 +55,6 @@ describe('docToTree', () => {
     visit(tree)
     expect(new Set(uids).size).toBe(uids.length)
     expect(uids.length).toBe(5)
-  })
-
-  it('refuses docs that use groups or group_ref blocks', () => {
-    const doc = fixture('valid-od-growth')
-    doc.workflow.groups = { prep: { body: [] } }
-    expect(() => docToTree(doc)).toThrow(DocConvertError)
-    const doc2 = fixture('valid-od-growth')
-    doc2.workflow.blocks = [{ group_ref: { name: 'prep' } }]
-    expect(() => docToTree(doc2)).toThrow(/group_ref/)
-  })
-
-  it('reports for_each as a specific unsupported-in-builder message, not the generic one', () => {
-    const doc = fixture('valid-od-growth')
-    doc.workflow.blocks = [
-      { for_each: { var: 't', in: [1, 2], body: [{ wait: { duration: '1s' } }] } },
-    ] as unknown as BlockJson[]
-    expect(() => docToTree(doc)).toThrow(DocConvertError)
-    expect(() => docToTree(doc)).toThrow(/for_each is not yet supported in the builder/)
   })
 })
 
@@ -182,6 +164,62 @@ describe('treeToDoc', () => {
     })
   })
 
+  it('round-trips workflow.metadata.author/description, which the builder has no UI for but ' +
+    'must not destroy — opening and saving a doc with hand-authored metadata must not erase ' +
+    'its authorship or its scientific description', () => {
+    const doc: ExperimentDocJson = {
+      doc_version: 1,
+      name: 'Metadata test',
+      description: null,
+      roles: {},
+      workflow: {
+        schema_version: 1,
+        metadata: {
+          name: 'Metadata test',
+          author: 'lab-devices examples',
+          description: 'a multi-paragraph scientific description',
+        },
+        persistence: { default: 'in_memory', format: 'jsonl' },
+        streams: {},
+        blocks: [],
+      },
+    }
+    expect(treeToDoc(docToTree(doc)).workflow.metadata).toEqual({
+      name: 'Metadata test',
+      author: 'lab-devices examples',
+      description: 'a multi-paragraph scientific description',
+    })
+  })
+
+  it('renaming the doc updates metadata.name while preserving author/description, and keeps ' +
+    'name first in key order', () => {
+    const doc: ExperimentDocJson = {
+      doc_version: 1,
+      name: 'Original name',
+      description: null,
+      roles: {},
+      workflow: {
+        schema_version: 1,
+        metadata: { name: 'Original name', author: 'someone', description: 'about this doc' },
+        persistence: { default: 'in_memory', format: 'jsonl' },
+        streams: {},
+        blocks: [],
+      },
+    }
+    const renamed = { ...docToTree(doc), name: 'New name' }
+    const metadata = treeToDoc(renamed).workflow.metadata
+    expect(metadata).toEqual({
+      name: 'New name',
+      author: 'someone',
+      description: 'about this doc',
+    })
+    // Key order matters for the byte-exact round trip (spread semantics keep a re-assigned
+    // key's original position) — JSON.stringify is sensitive to it where toEqual is not.
+    expect(JSON.stringify(metadata)).toBe(
+      JSON.stringify({ name: 'New name', author: 'someone', description: 'about this doc' }),
+    )
+  })
+
   it('preserves a custom persistence setting instead of clobbering it with the hardcoded default', () => {
     const doc: ExperimentDocJson = {
       doc_version: 1,
@@ -283,5 +321,86 @@ describe('control blocks', () => {
     // Deep-equal is blind to 6.0 vs 6 and to key order (W7 review); compare serialised bytes,
     // which is what actually reaches the backend.
     expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
+  })
+})
+
+describe('repetition blocks', () => {
+  // Key order mirrors the engine's canonical order (serialize.py:426-450): schema_version,
+  // metadata, persistence, defaults, streams, groups, blocks. `defaults`/`groups` are spread
+  // in at their canonical position (conditionally, so an absent one is omitted) rather than
+  // via a trailing `...workflow` spread — a trailing spread only overwrites a key's value in
+  // place when the key already exists in the base literal, but `groups` doesn't, so it would
+  // land wherever the spread appears (after `blocks`) instead of before it.
+  const doc = (workflow: Partial<WorkflowJson>): ExperimentDocJson => ({
+    doc_version: 1,
+    name: 'macro',
+    description: null,
+    roles: {},
+    workflow: {
+      schema_version: workflow.schema_version ?? 1,
+      metadata: workflow.metadata ?? { name: 'macro' },
+      persistence: workflow.persistence ?? { default: 'in_memory', format: 'jsonl' },
+      ...(workflow.defaults !== undefined ? { defaults: workflow.defaults } : {}),
+      streams: workflow.streams ?? {},
+      ...(workflow.groups !== undefined ? { groups: workflow.groups } : {}),
+      blocks: workflow.blocks ?? [],
+    },
+  })
+
+  it('round-trips a for_each with scalar items', () => {
+    const input = doc({
+      blocks: [{ for_each: { var: 'tube', in: [1, 2, 3], body: [{ wait: { duration: '{tube}s' } }] } }],
+    })
+    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
+  })
+
+  it('round-trips a for_each with object items and no var', () => {
+    const input = doc({
+      blocks: [{ for_each: { in: [{ tube: 1, port: 2 }], body: [{ wait: { duration: '{tube}s' } }] } }],
+    })
+    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
+  })
+
+  it('round-trips parametrized groups and a group_ref with args', () => {
+    const input = doc({
+      groups: { service: { params: ['tube'], body: [{ wait: { duration: '{tube}s' } }] } },
+      blocks: [{ group_ref: { name: 'service', args: { tube: 1 } } }],
+    })
+    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
+  })
+
+  it('round-trips a plain param-less group_ref unchanged', () => {
+    const input = doc({
+      groups: { wash: { body: [{ wait: { duration: '1s' } }] } },
+      blocks: [{ group_ref: { name: 'wash' } }],
+    })
+    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
+  })
+
+  it('parses a for_each into a node with a body slot', () => {
+    const tree = docToTree(
+      doc({ blocks: [{ for_each: { var: 't', in: [1], body: [{ wait: { duration: '1s' } }] } }] }),
+    ).tree
+    expect(tree[0]).toMatchObject({ kind: 'for_each', var: 't', items: [1] })
+    expect((tree[0] as ForEachNode).body).toHaveLength(1)
+  })
+
+  it('omits groups entirely when the doc has none', () => {
+    const out = treeToDoc(docToTree(doc({ blocks: [{ wait: { duration: '1s' } }] })))
+    expect('groups' in out.workflow).toBe(false)
+  })
+
+  it('opens examples/morbidostat.json and round-trips it byte-for-byte', () => {
+    // The W9 acceptance (spec §8): the flagship uses groups + for_each and has never been
+    // openable in the builder. Byte comparison, not toEqual — deep-equal is blind to key order
+    // and to 6.0 vs 6 (the W7 trap).
+    const input = JSON.parse(
+      readFileSync(new URL('../../../../examples/morbidostat.json', import.meta.url), 'utf8'),
+    ) as ExperimentDocJson
+    const content = docToTree(input)
+    // DocContent.groups is typed optional for callers that predate the field, but docToTree
+    // always populates it (convert.ts:53) — `?? {}` satisfies the type without a `!` assertion.
+    expect(Object.keys(content.groups ?? {})).toContain('service')
+    expect(JSON.stringify(treeToDoc(content))).toBe(JSON.stringify(input))
   })
 })

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useCatalogStore } from '../stores/catalogStore'
-import { useDocStore } from '../stores/docStore'
+import { useActiveTree, useDocStore } from '../stores/docStore'
 import { collectBindings } from './refs'
 import { buildExpressionHelp } from './exprHelp'
 import { DURATION_RE } from './params'
@@ -137,10 +137,15 @@ export function ExpressionInput(props: {
 }) {
   const [open, setOpen] = useState(false)
   const streams = useDocStore((s) => s.streams)
-  const tree = useDocStore((s) => s.tree)
+  // Bindings must be collected from the ACTIVE scope, not always the main tree (2026-07-16
+  // review, Finding 1): a group body is unreachable from `tree` (a `group_ref` node has no
+  // `childSlots`), so an expression inside a group — e.g. morbidostat.json's `groups.service`,
+  // whose own `compute` blocks feed later expressions in that same body — needs its own
+  // group's bindings, not the main workflow's.
+  const activeTree = useActiveTree()
   const expression = useCatalogStore((s) => s.catalog?.expression ?? null)
   const help = expression
-    ? buildExpressionHelp(expression, Object.keys(streams), collectBindings(tree))
+    ? buildExpressionHelp(expression, Object.keys(streams), collectBindings(activeTree))
     : null
   return (
     <div className="relative">

@@ -19,6 +19,7 @@ import {
   type SerialNode,
   type ParallelNode,
   type LoopNode,
+  type ForEachNode,
 } from './tree'
 
 const wait = (uid: string): BlockNode => ({
@@ -196,5 +197,24 @@ describe('tree ops', () => {
       expect(result?.allow_repeat).toBeUndefined()
       expect(result).toMatchObject({ attempts: 2 })
     })
+  })
+
+  it('gives for_each a body child slot so the tree ops reach into it', () => {
+    const node = newPaletteNode('for_each') as ForEachNode
+    expect(node.kind).toBe('for_each')
+    expect(node.var).toBe('tube')
+    expect(node.items).toEqual([1, 2, 3])
+    expect(childSlots(node).map(([slot]) => slot)).toEqual(['body'])
+    const wait = newPaletteNode('wait')
+    const withChild = replaceSlot(node, 'body', [wait]) as ForEachNode
+    expect(withChild.body).toEqual([wait])
+    expect(findNode([withChild], wait.uid)).toBe(wait)
+  })
+
+  it('creates a group_ref with no child slots', () => {
+    const node = newPaletteNode('group_ref')
+    expect(node.kind).toBe('group_ref')
+    expect(node).toMatchObject({ name: '', args: {} })
+    expect(childSlots(node)).toEqual([])
   })
 })

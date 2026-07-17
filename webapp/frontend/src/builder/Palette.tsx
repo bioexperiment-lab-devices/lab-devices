@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
-import type { ControlKind, StructureKind } from './tree'
+import type { ControlKind, RepeatKind, StructureKind } from './tree'
 import type { DragPayload } from './dnd'
 import { RolesPanel } from './RolesPanel'
 import { StreamsPanel } from './StreamsPanel'
@@ -21,6 +21,14 @@ const CONTROL: Array<{ kind: ControlKind; title: string; icon: string }> = [
   { kind: 'record', title: 'Record', icon: '✎' },
   { kind: 'alarm', title: 'Alarm', icon: '⚠' },
   { kind: 'abort', title: 'Abort', icon: '⛔' },
+]
+
+// ∀/⧉ are unique glyphs — ∀ cannot be confused with loop's ↻ (design 2026-07-16 §5.1); both
+// chips drop through the SAME 'palette-structure' payload source as STRUCTURE/CONTROL above
+// (PaletteKind already widened to include RepeatKind — tree.ts:13), so no second drag path.
+const REPEAT: Array<{ kind: RepeatKind; title: string; icon: string }> = [
+  { kind: 'for_each', title: 'For each', icon: '∀' },
+  { kind: 'group_ref', title: 'Group ref', icon: '⧉' },
 ]
 
 function Chip(props: { id: string; payload: DragPayload; children: ReactNode }) {
@@ -103,6 +111,57 @@ function AddRoleForm() {
   )
 }
 
+/** Lists declared groups for management (design §5.2's second editing scope): the scope
+ * switcher (Canvas.tsx) is where a group's BODY is switched to and edited; this panel is
+ * where it's found, jumped to, and removed once nothing cites it — the same "list, jump,
+ * delete-with-a-refusal-reason" shape RolesPanel already gives roles. No rename control here:
+ * unlike roles/streams, nothing in this task calls for one, and `renameGroup` already exists
+ * on the store for a future UI to wire up without a frontend change here. */
+function GroupsPanel() {
+  const groups = useDocStore((s) => s.groups)
+  const scope = useDocStore((s) => s.scope)
+  const setScope = useDocStore((s) => s.setScope)
+  const removeGroup = useDocStore((s) => s.removeGroup)
+  const [error, setError] = useState<string | null>(null)
+  const entries = Object.entries(groups)
+  if (entries.length === 0) {
+    return (
+      <p className="px-1 text-xs text-slate-400">
+        No groups yet — add one from the scope switcher above the canvas.
+      </p>
+    )
+  }
+  return (
+    <ul className="space-y-1">
+      {entries.map(([name, group]) => (
+        <li key={name} className="flex items-center gap-1 text-sm">
+          <button
+            title="Edit this group's body"
+            onClick={() => setScope(name)}
+            className={
+              'rounded px-1 font-mono text-xs hover:bg-slate-200 ' +
+              (scope === name ? 'bg-blue-100 text-blue-700' : '')
+            }
+          >
+            {name}
+          </button>
+          <span className="text-xs text-slate-400">
+            ({group.params.join(', ')})
+          </span>
+          <button
+            title="Delete group"
+            onClick={() => setError(removeGroup(name))}
+            className="ml-auto rounded px-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600"
+          >
+            ✕
+          </button>
+        </li>
+      ))}
+      {error && <li className="text-xs text-red-600">{error}</li>}
+    </ul>
+  )
+}
+
 export function Palette() {
   const catalog = useCatalogStore((s) => s.catalog)
   const catalogError = useCatalogStore((s) => s.error)
@@ -134,6 +193,20 @@ export function Palette() {
             >
               <span className="mr-1 opacity-60">{c.icon}</span>
               {c.title}
+            </Chip>
+          ))}
+        </div>
+      </Section>
+      <Section title="Repeat">
+        <div className="flex flex-wrap gap-1">
+          {REPEAT.map((r) => (
+            <Chip
+              key={r.kind}
+              id={`palette-repeat-${r.kind}`}
+              payload={{ source: 'palette-structure', kind: r.kind }}
+            >
+              <span className="mr-1 opacity-60">{r.icon}</span>
+              {r.title}
             </Chip>
           ))}
         </div>
@@ -178,6 +251,9 @@ export function Palette() {
       </Section>
       <Section title="Streams" defaultOpen={false}>
         <StreamsPanel />
+      </Section>
+      <Section title="Groups" defaultOpen={false}>
+        <GroupsPanel />
       </Section>
     </aside>
   )
