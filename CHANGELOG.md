@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.6.0...v0.7.0) (2026-07-17)
+
+
+### Features
+
+* **studio:** author compute/record/abort/alarm in the builder (W8) ([#28](https://github.com/bioexperiment-lab-devices/lab-devices/issues/28)) ([93a0d1d](https://github.com/bioexperiment-lab-devices/lab-devices/commit/93a0d1da769999666225a0d812088e74f44de08b))
+* **studio:** author for_each and parametrized groups in the builder (W9) ([#30](https://github.com/bioexperiment-lab-devices/lab-devices/issues/30)) ([e51a2ee](https://github.com/bioexperiment-lab-devices/lab-devices/commit/e51a2eec11f654eb8285dcdee4fe9eaa745519d3))
+
 ## [0.6.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.5.0...v0.6.0) (2026-07-16)
 
 
