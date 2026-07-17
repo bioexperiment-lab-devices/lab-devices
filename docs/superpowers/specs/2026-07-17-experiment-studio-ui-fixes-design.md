@@ -58,9 +58,27 @@ Add dependency `lucide-react` (latest). New `src/ui/` module:
 | `—` (InputDialog hide) | hide | `Minus` |
 
 **Stays typographic (semantic notation, not icons):** `∀` for_each (no Lucide equivalent; audit
-settled-item 6 holds), `ƒ` compute → use Lucide `SquareFunction` (keeps the four control-section
-marks distinct, settled-item 5's actual requirement), `R×N` retry marker, `×N` loop multiplier,
+settled-item 6 holds), `R×N` retry marker, `⤳` tolerated-error marker, `×N` loop multiplier,
 the `●` unsaved dot (a shape — darkened per §4, not iconified), `…` ellipses, prose arrows/dashes.
+
+**Card/chip kind marks (planning-time refinement, 2026-07-17):** the block-kind glyphs live
+inside the pure string `blockSummary()` (`builder/summary.ts`), consumed by the canvas cards,
+the palette chips, the drag overlay and the record snapshot. `blockSummary` therefore **drops
+its leading glyph** (stays a pure string — tests keep working in node env) and a single
+`ui/icons.tsx` map renders the mark as a component beside the text everywhere:
+
+| kind | Lucide | kind | Lucide |
+|---|---|---|---|
+| command | `Play` | branch | `Split` |
+| measure | `CircleDot` | compute | `SquareFunction` |
+| wait | `Timer` | record | `Pencil` |
+| operator_input | `Keyboard` | abort | `OctagonX` (red — settled-item 5) |
+| serial | `AlignJustify` | alarm | `TriangleAlert` (amber) |
+| parallel | `Columns2` | for_each | *typographic `∀`* |
+| loop | `Repeat` | group_ref | `Group` |
+
+The palette's Structure/Control/Repeat chips and the per-role verb chips consume the same map,
+so a kind wears one mark everywhere (this also retires the palette's private glyph list).
 
 ## 4. Color tokens (findings 1, 9, 12, 14, 16, 24)
 
