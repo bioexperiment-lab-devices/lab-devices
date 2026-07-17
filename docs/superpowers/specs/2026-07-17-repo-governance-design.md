@@ -47,9 +47,11 @@ The consequence is a real workflow change: **today the approval click is optiona
 can be merged with CI never having run. Once checks are required, the click becomes mandatory.
 That is the intended outcome, not a regression.
 
-**An installed-but-unwired GitHub App.** `bioexperiment-release-please` (app id `3575497`) is
-installed on the org, but `release-please.yml` authenticates with `secrets.GITHUB_TOKEN` and the
-repo has **zero** Actions secrets. The app was set up and never connected. See §6.
+**An unwired GitHub App.** At design time `release-please.yml` authenticated with
+`secrets.GITHUB_TOKEN`, while `bioexperiment-release-please` (app id `3575497`) sat installed on the
+org — but **not on this repo** — with its credentials (`RELEASE_PLEASE_APP_KEY`,
+`RELEASE_PLEASE_APP_ID`) already org-wide and readable here. Set up, never connected. Now wired;
+see §6.
 
 ## 3. Design
 
@@ -77,27 +79,36 @@ Two deliberate omissions:
 
 ### 3.2 Tag ruleset — `protect-release-tags`
 
-Targets `refs/tags/v*`. **The fallback shipped, not the first choice.** Rules: `deletion`,
-`non_fast_forward`. Bypass: `OrganizationAdmin`.
+Targets `refs/tags/v*`. Rules: `creation`, `deletion`, `non_fast_forward`. Bypass:
+`Integration:3575497` (the `bioexperiment-release-please` App) and `OrganizationAdmin`.
 
-The intended design blocked `creation` too — the risk being a local `git push --tags` minting a tag
-that looks like a release the changelog never recorded — with the GitHub Actions app (id `15368`)
-bypassing so release-please could still tag on merge. **The API rejects that:**
+The risk this addresses is a local `git push --tags` minting a tag that looks like a release the
+changelog never recorded. Blocking `creation` prevents that; blocking deletion and update prevents
+an existing release tag being silently moved.
+
+**This shipped in two stages, and the first attempt failed.** The original design named the GitHub
+Actions app (`15368`) as the bypass actor, since release-please tagged via `GITHUB_TOKEN`. The API
+rejected it:
 
 ```
 422: Actor GitHub Actions integration must be part of the ruleset source or owner organization
 ```
 
-A repository ruleset will not accept the Actions app as a bypass actor. Probing the org's own
-`bioexperiment-release-please` app (id `3575497`) as a substitute returns the identical error, so
-this is not specific to the Actions app. That installation is `repository_selection: "selected"`,
-and confirming whether `lab-devices` is in the selected set needs `read:user`/`admin:org` scope not
-held here — so *why* it is rejected is unresolved.
+Probing `bioexperiment-release-please` (`3575497`) returned the identical error — which read like a
+generic refusal of app bypass actors, but was the literal truth: **the App was not installed on
+`lab-devices`.** Confirmed by minting a token in a throwaway workflow, where
+`create-github-app-token` failed with `Not Found` on `/repos/…/lab-devices/installation`. The
+installation (`128865498`) is `repository_selection: "selected"` and covered `lab-bridge` and
+`serialhop` only.
 
-Consequence: `creation` cannot be blocked without also blocking release-please, which would break
-every release. So it is not blocked. **Stray `v*` tags remain possible**; what is now guaranteed is
-that a tag, once pushed, cannot be deleted or moved by a non-admin. release-please only ever creates
-tags, so neither rule is on its path.
+Granting the App access to this repo — a UI-only action; `PUT /user/installations/…/repositories/…`
+returns 403 even for an org owner through an OAuth token — makes `3575497` a valid bypass actor and
+`creation` enforceable. It is enforced.
+
+The Actions app (`15368`) is still refused and probably always will be, which is why §6 is a
+prerequisite for this rule rather than an optional nicety: **the tag ruleset and the App wiring must
+ship together.** Blocking `creation` while release-please still tags via `GITHUB_TOKEN` would break
+every release.
 
 ### 3.3 Repository settings
 
@@ -150,15 +161,30 @@ block would need a second, non-bypassing account, which the org does not have. T
 cost of the bypass decision, accepted knowingly: the rule that stops a force-push is the same rule
 its only tester is exempt from.
 
-## 6. Follow-up (not in scope — requires a human)
+## 6. The App wiring
 
-Wire `release-please.yml` to the installed `bioexperiment-release-please` app instead of
-`GITHUB_TOKEN`, via `actions/create-github-app-token`. App-authored PRs trigger workflows normally,
-which would remove the `action_required` click from §2 without weakening the fork policy. It needs
-the app's private key pasted into an Actions secret, so it cannot be automated from here.
+`release-please.yml` authenticates as the `bioexperiment-release-please` App via
+`actions/create-github-app-token@v3`, not `GITHUB_TOKEN`. This removes the `action_required` click
+from §2 without weakening the fork policy, and supplies §3.2's bypass actor.
 
-Whether that would also let §3.2 block tag `creation` is **unknown**: the app was rejected as a
-bypass actor today (§3.2). If it is rejected because the installation does not currently include
-`lab-devices`, granting it access should fix both; if repository rulesets refuse app bypass actors
-generally, the `creation` rule stays off the table regardless. Grant repo access first and re-probe
-before assuming.
+Nothing needed to be created: org secret `RELEASE_PLEASE_APP_KEY` (`visibility: all`) and org
+variable `RELEASE_PLEASE_APP_ID` (`3575497`) already existed and were already readable from this
+repo. The App had simply never been granted access to `lab-devices`, and the workflow had never been
+pointed at it. `serialhop/.github/workflows/release-please.yml` was the working template.
+
+Evidence the fix holds: serialhop's App-authored release PRs (#193, #195, #198) all run CI at
+`attempt=1`, triggered by `bioexperiment-release-please[bot]` itself, with no approval hold — versus
+`attempt=2` on every `GITHUB_TOKEN`-authored release PR here.
+
+**One caveat this design cannot verify in advance.** `release-please.yml` runs only on push to
+`main`, so no PR can exercise it — the first real proof is the next push to `main`. The failure mode
+is loud (the `app-token` step fails outright and no release PR appears), and the fallback is a
+one-line revert to `token: ${{ secrets.GITHUB_TOKEN }}` plus dropping §3.2's `creation` rule.
+
+### 6.1 Open thread
+
+The mechanism behind §2's hold is still not pinned down. This design attributes it to the
+`first_time_contributors` fork policy, on the evidence that a run was *created and held*
+(`action_required`). serialhop's own comment attributes it to GitHub's anti-recursion rule, under
+which no run is created at all. Both point to the same fix and the fix is confirmed working, so the
+discrepancy is recorded rather than resolved.
