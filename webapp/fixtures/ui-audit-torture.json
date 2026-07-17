@@ -206,9 +206,9 @@
         "body": [
           {
             "wait": {
-              "duration": "5s",
-              "label": "Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going "
-            }
+              "duration": "5s"
+            },
+            "label": "Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going "
           }
         ]
       },
@@ -226,7 +226,6 @@
         "body": [
           {
             "serial": {
-              "label": "Nested 4 deep",
               "children": [
                 {
                   "branch": {
@@ -261,7 +260,8 @@
                   }
                 }
               ]
-            }
+            },
+            "label": "Nested 4 deep"
           }
         ]
       }
@@ -307,7 +307,6 @@
       },
       {
         "serial": {
-          "label": "Every catalog verb",
           "children": [
             {
               "command": {
@@ -449,15 +448,14 @@
               }
             }
           ]
-        }
+        },
+        "label": "Every catalog verb"
       },
       {
         "parallel": {
-          "label": "8 lanes \u2014 S1 says parallelism is spatially visible",
           "children": [
             {
               "serial": {
-                "label": "lane 1",
                 "children": [
                   {
                     "command": {
@@ -475,11 +473,11 @@
                     }
                   }
                 ]
-              }
+              },
+              "label": "lane 1"
             },
             {
               "serial": {
-                "label": "lane 2",
                 "children": [
                   {
                     "command": {
@@ -497,11 +495,11 @@
                     }
                   }
                 ]
-              }
+              },
+              "label": "lane 2"
             },
             {
               "serial": {
-                "label": "lane 3",
                 "children": [
                   {
                     "command": {
@@ -519,11 +517,11 @@
                     }
                   }
                 ]
-              }
+              },
+              "label": "lane 3"
             },
             {
               "serial": {
-                "label": "lane 4",
                 "children": [
                   {
                     "command": {
@@ -541,11 +539,11 @@
                     }
                   }
                 ]
-              }
+              },
+              "label": "lane 4"
             },
             {
               "serial": {
-                "label": "lane 5",
                 "children": [
                   {
                     "command": {
@@ -563,11 +561,11 @@
                     }
                   }
                 ]
-              }
+              },
+              "label": "lane 5"
             },
             {
               "serial": {
-                "label": "lane 6",
                 "children": [
                   {
                     "command": {
@@ -585,11 +583,11 @@
                     }
                   }
                 ]
-              }
+              },
+              "label": "lane 6"
             },
             {
               "serial": {
-                "label": "lane 7",
                 "children": [
                   {
                     "command": {
@@ -607,11 +605,11 @@
                     }
                   }
                 ]
-              }
+              },
+              "label": "lane 7"
             },
             {
               "serial": {
-                "label": "lane 8",
                 "children": [
                   {
                     "command": {
@@ -629,14 +627,15 @@
                     }
                   }
                 ]
-              }
+              },
+              "label": "lane 8"
             }
           ]
-        }
+        },
+        "label": "8 lanes \u2014 S1 says parallelism is spatially visible"
       },
       {
         "serial": {
-          "label": "Nested 8 deep",
           "children": [
             {
               "branch": {
@@ -697,20 +696,21 @@
               }
             }
           ]
-        }
+        },
+        "label": "Nested 8 deep"
       },
       {
         "serial": {
-          "label": "Empty serial (bare drop slot)",
           "children": []
-        }
+        },
+        "label": "Empty serial (bare drop slot)"
       },
       {
         "loop": {
           "count": 3,
-          "label": "Empty loop body",
           "body": []
-        }
+        },
+        "label": "Empty loop body"
       },
       {
         "compute": {
@@ -809,9 +809,9 @@
       },
       {
         "wait": {
-          "duration": "1h",
-          "label": "Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going "
-        }
+          "duration": "1h"
+        },
+        "label": "Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going Label that keeps going "
       },
       {
         "record": {

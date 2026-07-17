@@ -37,18 +37,32 @@ VALVES = [f"valve_{i:02d}" for i in range(1, 6)]
 METERS = [f"od_meter_{i:02d}" for i in range(1, 4)]
 
 
+def blk(type_key: str, body: dict[str, Any], **block_keys: Any) -> dict[str, Any]:
+    """Build a block the way the engine grammar actually wants it: ONE type key holding the
+    body, and block-level keys (`label`, `gap_after`, `start_offset`, `retry`, `on_error`) as
+    SIBLINGS of that type key — never nested inside the body. convert.ts:36 computes the type
+    key as the block's non-block-level keys and convert.ts:43 reads `label` (etc.) off the
+    outer object; a label left inside the body is silently invisible to it. Route every
+    block-level key through this helper instead of hand-assembling `{type: {...}}` dicts so a
+    future edit cannot re-nest one by accident.
+    """
+    out: dict[str, Any] = {type_key: body}
+    out.update(block_keys)
+    return out
+
+
 def cmd(role: str, verb: str, **params: Any) -> dict[str, Any]:
     body: dict[str, Any] = {"device": role, "verb": verb}
     if params:
         body["params"] = params
-    return {"command": body}
+    return blk("command", body)
 
 
 def meas(role: str, verb: str, into: str, **params: Any) -> dict[str, Any]:
     body: dict[str, Any] = {"device": role, "verb": verb, "into": into}
     if params:
         body["params"] = params
-    return {"measure": body}
+    return blk("measure", body)
 
 
 def every_catalog_verb() -> list[dict[str, Any]]:
@@ -94,22 +108,27 @@ def deep_nest(depth: int) -> dict[str, Any]:
             inner = {"parallel": {"children": [inner]}}
         else:
             inner = {"branch": {"if": "od_01 > 0.4", "then": [inner]}}
-    return {"serial": {"label": f"Nested {depth} deep", "children": [inner]}}
+    return blk("serial", {"children": [inner]}, label=f"Nested {depth} deep")
 
 
 def wide_parallel(lanes: int) -> dict[str, Any]:
-    return {
-        "parallel": {
-            "label": f"{lanes} lanes — S1 says parallelism is spatially visible",
+    return blk(
+        "parallel",
+        {
             "children": [
-                {"serial": {"label": f"lane {i + 1}", "children": [
-                    cmd(PUMPS[i % len(PUMPS)], "dispense", volume_ml=1.0, speed_ml_min=2.0),
-                    {"wait": {"duration": "30s"}},
-                ]}}
+                blk(
+                    "serial",
+                    {"children": [
+                        cmd(PUMPS[i % len(PUMPS)], "dispense", volume_ml=1.0, speed_ml_min=2.0),
+                        blk("wait", {"duration": "30s"}),
+                    ]},
+                    label=f"lane {i + 1}",
+                )
                 for i in range(lanes)
             ],
-        }
-    }
+        },
+        label=f"{lanes} lanes — S1 says parallelism is spatially visible",
+    )
 
 
 def build() -> dict[str, Any]:
@@ -142,7 +161,7 @@ def build() -> dict[str, Any]:
                                         "a choice label that is really quite long indeed"]}},
 
         # --- every generated param form ------------------------------------------------------
-        {"serial": {"label": "Every catalog verb", "children": every_catalog_verb()}},
+        blk("serial", {"children": every_catalog_verb()}, label="Every catalog verb"),
 
         # --- the horizontal-overflow gun -----------------------------------------------------
         wide_parallel(LANES),
@@ -151,8 +170,8 @@ def build() -> dict[str, Any]:
         deep_nest(DEPTH),
 
         # --- empty containers: bare drop slots -------------------------------------------------
-        {"serial": {"label": "Empty serial (bare drop slot)", "children": []}},
-        {"loop": {"count": 3, "label": "Empty loop body", "body": []}},
+        blk("serial", {"children": []}, label="Empty serial (bare drop slot)"),
+        blk("loop", {"count": 3, "body": []}, label="Empty loop body"),
 
         # --- control leaves, pushed --------------------------------------------------------
         {"compute": {"into": "r_est", "value": LONG_EXPR}},
@@ -173,7 +192,7 @@ def build() -> dict[str, Any]:
         {"group_ref": {"name": "long_label_group"}},
 
         # --- a label long enough to truncate a card --------------------------------------------
-        {"wait": {"duration": "1h", "label": LONG_LABEL}},
+        blk("wait", {"duration": "1h"}, label=LONG_LABEL),
 
         # --- DELIBERATE validation errors: ENGINE-level only, not role-level. These fill
         #     ProblemsPanel and must NOT break docToTree. Structure is legal; only the
@@ -203,7 +222,7 @@ def build() -> dict[str, Any]:
             cmd(VALVES[0], "set_position", position=1),
             cmd(PUMPS[1], "dispense", volume_ml=5.0, speed_ml_min=5.0),
         ]},
-        "long_label_group": {"body": [{"wait": {"duration": "5s", "label": LONG_LABEL}}]},
+        "long_label_group": {"body": [blk("wait", {"duration": "5s"}, label=LONG_LABEL)]},
         "empty_body_group": {"body": []},
         "deep_group": {"params": ["a", "b", "c", "d", "e"], "body": [deep_nest(4)]},
     }

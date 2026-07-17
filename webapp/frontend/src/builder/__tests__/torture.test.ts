@@ -106,4 +106,49 @@ describe('ui-audit torture fixture', () => {
     // enforces one (GROUP_NAME_RE guards only addGroup/renameGroup).
     expect(Object.keys(groups).some((n) => n.includes(' '))).toBe(true)
   })
+
+  it('carries block labels as siblings of the type key, per convert.ts:36/43', () => {
+    // The engine grammar is one type key per block PLUS sibling block-level keys (label,
+    // gap_after, start_offset, retry, on_error) — never nested inside the body. If the
+    // fixture writes `label` inside the body instead, blockToNode's `label: block.label ??
+    // null` (convert.ts:43) reads it off the OUTER object and silently gets `null`: every
+    // label in the fixture disappears with no error, no throw, nothing. That's exactly the
+    // failure mode this test exists to catch — the other tests above (kinds, verbs, counts)
+    // would all still pass on a fixture where every label was dropped.
+    //
+    // Walks via the app's own `childSlots` (tree.ts:157), same as `collectKinds` above — a
+    // hand-listed slot set would silently stop descending the day a new container kind lands.
+    const content = docToTree(doc)
+    const labels = new Set<string>()
+    const walk = (nodes: BlockNode[]) => {
+      for (const n of nodes) {
+        if (n.label !== null) labels.add(n.label)
+        for (const [, slot] of childSlots(n)) walk(slot)
+      }
+    }
+    walk(content.tree)
+    for (const g of Object.values(content.groups ?? {})) walk(g.body)
+
+    // LONG_LABEL (~130 chars): the W7 truncate-without-title class Canvas.tsx:199 renders
+    // (`<span className="truncate ...">` with no `title` attribute) — the probe boundary
+    // this fixture exists to plant. If labels are dropped, no label survives at all, let
+    // alone one this long.
+    expect([...labels].some((l) => l.length >= 120)).toBe(true)
+
+    // The specific sites gen_torture.py plants a label at, incl. the per-lane labels inside
+    // wide_parallel() and the long_label_group's wait — every one of these lives inside a
+    // body key in a naively-nested fixture and would be absent from `labels` if so.
+    for (const expected of [
+      'Every catalog verb',
+      '8 lanes — S1 says parallelism is spatially visible',
+      'lane 1',
+      'lane 8',
+      'Nested 8 deep',
+      'Nested 4 deep',
+      'Empty serial (bare drop slot)',
+      'Empty loop body',
+    ]) {
+      expect(labels.has(expected)).toBe(true)
+    }
+  })
 })
