@@ -1,11 +1,13 @@
 import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
+import { ChevronDown, ChevronRight, Copy, Plus, X } from 'lucide-react'
 import { useActiveTree, useDocStore } from '../stores/docStore'
 import { diagnosticsByUid, type MappedDiagnostic } from './paths'
 import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
 import { blockSummary } from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
+import { IconButton } from '../ui/IconButton'
 import { KindIcon } from '../ui/icons'
 
 const DiagContext = createContext<Map<string, MappedDiagnostic[]>>(new Map())
@@ -43,7 +45,7 @@ export function Canvas() {
       >
         <ScopeSwitcher />
         {activeTree.length === 0 && (
-          <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-slate-400">
+          <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-hint">
             Drag blocks from the palette to start building.
           </p>
         )}
@@ -83,7 +85,7 @@ function ScopeSwitcher() {
       onClick={(e) => e.stopPropagation()}
       className="mb-2 flex flex-wrap items-center gap-2 text-xs"
     >
-      <span className="font-semibold text-slate-500">Editing:</span>
+      <span className="font-semibold text-caption">Editing:</span>
       <select
         value={scope ?? ''}
         onChange={(e) => setScope(e.target.value === '' ? null : e.target.value)}
@@ -123,7 +125,7 @@ function ScopeSwitcher() {
               setName('')
               setError(null)
             }}
-            className="text-slate-400 hover:text-slate-600"
+            className="text-caption hover:text-slate-800"
           >
             cancel
           </button>
@@ -131,9 +133,9 @@ function ScopeSwitcher() {
       ) : (
         <button
           onClick={() => setAdding(true)}
-          className="rounded border border-dashed border-slate-300 px-2 py-0.5 text-slate-500 hover:text-slate-700"
+          className="rounded border border-dashed border-slate-300 px-2 py-0.5 text-caption hover:text-slate-700"
         >
-          + New group…
+          <Plus size={12} aria-hidden className="mr-0.5 inline" />New group…
         </button>
       )}
       {error && <span className="text-red-600">{error}</span>}
@@ -186,53 +188,51 @@ function BlockView({ node }: { node: BlockNode }) {
     >
       <div {...listeners} {...attributes} className="flex cursor-grab items-center gap-1 px-2 py-1">
         {isContainer && (
-          <button
+          <IconButton
+            icon={collapsed ? ChevronRight : ChevronDown}
+            label={collapsed ? 'Expand' : 'Collapse'}
             onClick={(e) => {
               e.stopPropagation()
               toggleCollapsed(node.uid)
             }}
-            className="text-xs text-slate-400 hover:text-slate-700"
-          >
-            {collapsed ? '▸' : '▾'}
-          </button>
+          />
         )}
         <KindIcon kind={node.kind} />
-        <span className="truncate">{blockSummary(node)}</span>
-        {node.label && <span className="truncate text-xs italic text-slate-400">“{node.label}”</span>}
+        <span title={blockSummary(node)} className="truncate">{blockSummary(node)}</span>
+        {node.label && (
+          <span title={node.label} className="truncate text-xs italic text-caption">“{node.label}”</span>
+        )}
         <span className="ml-auto flex items-center gap-1">
           {diags.length > 0 && (
             <span
               title={diags.map((d) => d.message).join('\n')}
-              className="rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white"
+              className="rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white"
             >
               {diags.length}
             </span>
           )}
-          <button
-            title="Duplicate"
+          <IconButton
+            icon={Copy}
+            label="Duplicate"
             onClick={(e) => {
               e.stopPropagation()
               duplicateBlock(node.uid)
             }}
-            className="text-xs text-slate-300 hover:text-slate-600"
-          >
-            ⧉
-          </button>
-          <button
-            title="Delete"
+          />
+          <IconButton
+            icon={X}
+            label="Delete"
+            destructive
             onClick={(e) => {
               e.stopPropagation()
               removeBlock(node.uid)
             }}
-            className="text-xs text-slate-300 hover:text-red-600"
-          >
-            ✕
-          </button>
+          />
         </span>
       </div>
       {!collapsed && isContainer && <ContainerBody node={node} />}
       {collapsed && isContainer && (
-        <p className="px-2 pb-1 text-xs text-slate-400">…collapsed…</p>
+        <p className="px-2 pb-1 text-xs text-hint">…collapsed…</p>
       )}
     </div>
   )
@@ -285,19 +285,18 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
       {node.children.map((lane, i) => (
         <Fragment key={lane.uid}>
           <div className="min-w-48 flex-1 rounded border border-dashed border-slate-200 p-1">
-            <div className="flex items-center justify-between px-1 text-[10px] uppercase text-slate-400">
+            <div className="flex items-center justify-between px-1 text-[10px] uppercase text-caption">
               <span>lane {i + 1}</span>
               {isEmptyLane(lane) && (
-                <button
-                  title="Remove lane"
+                <IconButton
+                  icon={X}
+                  label="Remove lane"
+                  destructive
                   onClick={(e) => {
                     e.stopPropagation()
                     removeBlock(lane.uid)
                   }}
-                  className="hover:text-red-600"
-                >
-                  ✕
-                </button>
+                />
               )}
             </div>
             <BlockView node={lane} />
@@ -315,9 +314,9 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
             index: node.children.length,
           })
         }}
-        className="m-1 shrink-0 self-center rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-slate-400 hover:text-slate-600"
+        className="m-1 shrink-0 self-center rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-caption hover:text-slate-600"
       >
-        + lane
+        <Plus size={12} aria-hidden className="mr-0.5 inline" />lane
       </button>
     </div>
   )
@@ -328,7 +327,7 @@ function BranchLanes({ node }: { node: BranchNode }) {
   return (
     <div className="flex gap-2 px-2 pb-2">
       <div className="min-w-48 flex-1">
-        <p className="text-[10px] uppercase text-slate-400">then</p>
+        <p className="text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
       </div>
       <div className="min-w-48 flex-1">
@@ -338,25 +337,24 @@ function BranchLanes({ node }: { node: BranchNode }) {
               e.stopPropagation()
               patchBlock(node.uid, { else: [] })
             }}
-            className="mt-4 rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-slate-400 hover:text-slate-600"
+            className="mt-4 rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-caption hover:text-slate-600"
           >
-            + add else
+            <Plus size={12} aria-hidden className="mr-0.5 inline" />add else
           </button>
         ) : (
           <>
-            <p className="flex items-center justify-between text-[10px] uppercase text-slate-400">
+            <p className="flex items-center justify-between text-[10px] uppercase text-caption">
               <span>else</span>
               {node.else.length === 0 && (
-                <button
-                  title="Remove else"
+                <IconButton
+                  icon={X}
+                  label="Remove else"
+                  destructive
                   onClick={(e) => {
                     e.stopPropagation()
                     patchBlock(node.uid, { else: null })
                   }}
-                  className="hover:text-red-600"
-                >
-                  ✕
-                </button>
+                />
               )}
             </p>
             <BlockList parentUid={node.uid} slot="else" items={node.else} />
