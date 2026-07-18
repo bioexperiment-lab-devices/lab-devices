@@ -46,7 +46,7 @@ export function StreamIntoPicker(props: { value: string; onPick: (name: string) 
         onChange={(e) => {
           if (e.target.value === '__new__') setAdding(true)
           else {
-            setAdding(false)
+            cancelAdding()
             onPick(e.target.value)
           }
         }}
