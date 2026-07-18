@@ -82,7 +82,15 @@ export function Canvas() {
           <div className="w-max min-w-full">
             <ScopeSwitcher />
             {activeTree.length === 0 && (
-              <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-caption">
+              <p
+                className={
+                  // Same reasoning as ScopeSwitcher's strip, above: this hint's text must not
+                  // sit directly on the canvas hatch, so it goes solid white whenever a group
+                  // scope is active.
+                  'mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-caption ' +
+                  (scope === null ? '' : 'bg-white shadow-sm')
+                }
+              >
                 Drag blocks from the palette to start building.
               </p>
             )}

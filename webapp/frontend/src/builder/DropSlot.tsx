@@ -10,6 +10,7 @@ export function DropSlot(props: { at: SlotRef; horizontal: boolean; hint: boolea
   const { at, horizontal, hint } = props
   const { setNodeRef, isOver, active } = useDroppable({ id: slotDroppableId(at) })
   const tree = useDocStore((s) => s.tree)
+  const scope = useDocStore((s) => s.scope)
   const payload = (active?.data.current ?? null) as DragPayload | null
   const legal =
     payload !== null && (payload.source !== 'canvas' || canDrop(tree, payload.uid, at))
@@ -21,8 +22,13 @@ export function DropSlot(props: { at: SlotRef; horizontal: boolean; hint: boolea
         className={
           'm-1 flex-1 rounded border border-dashed px-2 py-3 text-center text-xs ' +
           (highlight
-            ? 'border-blue-400 bg-blue-50 text-blue-500'
-            : 'border-slate-300 text-caption')
+            ? // Already opaque (bg-blue-50 fully paints the box), so this branch never
+              // needs the hatch backing below regardless of scope.
+              'border-blue-400 bg-blue-50 text-blue-500'
+            : // Same reasoning as ScopeSwitcher's strip (Canvas.tsx): "drop here" must not
+              // sit directly on the canvas hatch, so it goes solid white whenever a group
+              // scope is active.
+              'border-slate-300 text-caption' + (scope === null ? '' : ' bg-white shadow-sm'))
         }
       >
         drop here
