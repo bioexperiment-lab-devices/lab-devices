@@ -196,11 +196,63 @@ describe('blockSummaryParts', () => {
     }
   })
 
-  it('splits a command into role, verb and params', () => {
-    const node = ALL_KIND_FIXTURES.find((n) => n.kind === 'command')!
-    const parts = blockSummaryParts(node)
-    expect(parts.filter((p) => p.role === 'subject').map((p) => p.text)).toEqual(['pump1'])
-    expect(parts.filter((p) => p.role === 'verb').map((p) => p.text)).toEqual(['dispense'])
+  // Every kind that emits a `subject` segment, with the exact text expected under each role.
+  //
+  // The join test above CANNOT catch a mis-tagged segment, and that is the whole reason this
+  // table exists: swapping `measure`'s `seg(node.device, 'subject')` / `seg(node.verb, 'verb')`
+  // tags reproduces 'od_meter · measure → od' byte-for-byte and leaves the entire rest of this
+  // suite green, while rendering every measure card on the canvas with the device and the verb
+  // emphasised the wrong way round (Canvas weights the roles differently, design §3.4). This
+  // table was mutation-verified against exactly that swap.
+  //
+  // Every fixture uses DISTINCT, non-empty subject and verb text on purpose — a fixture whose
+  // subject is '' or equal to its verb would make the assertion pass under the swap it exists
+  // to catch. The non-vacuity test below enforces that.
+  const SUBJECT_VERB_TAGS: Array<{
+    node: BlockNode
+    subject: string[]
+    verb: string[]
+  }> = [
+    { node: { uid: 'x', kind: 'command', device: 'pump1', verb: 'dispense', params: { volume_ml: 5 }, ...base },
+      subject: ['pump1'], verb: ['dispense'] },
+    { node: { uid: 'x', kind: 'measure', device: 'od_meter', verb: 'measure', into: 'od', params: {}, ...base },
+      subject: ['od_meter'], verb: ['measure'] },
+    { node: { uid: 'x', kind: 'operator_input', name: 'feed_ml', inputType: 'float', prompt: null, min: null, max: null, choices: null, ...base },
+      subject: ['feed_ml'], verb: ['input'] },
+    { node: { uid: 'x', kind: 'compute', into: 'ratio', value: 'od / blank', ...base },
+      subject: ['ratio'], verb: [] },
+    { node: { uid: 'x', kind: 'record', into: 'od_log', value: 'od', ...base },
+      subject: ['od_log'], verb: [] },
+    // The `var !== null` arm — the `var: null` arm emits no subject at all, so it is the
+    // wrong fixture for a subject-tag assertion.
+    { node: { uid: 'x', kind: 'for_each', var: 'tube', items: [1, 2, 3], body: [], ...base },
+      subject: ['tube'], verb: ['For each'] },
+    { node: { uid: 'x', kind: 'group_ref', name: 'service', args: { tube: 1 }, ...base },
+      subject: ['service'], verb: [] },
+  ]
+
+  const textsWithRole = (node: BlockNode, role: string) =>
+    blockSummaryParts(node).filter((p) => p.role === role).map((p) => p.text)
+
+  it('tags subject and verb segments for every kind that emits a subject', () => {
+    for (const { node, subject, verb } of SUBJECT_VERB_TAGS) {
+      expect(textsWithRole(node, 'subject'), `${node.kind} subject`).toEqual(subject)
+      expect(textsWithRole(node, 'verb'), `${node.kind} verb`).toEqual(verb)
+    }
+  })
+
+  it('covers every subject-emitting kind, with fixtures a tag swap cannot survive', () => {
+    // Non-vacuity: each expectation must actually distinguish the two roles.
+    for (const { node, subject, verb } of SUBJECT_VERB_TAGS) {
+      expect(subject.length, `${node.kind} must emit a subject`).toBeGreaterThan(0)
+      expect(subject.some((s) => s === ''), `${node.kind} subject must not be blank`).toBe(false)
+      expect(subject.some((s) => verb.includes(s)), `${node.kind} subject must differ from its verb`).toBe(false)
+    }
+    // Coverage: no kind may emit a subject without appearing in the table above.
+    const tabled = new Set(SUBJECT_VERB_TAGS.map((c) => c.node.kind))
+    for (const node of ALL_KIND_FIXTURES) {
+      if (textsWithRole(node, 'subject').length > 0) expect(tabled).toContain(node.kind)
+    }
   })
 
   it('marks the fault marker as its own segment', () => {

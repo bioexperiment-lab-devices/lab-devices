@@ -174,7 +174,62 @@ const states = [
   },
 ]
 
+const SETUP_HELP =
+  'Start the dev server from the checkout you mean to measure, on a port of its own, and ' +
+  'pass it explicitly:\n' +
+  '  npx vite --port 5179 --strictPort   # in THIS checkout\n' +
+  '  node tools/capture.mjs --url http://localhost:5179 --out <dir>\n' +
+  'Capturing against the wrong build reports clean states about code that is not there.'
+
+/** Staleness guard — run BEFORE anything is captured.
+ *
+ * `--url` is just a port, and a Vite left running by a DIFFERENT CHECKOUT answers on it
+ * exactly as convincingly as the right one. Measured during this increment: a stale server on
+ * :5173 was serving the main checkout while the work sat in a worktree. Capturing against it
+ * would have reported 21 clean states about code containing none of this increment — a silent
+ * pass, the worst possible outcome for a harness whose entire job is to catch regressions.
+ *
+ * So the harness proves the server is the right build instead of assuming it: load the torture
+ * fixture (whose main scope contains a `parallel` and a `loop`) and require the construct
+ * tints to actually be in the DOM. Any build predating the canvas visual language renders
+ * those containers untinted and fails here, loudly, before a single screenshot is written.
+ */
+async function assertServerServesThisCheckout(browser) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  const page = await context.newPage()
+  page.on('dialog', (d) => void d.accept())
+  let tinted = 0
+  try {
+    await gotoBuilder(page)
+    await importDoc(page, FIXTURES.torture)
+    tinted = await page.evaluate(
+      () => document.querySelectorAll('.bg-teal-50, .bg-fuchsia-50').length,
+    )
+  } catch (e) {
+    // A wrong build does not necessarily reach the tint check — it may not present a Builder
+    // tab, or may not import a fixture, at all. Any preflight failure is reported as the setup
+    // problem it is, rather than as a bare Playwright timeout the reader has to interpret.
+    throw new Error(
+      `SETUP ERROR — could not drive the app at ${baseUrl} far enough to verify it.\n` +
+        `Underlying failure: ${e}\n` +
+        `Is something else listening on that port, or is the server not running?\n${SETUP_HELP}`,
+    )
+  } finally {
+    await context.close()
+  }
+  if (tinted === 0) {
+    throw new Error(
+      `SETUP ERROR — stale or wrong dev server at ${baseUrl}.\n` +
+        'The torture fixture loaded, but its parallel/loop containers rendered with NO ' +
+        'construct tint (0 elements matching .bg-teal-50 / .bg-fuchsia-50). That markup ' +
+        'predates the canvas visual language, so this port is almost certainly serving a ' +
+        `DIFFERENT CHECKOUT.\n${SETUP_HELP}`,
+    )
+  }
+}
+
 const browser = await chromium.launch()
+await assertServerServesThisCheckout(browser)
 await mkdir(outDir, { recursive: true })
 const report = []
 let failures = 0
@@ -189,7 +244,7 @@ for (const vp of VIEWPORTS) {
     try {
       await state.setup(page)
       const violations = await page.evaluate(probeRules)
-      // Not a rule (the probe has exactly four), but the number the layout work is judged
+      // Not a rule (the probe has exactly five), but the number the layout work is judged
       // on: does the document, or the Canvas's single scroller, exceed the viewport?
       const metrics = await page.evaluate(() => {
         const doc = document.documentElement

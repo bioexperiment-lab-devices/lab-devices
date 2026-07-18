@@ -82,7 +82,7 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
           {group.type}
         </span>
         {!group.known && (
-          <span className="ml-1 shrink-0 font-normal text-amber-600">— unknown device type</span>
+          <span className="ml-1 shrink-0 font-normal text-amber-700">— unknown device type</span>
         )}
       </p>
       {group.roles.length === 0 ? (

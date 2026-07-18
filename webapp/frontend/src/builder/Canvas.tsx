@@ -16,6 +16,7 @@ import { ScrollFades, useScrollEdges } from '../ui/ScrollX'
 import { useDismissable } from '../ui/useDismissable'
 import {
   cardBorderClass,
+  constructBorderClass,
   headerFillClass,
   interiorFillClass,
   isFlowKind,
@@ -475,8 +476,13 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
         select(lane.uid)
       }}
       className={
+        // A lane is a selectable `serial`, so it wears BlockView's selection cue exactly —
+        // `ring-2 ring-blue-400` (see the comment on BlockView's card class). The same state
+        // must not have two renderings: W13's `ring-1 ring-blue-300` survived here after
+        // every other selectable card moved to ring-2, which left lane selection reading as
+        // a weaker kind of selected on a canvas where the ring is the load-bearing cue.
         'min-w-48 flex-initial rounded border border-dashed p-1 ' +
-        (selected ? 'border-blue-500 ring-1 ring-blue-300 ' : 'border-slate-200 ') +
+        (selected ? 'border-blue-500 ring-2 ring-blue-400 ' : 'border-slate-200 ') +
         (isDragging ? 'opacity-40' : '')
       }
     >
@@ -552,11 +558,14 @@ function BranchLanes({ node }: { node: BranchNode }) {
     //     it belongs to the card, not to whichever arm happens to be empty. Same doc, same
     //     canvas: THEN 461.2px (its content) / ELSE 192px (the min-w-48 floor).
     <div className="flex gap-2">
-      <div className="min-w-48 flex-initial rounded border border-violet-200 px-1 pb-1">
+      {/* The arm borders read `branch`'s tint out of CONSTRUCT_CHROME rather than repeating
+          `border-violet-200`: construct identity is encoded in exactly one place, so
+          retinting branch retints its arms too. */}
+      <div className={'min-w-48 flex-initial rounded border px-1 pb-1 ' + constructBorderClass('branch')}>
         <p className="flex h-6 items-center text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
       </div>
-      <div className="min-w-48 flex-initial rounded border border-violet-200 px-1 pb-1">
+      <div className={'min-w-48 flex-initial rounded border px-1 pb-1 ' + constructBorderClass('branch')}>
         {node.else === null ? (
           <>
             <p className="flex h-6 items-center text-[10px] uppercase text-caption">else</p>

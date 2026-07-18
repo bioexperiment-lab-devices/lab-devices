@@ -1,11 +1,18 @@
 # Canvas visual language — probe evidence
 
-Measured against the running app (this worktree's Vite dev server on `:5174`, proxying `/api`
+Measured against the running app (this worktree's Vite dev server on `:5179`, proxying `/api`
 to the FakeLab devserver on `:8000`) with:
 
 ```
-cd webapp/frontend && npm run probe:selftest && npm run capture -- --url http://localhost:5174 --out ../../docs/visual-language/after
+cd webapp/frontend && npm run probe:selftest && npm run capture -- --url http://localhost:5179 --out ../../docs/visual-language/after
 ```
+
+**Always pass `--url` with a port you started yourself.** A Vite left running by a *different
+checkout* answers on the default port exactly as convincingly as the right one — during this
+work a stale server on `:5173` was serving the main checkout while the code under test sat in
+a worktree. `capture.mjs` now refuses to proceed unless the running app renders this
+increment's construct tints (see "Staleness guard" below), so that mistake fails loudly
+instead of reporting 21 clean states about code that is not there.
 
 Raw data: `probe.json` (one record per state/viewport, every violation verbatim).
 Screenshots: 21 PNGs, `<state>@<viewport>.png`.
@@ -45,23 +52,93 @@ inside a hatched scope. `group-scope-deep` loads `ui-audit-torture.json` and swi
 | R2 `truncate-without-title` | **0** | 0 |
 | R3 `tiny-target` | **0** | 0 |
 | R4 `sibling-height-mismatch` | **0** | 0 |
-| R5 `text-contrast` | **78** | 5 |
+| R5 `text-contrast` | **0** | 0 |
 
-`sibling-height-mismatch` is 0, as required. `probe:selftest` passes:
+**All five rules are at 0.** R5 measured 78 occurrences / 5 distinct findings on its first run;
+all three code sites behind those findings were fixed in the final review pass (below), and the
+re-capture reports 0. R5 has now printed 0 at least once, so it is a rule that can go red
+meaningfully rather than one that is red by default and therefore ignored.
+
+`probe:selftest` passes, which is what keeps that 0 from being a broken-rule 0:
 `PASS — probe found exactly the planted set: {"clipped-overflow":1,"sibling-height-mismatch":3,"text-contrast":2,"tiny-target":1,"truncate-without-title":1}`
 
-Also measured, not a rule: `pageOverflowsViewport` is false in all 21 combinations.
+Also measured, not a rule: `pageOverflowsViewport` is false in all 21 combinations, and there
+were **0 setup failures**.
 
-## R5 `text-contrast` — first run, every violation
+## Staleness guard
 
-R5 was added in `b460ac0` and had **never been run against the real app** before this task, so
-there is no "before" count to compare against; 78 is the first measurement. The 78 occurrences
-are 5 distinct findings repeated across states and viewports.
+`capture.mjs` runs one preflight before any screenshot: it loads the torture fixture and
+requires the DOM to contain this increment's construct tints (`.bg-teal-50` / `.bg-fuchsia-50`,
+emitted by the `parallel` and `loop` containers in that fixture's main scope). A build predating
+the canvas visual language renders those containers untinted and fails the preflight with an
+explanatory setup error naming the port. Any other preflight failure (no Builder tab, fixture
+import never completes) is re-thrown with the same guidance rather than as a bare Playwright
+timeout.
 
-**All 5 are pre-existing. 0 were caused by this increment.** Blame is against the branch base
+Verified by pointing the harness at the stale main-checkout server still listening on `:5173`:
+
+```
+$ node tools/capture.mjs --url http://localhost:5173 --out /tmp/stale-check
+Error: SETUP ERROR — could not drive the app at http://localhost:5173 far enough to verify it.
+Underlying failure: TimeoutError: locator.click: Timeout 30000ms exceeded.
+  - waiting for getByRole('button', { name: /^2\s*Builder$/ })
+Is something else listening on that port, or is the server not running?
+Start the dev server from the checkout you mean to measure, on a port of its own, ...
+```
+
+No screenshots were written and the process exited non-zero — a silent pass converted into an
+obvious failure.
+
+## R5 `text-contrast` — the three sites fixed
+
+Measured on the running app, before and after:
+
+| Site | Before | After | Change |
+|---|---|---|---|
+| `TabShell.tsx:35` tab numerals | **2.88:1** | **4.76:1** | `opacity-60` → `text-hint` |
+| `Toolbar.tsx:168` unsaved dot | **3.20:1** | **5.03:1** | `text-amber-600` → `text-amber-700` |
+| `fields.tsx:31` required marker | **3.64:1** | **4.77:1** | `text-red-500` → `text-red-600` |
+
+The tab numerals keep their hierarchy without opacity: slate-500 at full alpha stays quieter
+than both the active (slate-900) and inactive (slate-600) tab label while clearing AA on the
+white header. `opacity` is folded into text alpha by R5, which is what dragged slate-600 from
+7.58:1 down to 2.88:1 — the reason the rule is right to reject it.
+
+### Four further `text-amber-600` sites, fixed for consistency
+
+`text-amber-600` measures 3.20:1 on white (2.92:1 on `bg-slate-100`) and sat on four other
+meaning-carrying text nodes that no captured state currently mounts — `Inspector.tsx:409`,
+`Inspector.tsx:827`, `fields.tsx:140`, `RolesSection.tsx:85`, all validation/warning strings.
+R5 did not report them only because those states are not in the harness; the defect is
+identical to the Toolbar dot's. Fixing the dot alone would also have left the app with two
+different warning ambers. All four moved to `text-amber-700`, which was measured clear on every
+background they can sit on:
+
+| | `bg-white` | `bg-slate-50` | `bg-slate-100` | `bg-amber-50` |
+|---|---|---|---|---|
+| `text-amber-600` | 3.20 | 3.06 | 2.92 | 3.09 |
+| `text-amber-700` | **5.03** | **4.81** | **4.59** | **4.85** |
+
+`src/ui/icons.tsx:42` keeps `text-amber-600` for the alarm *icon*: that is non-text content
+(WCAG 1.4.11, 3:1 floor), which 3.20:1 clears, and recolouring it would change the alarm
+block's identity.
+
+## R5 `text-contrast` — the first run, for the record
+
+R5 was added in `b460ac0` and had **never been run against the real app** before this work, so
+there is no "before" count to compare against; **78** occurrences / **5** distinct findings was
+the first measurement. The 78 are 5 distinct findings repeated across states and viewports.
+
+**All 5 were pre-existing. 0 were caused by this increment.** Blame is against the branch base
 `c1f8ed0` (`chore(main): release 0.9.0`).
 
-### Pre-existing (not fixed in this increment)
+They were initially recorded and left unfixed, on the triage rule that this increment fixes what
+it breaks. The final whole-branch review overturned that: a rule that has *never* printed 0 is
+the "permanently red, therefore ignored" failure mode R1's own comments warn about, which makes
+R5 worthless as a gate no matter who introduced the findings. All three sites were therefore
+fixed, and the counts above are the re-measurement.
+
+### The 5 findings as first measured (all now fixed)
 
 | # | Measured | Element | Origin | States |
 |---|---|---|---|---|
@@ -76,13 +153,15 @@ Note on the brief's predictions: the `TabShell.tsx:35` hit was predicted and is 
 2.88:1. The predicted `ProblemsPanel.tsx:32` hit **did not occur**; the amber finding is
 `Toolbar.tsx:166` instead. Recorded as measured, not as predicted.
 
-None of these three are touched by this increment (no construct tint, zebra stripe, role swatch
-or hatch is involved — all three sit on plain white or the pre-existing slate-100 backdrop), so
-per the task's triage rule they are recorded here and **not** fixed.
+None of these three is *caused* by this increment (no construct tint, zebra stripe, role swatch
+or hatch is involved — all three sit on plain white or the pre-existing slate-100 backdrop).
+They are nonetheless fixed here, so that R5 can print 0. Line numbers above are the pre-fix
+ones; see the after-table earlier in this document for the current lines and ratios.
 
 ### Caused by this increment
 
-**None.** No fix was required, and none was made.
+**None.** Every new surface introduced by the canvas visual language cleared AA on first
+measurement — see the next section.
 
 ## Proof the new surfaces were actually measured
 

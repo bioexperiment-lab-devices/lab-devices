@@ -53,6 +53,19 @@ export function cardBorderClass(opts: {
   return isFlowKind(opts.kind) ? CONSTRUCT_CHROME[opts.kind].border : NEUTRAL_BORDER
 }
 
+/** A construct's border class on its own, for chrome that belongs to a container but is not
+ * the container's own card — the branch card's THEN/ELSE arms, which are drawn inside the
+ * branch card and must carry the branch tint.
+ *
+ * This exists so that identity is encoded ONCE. The arms previously hardcoded
+ * `border-violet-200`, which meant retinting `branch` in the map above left them violet and
+ * quietly broke the map's whole guarantee. Like every other helper here it SELECTS and
+ * returns the class; callers must not concatenate a competing border-colour onto it.
+ */
+export function constructBorderClass(kind: FlowKind): string {
+  return CONSTRUCT_CHROME[kind].border
+}
+
 /** Header-row fill for containers; empty string for leaves, which stay `bg-white`. */
 export function headerFillClass(kind: BlockNode['kind']): string {
   return isFlowKind(kind) ? CONSTRUCT_CHROME[kind].header : ''
