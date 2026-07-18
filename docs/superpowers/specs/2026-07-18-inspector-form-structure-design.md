@@ -122,10 +122,13 @@ A tail section is **collapsed by default and auto-opens when it holds a non-defa
 - On failure holds a non-default value when `onError === 'continue'` (`'fail'` is the
   engine default) or `retry !== undefined`.
 
-Open/closed state lives in `BlockForm`. `Inspector` already mounts it with
-`key={node.uid}`, so the state resets on every selection change and the auto-open
-computation re-runs from the newly selected node — no stale disclosure carries between
-blocks, and two people looking at the same document see the same panel.
+Open/closed state lives in `InspectorSection`'s own local `useState`, not lifted into
+`BlockForm`. That is sufficient because `Inspector` already mounts `BlockForm` with
+`key={node.uid}`, so selecting another block remounts the whole subtree — every
+`InspectorSection` inside it included — and the auto-open computation re-runs from the
+newly selected node. No stale disclosure carries between blocks, and two people looking
+at the same document see the same panel, without the state needing a home any higher
+than the component that owns it.
 
 **A configured value is never hidden.** The user may collapse a section that holds a value,
 because the collapsed header carries a summary of what is set:
@@ -157,10 +160,18 @@ rendering** (`webapp/frontend/CLAUDE.md`), so any of this logic left inside `Ins
 is untestable by construction. The same reasoning produced `builder/paletteSections.ts` in
 W12 and `builder/roleGroups.ts` in W13.
 
-Membership is typed as an **exhaustive** map over `BlockNode['kind']`, so adding a
-fifteenth kind is a compile error until it declares its section assignment. W12's
+`failureFields` is typed as an **exhaustive** `Record<BlockNode['kind'], FailureField[]>`,
+so adding a fifteenth kind is a compile error until it declares its failure policy. W12's
 `Record<Exclude<PaletteKind,'group_ref'>, string>` test caught precisely this class —
 a hand-maintained array of kinds would have passed with a kind silently missing.
+
+`timingFields` is deliberately NOT a `Record` over kind, because timing eligibility is
+**positional** rather than a property of the kind alone: `gapAfterEligible` depends on
+`parentKind` (false for any block sitting directly in a `parallel`, regardless of what
+kind it is), and `startOffset`'s eligibility is the mirror image (true only for a direct
+`parallel` child). A kind-keyed map has no slot for "depends on where this node sits in
+its parent," so `timingFields(kind, parentKind)` is a function of both, not a lookup —
+the same node's membership can differ between two places it might be dragged to.
 
 ## 5. Body ordering fixes
 
@@ -186,12 +197,19 @@ User-requested, and the reason it is scoped here rather than deferred: this incr
 a new control type (the disclosure header) to a panel full of existing ones, which is
 exactly when height and width drift re-enters.
 
-- The disclosure header is a full-width button and therefore takes
-  `inlineButtonClass({ width: 'w-full' })`. **Never a concatenated `w-full`** — `w-full`
-  and fixed widths are equal-specificity utilities in the same `@layer utilities` block, so
-  an appended width loses to declaration order silently (`webapp/frontend/CLAUDE.md`,
-  control-token rules; the W11 and W12 cascade traps). Any class baked into a helper is
-  un-overridable by concatenation, for every property.
+- The disclosure header is a full-width button, but it does NOT reuse
+  `inlineButtonClass({ width: 'w-full' })` — that helper bakes in `justify-center` and a
+  border, and a section header needs left-aligned text with no border. Appending
+  `justify-start` at the call site would not have worked: `justify-center` and
+  `justify-start` are equal-specificity utilities in the same `@layer utilities` block, so
+  the one declared later in the compiled stylesheet wins regardless of class-string order,
+  and the append would lose silently (`webapp/frontend/CLAUDE.md`, control-token rules; the
+  W11 and W12 cascade traps). The implementation instead adds a dedicated
+  `sectionHeaderClass()` to `src/ui/controls.ts` — borderless, left-aligned, still carrying
+  `CONTROL_H` so the header measures flush with the 24px controls in the same column. Any
+  class baked into a helper is un-overridable by concatenation, for every property; a
+  distinct alignment/border contract gets a distinct helper, not a concatenation onto an
+  existing one.
 - Every text input, select and inline button in the Inspector renders at the 24px
   `CONTROL_H` token from `src/ui/controls.ts`. Rows mixing a control with an `IconButton`
   (the unknown-param remove button, `ExpressionInput`'s help button, the bool-param

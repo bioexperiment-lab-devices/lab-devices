@@ -26,23 +26,29 @@ export function InspectorSection(props: {
   const Chevron = open ? ChevronDown : ChevronRight
   return (
     <div className="mt-2 border-t border-slate-200 pt-2">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className={sectionHeaderClass()}
-      >
-        <Chevron size={12} aria-hidden className="shrink-0" />
-        <span className="shrink-0">{props.title}</span>
-        {!open && props.summary !== null && (
-          <span
-            title={props.summary}
-            className="min-w-0 truncate font-normal normal-case text-caption"
-          >
-            · {props.summary}
-          </span>
-        )}
-      </button>
+      {/* Wrapped in an `h3`, not just a `button`: without it a screen reader navigating by
+          heading finds only the body's `Params`/`Args` sub-labels (still `h3`s) and never
+          the two real section headers — the exact hierarchy inversion this increment (D3)
+          exists to remove, just moved from the visual layer to the accessibility tree. */}
+      <h3>
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className={sectionHeaderClass()}
+        >
+          <Chevron size={12} aria-hidden className="shrink-0" />
+          <span className="shrink-0">{props.title}</span>
+          {!open && props.summary !== null && (
+            <span
+              title={props.summary}
+              className="min-w-0 truncate font-normal normal-case text-caption"
+            >
+              · {props.summary}
+            </span>
+          )}
+        </button>
+      </h3>
       {open && <div className="pt-1">{props.children}</div>}
     </div>
   )
