@@ -88,6 +88,27 @@ const scopeSelect = (page) => page.locator('select:has(option:text-is("Main work
 /** The ScopeSwitcher row itself, so "New group…"/"Add" resolve inside it. */
 const scopeRow = (page) => scopeSelect(page).locator('xpath=..')
 
+/** A block whose DIRECT parent is `parallel` — the only position where `timingFields`
+ * (inspectorRules.ts) offers `Start offset` instead of `Gap after`. Settled on lane 1 of
+ * ui-audit-torture.json's top-level 8-lane `parallel` (blocks[5]): every lane there is a
+ * `serial`, and W13 makes a `serial` lane render AS the lane itself (Canvas.tsx `Lane`) —
+ * its handle row's accessible text is `lane 1` (from the lane index), immediately followed
+ * by the block's own quoted label (also "lane 1" in this fixture, coincidentally), so the
+ * DOM text is `lane 1"lane 1"`. Confirmed empirically against the running app: selecting
+ * this block and opening Timing shows exactly one `Start offset` field and zero `Gap
+ * after` fields — see the `inspector-tail-start-offset` state below, which asserts this
+ * rather than trusting the selector. */
+const PARALLEL_CHILD = /^lane 1\b/
+
+/** Expand a collapsed Inspector tail section by title. The accessible name gains the
+ * collapsed-state summary once a value is set (`Timing · gap after 30s`), so anchor the
+ * match at the start rather than using an exact name. */
+async function expandSection(page, title) {
+  const header = page.getByRole('button', { name: new RegExp(`^${title}`) })
+  if ((await header.getAttribute('aria-expanded')) === 'false') await header.click()
+  await page.waitForTimeout(150)
+}
+
 const states = [
   {
     name: 'builder-morbidostat',
@@ -154,6 +175,97 @@ const states = [
       await page.waitForTimeout(400)
       await page.getByRole('button', { name: 'Groups', exact: true }).click()
       await page.waitForTimeout(200)
+    },
+  },
+  {
+    name: 'inspector-tail-autoopen',
+    description:
+      'both tail sections auto-opened by non-default values. Sets the values, then selects ' +
+      'AWAY and back so BlockForm remounts and the auto-open path (summary !== null) is what ' +
+      'opens them — not the clicks that set them.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.torture)
+      await selectBlock(page, /^\s*wait /)
+      await expandSection(page, 'Timing')
+      await page.getByLabel('Gap after').fill('30s')
+      await page.getByLabel('Gap after').press('Enter')
+      await expandSection(page, 'On failure')
+      await page.getByLabel('On error').selectOption('continue')
+      await page.waitForTimeout(200)
+      await selectBlock(page, /^\s*Abort if /) // away…
+      await selectBlock(page, /^\s*wait /) // …and back: remount, auto-open
+    },
+  },
+  {
+    name: 'inspector-tail-expanded',
+    description:
+      'a block at all defaults with both tail sections manually expanded — the collapsed ' +
+      'default would leave R4 (sibling-height-mismatch) nothing to measure on these rows, ' +
+      'which is exactly how W12 shipped a vacuously clean probe run.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.torture)
+      await selectBlock(page, /^\s*Alarm if /)
+      await expandSection(page, 'Timing')
+      await expandSection(page, 'On failure')
+    },
+  },
+  {
+    name: 'inspector-retry-hazard',
+    description:
+      'the densest mixed-control rows in the panel: the amber allow_repeat hazard box open ' +
+      'under On failure, for a verb the catalog does not report as retry_safe.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.morbidostat)
+      // pump.dispense takes a RELATIVE volume_ml, so the engine registry leaves it
+      // retry_safe = False — retrying after a partial dispense double-doses the culture.
+      // It lives in groups.service, which the main tree cannot reach.
+      await selectScope(page, 'service')
+      await selectBlock(page, / · dispense/)
+      await expandSection(page, 'On failure')
+      await page.getByLabel('retry on failure').check()
+      await page.waitForTimeout(200)
+    },
+  },
+  {
+    name: 'inspector-tail-start-offset',
+    description:
+      'a block sitting in a parallel lane, whose Timing section offers Start offset INSTEAD of ' +
+      'Gap after (a lane has no next-in-list). The only state that renders that control, and ' +
+      'the one field the Task 4 browser check never exercised.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.torture)
+      await selectBlock(page, PARALLEL_CHILD)
+      await expandSection(page, 'Timing')
+      // Assert PARALLEL_CHILD really is a parallel's direct child, not just trust the
+      // selector — a `Gap after` field here would mean the block picked has a `serial`
+      // or other non-parallel parent, and every row below would measure the wrong shape.
+      if ((await page.getByLabel('Start offset').count()) !== 1) {
+        throw new Error('PARALLEL_CHILD did not render Start offset — not a parallel lane child')
+      }
+      if ((await page.getByLabel('Gap after').count()) !== 0) {
+        throw new Error('PARALLEL_CHILD rendered Gap after — not a parallel lane child')
+      }
+    },
+  },
+  {
+    name: 'inspector-tail-absent',
+    description:
+      'a for_each block, which renders NO tail at all (expand.py:26 forbids all four ' +
+      'block-level keys on a splice). Guards the empty-section path against a regression ' +
+      'that renders an empty bordered box.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.torture)
+      // No leading `\s*` anchor: for_each is the one kind with no Lucide icon (icons.tsx
+      // BLOCK_ICONS.for_each is null) — KindIcon renders a literal `∀` text glyph instead,
+      // which lands in the card header's textContent BEFORE blockSummary's text. Anchoring
+      // at the very start (as the other selectBlock regexes do) never matches; confirmed
+      // empirically against the running app.
+      await selectBlock(page, /For each /)
     },
   },
 ]
