@@ -377,6 +377,15 @@ export function newPaletteNode(kind: PaletteKind): BlockNode {
   }
 }
 
+/** A `group_ref` pre-filled with the group being called. `newPaletteNode` takes a kind and
+ * nothing else, so the Groups panel's per-group chips (design 2026-07-18 §6) get their own
+ * constructor rather than pushing a group-shaped optional parameter through every unrelated
+ * `newPaletteNode` call. `args` is left empty for the Inspector to fill, exactly as a blank
+ * `Group ref` behaved before. */
+export function newGroupRefNode(name: string): BlockNode {
+  return { ...nodeBase(), kind: 'group_ref', name, args: {} }
+}
+
 export function newVerbNode(role: string, verb: string, spec: VerbSpec): BlockNode {
   return spec.kind === 'measure'
     ? { ...nodeBase(), kind: 'measure', device: role, verb, into: '', params: {} }

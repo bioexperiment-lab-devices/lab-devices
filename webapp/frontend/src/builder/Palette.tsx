@@ -180,7 +180,7 @@ export function Palette() {
             <Chip
               key={s.kind}
               id={`palette-structure-${s.kind}`}
-              payload={{ source: 'palette-structure', kind: s.kind }}
+              payload={{ source: 'palette-block', kind: s.kind }}
             >
               <KindIcon kind={s.kind} className="mr-1" />
               {s.title}
@@ -194,7 +194,7 @@ export function Palette() {
             <Chip
               key={c.kind}
               id={`palette-control-${c.kind}`}
-              payload={{ source: 'palette-structure', kind: c.kind }}
+              payload={{ source: 'palette-block', kind: c.kind }}
             >
               <KindIcon kind={c.kind} className="mr-1" />
               {c.title}
@@ -208,7 +208,7 @@ export function Palette() {
             <Chip
               key={r.kind}
               id={`palette-repeat-${r.kind}`}
-              payload={{ source: 'palette-structure', kind: r.kind }}
+              payload={{ source: 'palette-block', kind: r.kind }}
             >
               <KindIcon kind={r.kind} className="mr-1" />
               {r.title}
