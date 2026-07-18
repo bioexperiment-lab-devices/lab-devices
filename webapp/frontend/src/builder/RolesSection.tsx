@@ -5,10 +5,10 @@ import { useDocStore } from '../stores/docStore'
 import { useRoleColorStore } from '../stores/roleColorStore'
 import type { Catalog } from '../types/catalog'
 import { effectiveSelection, roleGroups, type RoleTypeGroup } from './roleGroups'
-import { ROLE_SWATCH_CLASSES, roleColorKey } from './roleColors'
+import { ROLE_SWATCH_CLASSES, ROLE_SWATCH_LABELS, roleColorKey } from './roleColors'
 import { Chip } from './Chip'
 import { KindIcon } from '../ui/icons'
-import { badgeClass, controlClass, inlineButtonClass } from '../ui/controls'
+import { badgeClass, CONTROL_H, controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 import { useDismissable } from '../ui/useDismissable'
 
@@ -176,14 +176,19 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
   )
 }
 
-/** Colour control for the selected role: a popover of the eight ramp swatches plus a
- * "no colour" choice. Uses `useDismissable` for outside-click/Esc, the same as every other
- * popover here — a popover that cannot be dismissed was finding #6 of the W11 round. */
+/** Colour control for the selected role: a popover of the eight ramp swatches plus two
+ * resets — "auto" (let the app choose: positional assignment, `resetColor`, forgets the
+ * override key entirely) and "no colour" (explicitly colourless, `clearColor`, writes a
+ * `null` override). roleColorStore.ts documents these as distinct states — an absent key
+ * vs. an explicit null — so the two buttons must read as distinct choices, not synonyms.
+ * Uses `useDismissable` for outside-click/Esc, the same as every other popover here — a
+ * popover that cannot be dismissed was finding #6 of the W11 round. */
 function RoleColorPicker({ name, type }: { name: string; type: string }) {
   const [open, setOpen] = useState(false)
   const ref = useDismissable(open, () => setOpen(false))
   const setColor = useRoleColorStore((s) => s.setColor)
   const clearColor = useRoleColorStore((s) => s.clearColor)
+  const resetColor = useRoleColorStore((s) => s.resetColor)
   const key = roleColorKey(name, type)
   return (
     <div ref={ref} className="relative inline-flex">
@@ -200,16 +205,27 @@ function RoleColorPicker({ name, type }: { name: string; type: string }) {
           {ROLE_SWATCH_CLASSES.map((cls) => (
             <button
               key={cls}
-              title={cls}
-              aria-label={cls}
+              title={ROLE_SWATCH_LABELS[cls]}
+              aria-label={ROLE_SWATCH_LABELS[cls]}
               onClick={() => {
                 setColor(key, cls)
                 setOpen(false)
               }}
-              className={`h-4 w-4 rounded-sm ${cls}`}
+              className={`${CONTROL_H} w-6 rounded-sm ${cls}`}
             />
           ))}
           <button
+            title="Let the app choose (auto-assigned by role order)"
+            onClick={() => {
+              resetColor(key)
+              setOpen(false)
+            }}
+            className={inlineButtonClass({ subtle: true })}
+          >
+            auto
+          </button>
+          <button
+            title="This role has no colour"
             onClick={() => {
               clearColor(key)
               setOpen(false)

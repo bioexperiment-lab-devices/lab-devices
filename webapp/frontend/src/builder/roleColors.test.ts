@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { ROLE_SWATCH_CLASSES, assignRoleColors, roleColorKey } from './roleColors'
+import {
+  ROLE_SWATCH_CLASSES,
+  ROLE_SWATCH_LABELS,
+  assignRoleColors,
+  roleColorKey,
+} from './roleColors'
 
 const roles = (...entries: [string, string][]) =>
   Object.fromEntries(entries.map(([name, type]) => [name, { type }]))
@@ -17,6 +22,26 @@ describe('ROLE_SWATCH_CLASSES', () => {
                       'yellow', 'emerald', 'green']
     for (const c of ROLE_SWATCH_CLASSES) {
       for (const family of reserved) expect(c).not.toContain(`-${family}-`)
+    }
+  })
+})
+
+describe('ROLE_SWATCH_LABELS', () => {
+  it('has a human-readable label for every ramp class', () => {
+    for (const c of ROLE_SWATCH_CLASSES) expect(ROLE_SWATCH_LABELS[c]).toBeTypeOf('string')
+  })
+
+  it('stays the same length as ROLE_SWATCH_CLASSES', () => {
+    // A ninth ramp colour added without a matching label must fail this suite rather than
+    // ship a swatch whose accessible name falls through to `undefined`.
+    expect(Object.keys(ROLE_SWATCH_LABELS)).toHaveLength(ROLE_SWATCH_CLASSES.length)
+  })
+
+  it('gives no ramp class an empty or raw-class-string label', () => {
+    for (const c of ROLE_SWATCH_CLASSES) {
+      const label = ROLE_SWATCH_LABELS[c]
+      expect(label.length).toBeGreaterThan(0)
+      expect(label).not.toContain('bg-')
     }
   })
 })

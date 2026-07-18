@@ -31,6 +31,23 @@ export const ROLE_SWATCH_CLASSES = [
 
 export type RoleSwatchClass = (typeof ROLE_SWATCH_CLASSES)[number]
 
+/** Human-readable name for each ramp swatch. Colocated with `ROLE_SWATCH_CLASSES` so the
+ * two never drift apart — the picker's swatch buttons use this for `title`/`aria-label`
+ * instead of the raw Tailwind class string (a screen reader announcing "bg-teal-500 button"
+ * is an implementation detail leaking into the accessibility layer). Keyed by class rather
+ * than by ramp index so a future reorder of `ROLE_SWATCH_CLASSES` can't silently pair a
+ * swatch with the wrong name. */
+export const ROLE_SWATCH_LABELS: Record<RoleSwatchClass, string> = {
+  'bg-teal-500': 'Teal',
+  'bg-violet-500': 'Violet',
+  'bg-fuchsia-500': 'Fuchsia',
+  'bg-lime-600': 'Lime',
+  'bg-cyan-600': 'Cyan',
+  'bg-purple-500': 'Purple',
+  'bg-pink-500': 'Pink',
+  'bg-stone-500': 'Stone',
+}
+
 /** Persistence key. Type is part of it so `pump:x` and `sensor:x` are different roles —
  * a bare name would let a rename-and-retype silently inherit the old colour. */
 export function roleColorKey(name: string, type: string): string {
