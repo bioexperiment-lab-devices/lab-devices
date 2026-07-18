@@ -97,11 +97,6 @@
       },
       "horizontalScrollers": [
         {
-          "selector": "w-64.shrink-0.space-y-2.overflow-y-auto.rounded-lg.border",
-          "scrollWidth": 609,
-          "clientWidth": 254
-        },
-        {
           "selector": "h-full.overflow-auto.bg-slate-100.p-4",
           "scrollWidth": 3822,
           "clientWidth": 382
@@ -123,11 +118,6 @@
       },
       "horizontalScrollers": [
         {
-          "selector": "w-64.shrink-0.space-y-2.overflow-y-auto.rounded-lg.border",
-          "scrollWidth": 609,
-          "clientWidth": 254
-        },
-        {
           "selector": "h-full.overflow-auto.bg-slate-100.p-4",
           "scrollWidth": 855,
           "clientWidth": 382
@@ -238,11 +228,6 @@
       },
       "horizontalScrollers": [
         {
-          "selector": "w-64.shrink-0.space-y-2.overflow-y-auto.rounded-lg.border",
-          "scrollWidth": 609,
-          "clientWidth": 254
-        },
-        {
           "selector": "h-full.overflow-auto.bg-slate-100.p-4",
           "scrollWidth": 3822,
           "clientWidth": 798
@@ -263,11 +248,6 @@
         "clientWidth": 798
       },
       "horizontalScrollers": [
-        {
-          "selector": "w-64.shrink-0.space-y-2.overflow-y-auto.rounded-lg.border",
-          "scrollWidth": 609,
-          "clientWidth": 254
-        },
         {
           "selector": "h-full.overflow-auto.bg-slate-100.p-4",
           "scrollWidth": 855,
@@ -379,11 +359,6 @@
       },
       "horizontalScrollers": [
         {
-          "selector": "w-64.shrink-0.space-y-2.overflow-y-auto.rounded-lg.border",
-          "scrollWidth": 609,
-          "clientWidth": 254
-        },
-        {
           "selector": "h-full.overflow-auto.bg-slate-100.p-4",
           "scrollWidth": 3822,
           "clientWidth": 1278
@@ -401,11 +376,6 @@
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": null,
       "horizontalScrollers": [
-        {
-          "selector": "w-64.shrink-0.space-y-2.overflow-y-auto.rounded-lg.border",
-          "scrollWidth": 609,
-          "clientWidth": 254
-        },
         {
           "selector": "flex.w-80.shrink-0.flex-col.overflow-y-auto.rounded-lg",
           "scrollWidth": 757,
