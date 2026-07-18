@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ChevronDown, ChevronRight, TriangleAlert } from 'lucide-react'
 import { useDocStore } from '../stores/docStore'
 
 /** Bottom problems strip: every diagnostic from the last validate call. Rows that
@@ -19,8 +20,13 @@ export function ProblemsPanel() {
         onClick={() => setOpen(!open)}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-red-700"
       >
-        <span>⚠ {validationError ? 'validation unavailable' : `${diagnostics.length} problem${diagnostics.length === 1 ? '' : 's'}`}</span>
-        <span className="ml-auto text-slate-400">{open ? '▾' : '▸'}</span>
+        <span className="flex items-center gap-1">
+          <TriangleAlert size={14} aria-hidden />
+          {validationError ? 'validation unavailable' : `${diagnostics.length} problem${diagnostics.length === 1 ? '' : 's'}`}
+        </span>
+        <span className="ml-auto text-slate-400">
+          {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+        </span>
       </button>
       {open && (
         <ul className={`max-h-40 overflow-y-auto border-t border-red-100 px-3 py-1${validationError ? ' opacity-50' : ''}`}>
