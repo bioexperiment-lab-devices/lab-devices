@@ -233,6 +233,18 @@ export function findLocation(tree: BlockNode[], uid: string): ParentInfo | null 
 const clampIndex = (index: number, length: number): number =>
   Math.max(0, Math.min(index, length))
 
+/** A parallel's `children` ARE its lanes, and every lane authored through the UI is a
+ * serial container (spec 2026-07-18 §3.4) — so anything landing on a parallel's
+ * `children` slot that isn't already a serial gets wrapped in a fresh plain one. Living
+ * here (not in onDragEnd) means insertNode/moveNode/duplicateNode all share the one code
+ * path, each store action stays a single zundo snapshot, and duplicating a legacy
+ * bare-block lane normalizes the copy for free. Imported docs are untouched: docToTree
+ * builds children directly and never calls this. */
+export function wrapAsLane(node: BlockNode): BlockNode {
+  if (node.kind === 'serial') return node
+  return { uid: newUid(), label: null, gapAfter: null, startOffset: null, kind: 'serial', children: [node] }
+}
+
 export function insertNode(tree: BlockNode[], node: BlockNode, at: SlotRef): BlockNode[] {
   if (at.parentUid === null) {
     const out = [...tree]
@@ -245,7 +257,8 @@ export function insertNode(tree: BlockNode[], node: BlockNode, at: SlotRef): Blo
     for (const [slot, children] of childSlots(n)) {
       let list = children.map(walkNode)
       if (n.uid === at.parentUid && slot === at.slot) {
-        list.splice(clampIndex(at.index, list.length), 0, node)
+        const toInsert = n.kind === 'parallel' && slot === 'children' ? wrapAsLane(node) : node
+        list.splice(clampIndex(at.index, list.length), 0, toInsert)
         inserted = true
       }
       out = replaceSlot(out, slot, list)

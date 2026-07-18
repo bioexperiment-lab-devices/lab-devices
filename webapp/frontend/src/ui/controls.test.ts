@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { iconButtonClass } from './IconButton'
-import { CONTROL_H, controlClass, inlineButtonClass, textAreaClass } from './controls'
+import { CONTROL_H, badgeClass, controlClass, inlineButtonClass, textAreaClass } from './controls'
 
 /** The height classes present in a class string. */
 const heights = (cls: string) => cls.split(/\s+/).filter((c) => /^h-\d/.test(c))
@@ -123,5 +123,20 @@ describe('textarea class', () => {
   it('adds max-h-full only when fillParent is set', () => {
     expect(textAreaClass({ fillParent: true })).toContain('max-h-full')
     expect(textAreaClass()).not.toContain('max-h-full')
+  })
+})
+
+describe('badgeClass', () => {
+  it('always carries the control-height token', () => {
+    expect(badgeClass()).toContain('h-6')
+    expect(badgeClass({ active: true })).toContain('h-6')
+  })
+  it('active swaps hover treatment for the selected treatment', () => {
+    expect(badgeClass({ active: true })).toContain('bg-blue-100')
+    expect(badgeClass()).not.toContain('bg-blue-100')
+  })
+  it('bounds the badge to its row so an inner span can ellipsize a long name', () => {
+    expect(badgeClass()).toContain('max-w-full')
+    expect(badgeClass({ active: true })).toContain('max-w-full')
   })
 })

@@ -132,7 +132,7 @@ export function BuilderTab() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-9rem)] flex-col gap-2">
+    <div className="flex h-full flex-col gap-2">
       <Toolbar />
       <DndContext
         sensors={sensors}
@@ -141,7 +141,7 @@ export function BuilderTab() {
         onDragEnd={onDragEnd}
         onDragCancel={() => setDragPayload(null)}
       >
-        <div className="flex min-h-0 flex-1 overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="flex min-h-0 flex-1 gap-2">
           <Palette />
           <Canvas />
           <Inspector />

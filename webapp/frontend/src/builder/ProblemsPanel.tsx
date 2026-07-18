@@ -54,7 +54,7 @@ export function ProblemsPanel() {
                     // /`select` only after this function returns — so the element would not
                     // exist yet and the query would silently no-op. `scrollToBlock` instead
                     // records the target uid; Canvas's own `useEffect` (same shape as
-                    // RolesPanel's `focusedRole` effect) does the actual scroll once its
+                    // RolesSection's `focusedRole` effect) does the actual scroll once its
                     // render for the new scope has committed.
                     scrollToBlock(d.uid)
                   } else if (d.role) {

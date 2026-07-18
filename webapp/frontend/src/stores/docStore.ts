@@ -72,7 +72,7 @@ export interface EditorState extends DocSnapshot {
   // §5.2). This is VIEW state, not a document field — it must stay out of the zundo snapshot
   // exactly like selectedUid (file header comment), so undo/redo never rewrites it directly.
   scope: string | null
-  // Which role RolesPanel should scroll to and highlight, set by a Problems row click on a
+  // Which role RolesSection should scroll to and highlight, set by a Problems row click on a
   // role diagnostic (paths.ts's `MappedDiagnostic.role`, previously read by nothing). VIEW
   // state like `scope`/`selectedUid` above — not part of the zundo snapshot.
   focusedRole: string | null

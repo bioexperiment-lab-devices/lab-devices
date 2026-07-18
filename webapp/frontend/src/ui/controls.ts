@@ -78,3 +78,17 @@ export function inlineButtonClass(
       : 'border-slate-300 bg-white hover:bg-slate-100 disabled:hover:bg-white')
   ).trim()
 }
+
+/** Radio-style badge buttons (the Roles section's role picker). Borderless — they read as
+ * selectable chips, not push buttons — but they carry CONTROL_H because they share a
+ * visual row with 24px IconButtons (rename/delete), and the probe's
+ * sibling-height-mismatch rule holds every such row to ≤1px.
+ * `min-w-0 max-w-full` bounds a badge to its row so an inner truncating span can ellipsize
+ * a pathological role name instead of widening the palette — ellipsis must live on an inner
+ * span because text-overflow does not apply to flex containers. */
+export function badgeClass(opts: { active?: boolean } = {}): string {
+  return (
+    `${CONTROL_H} inline-flex min-w-0 max-w-full items-center rounded px-1.5 font-mono text-xs ` +
+    (opts.active ? 'bg-blue-100 text-blue-700' : 'text-slate-700 hover:bg-slate-200')
+  ).trim()
+}
