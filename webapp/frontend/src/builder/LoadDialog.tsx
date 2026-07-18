@@ -9,8 +9,10 @@ import { exportFilename, serializeDoc, triggerDownload } from './files'
 
 export function LoadDialog(props: { onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     ref.current?.showModal()
+    inputRef.current?.focus()
   }, [])
   const [items, setItems] = useState<ExperimentSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -79,7 +81,7 @@ export function LoadDialog(props: { onClose: () => void }) {
       onClick={(e) => {
         if (e.target === e.currentTarget) props.onClose()
       }}
-      className="m-auto w-[28rem] rounded-lg p-0 shadow-xl backdrop:bg-black/30"
+      className="m-auto w-[28rem] rounded-lg bg-white p-0 shadow-xl backdrop:bg-black/30"
     >
       <div className="flex max-h-[70vh] flex-col">
         <div className="shrink-0 p-4 pb-2">
@@ -88,7 +90,7 @@ export function LoadDialog(props: { onClose: () => void }) {
             <IconButton icon={X} label="Close" onClick={props.onClose} />
           </div>
           <input
-            autoFocus
+            ref={inputRef}
             value={search}
             placeholder="search…"
             onChange={(e) => setSearch(e.target.value)}

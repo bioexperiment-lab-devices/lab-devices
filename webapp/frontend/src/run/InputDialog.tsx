@@ -47,7 +47,6 @@ function Widget(props: {
   return (
     <div>
       <input
-        autoFocus
         value={typeof raw === 'string' ? raw : ''}
         onChange={(e) => setRaw(e.target.value)}
         inputMode={input.type === 'int' ? 'numeric' : 'decimal'}
@@ -68,7 +67,10 @@ export function InputDialog() {
   const [forName, setForName] = useState<string | null>(null)
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
-    if (pending !== null && !hidden) ref.current?.showModal()
+    if (pending !== null && !hidden) {
+      ref.current?.showModal()
+      ;(ref.current?.querySelector('form input, form select') as HTMLElement | null)?.focus()
+    }
   }, [pending, hidden])
 
   if (pending === null) return null
@@ -108,7 +110,7 @@ export function InputDialog() {
     <dialog
       ref={ref}
       onCancel={(e) => e.preventDefault()}
-      className="m-auto w-96 rounded-lg p-4 shadow-xl backdrop:bg-black/30"
+      className="m-auto w-96 rounded-lg bg-white p-4 shadow-xl backdrop:bg-black/30"
     >
       <div className="mb-2 flex items-start justify-between">
         <h2 className="text-sm font-semibold">Operator input: {pending.name}</h2>
