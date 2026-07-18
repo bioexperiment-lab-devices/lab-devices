@@ -143,10 +143,14 @@ from the fields it summarises.
 
 - `timingFields(kind, parentKind): TimingField[]` — `[]` means the section is not rendered.
 - `failureFields(kind): FailureField[]` — same contract.
-- `timingSummary(node)` / `failureSummary(node)` — the collapsed-header text, `null` when
-  everything is at its default.
-- `sectionHasValue(...)` — the auto-open predicate, derived from the summaries so the two
-  cannot disagree.
+- `timingSummary(node, parentKind)` / `failureSummary(node)` — the collapsed-header text,
+  `null` when everything is at its default. Each filters through its own membership function,
+  so it can only ever mention a control the section actually renders (a `gapAfter` surviving
+  on a block moved into a parallel lane is not advertised there).
+
+There is deliberately **no separate auto-open predicate**: `summary !== null` *is* the rule.
+Deriving the disclosure state and the text describing it from one expression is what makes
+it impossible for a section to open silently or to close over a value it fails to mention.
 
 This is not incidental placement. vitest here runs in **node env with no component
 rendering** (`webapp/frontend/CLAUDE.md`), so any of this logic left inside `Inspector.tsx`
