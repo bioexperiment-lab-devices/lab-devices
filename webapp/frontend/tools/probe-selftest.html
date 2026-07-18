@@ -1,0 +1,36 @@
+<meta charset="utf-8" />
+<title>probe self-test</title>
+<style>
+  .clip { overflow-x: hidden; width: 50px; }
+  .clip > span { display: inline-block; width: 200px; }
+  .trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 40px; }
+  .row { display: flex; align-items: center; }
+  .row input { height: 22px; }
+  .row button { height: 26px; }
+  .okrow { display: flex; align-items: center; }
+  .okrow input, .okrow button { height: 24px; }
+</style>
+
+<!-- PLANT R1 -->
+<div class="clip"><span>wide content that cannot be reached</span></div>
+<!-- PLANT R2 -->
+<div class="trunc">a label long enough to be ellipsised</div>
+<!-- PLANT R3 -->
+<button style="height:16px;width:16px">x</button>
+<!-- PLANT R4 -->
+<div class="row"><input /><button>go</button></div>
+
+<!-- TRAP: scrollable overflow is reachable, must NOT fire R1 -->
+<div style="overflow-x:auto;width:50px"><span style="display:inline-block;width:200px">ok</span></div>
+<!-- TRAP: truncation WITH a title is fine, must NOT fire R2 -->
+<div class="trunc" title="full text here">a label long enough to be ellipsised</div>
+<!-- TRAP: deliberate single-line ellipsis must NOT fire R1 (it is R2's business, and every
+     `truncate` in the app would otherwise match R1 by construction) -->
+<div class="trunc" title="full text here">another ellipsised label, R1 must ignore this</div>
+<!-- TRAP: matching heights must NOT fire R4 -->
+<div class="okrow"><input /><button>go</button></div>
+<!-- TRAP: a native text input whose value overflows its box must NOT fire R1. Chromium
+     reports overflow-x:clip here, but the input scrolls its own value, so the text is
+     reachable. Observed for real on the Inspector's Label field with a long morbidostat
+     label; without the guard every long-valued field in the app is a standing R1 hit. -->
+<input style="width:40px" value="a value far longer than this box can possibly show" />
