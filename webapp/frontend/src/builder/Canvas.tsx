@@ -12,8 +12,20 @@ import { IconButton } from '../ui/IconButton'
 import { KindIcon } from '../ui/icons'
 import { ScrollFades, useScrollEdges } from '../ui/ScrollX'
 import { useDismissable } from '../ui/useDismissable'
+import {
+  cardBorderClass,
+  headerFillClass,
+  interiorFillClass,
+  isFlowKind,
+} from './constructTint'
 
 const DiagContext = createContext<Map<string, MappedDiagnostic[]>>(new Map())
+
+/** Nesting depth of the list currently being rendered. 0 is the canvas backdrop; the
+ * outermost container's interior is 1. Only ContainerBody and BranchLanes provide it —
+ * BlockList is depth-transparent, so a container's own card sits at its PARENT's depth
+ * and only its interior descends. */
+const DepthContext = createContext(0)
 
 export function Canvas() {
   // The canvas renders whichever list `scope` names (design §5.2): the main workflow tree
@@ -188,8 +200,7 @@ function BlockView({ node }: { node: BlockNode }) {
     id: blockDraggableId(node.uid),
     data: { source: 'canvas', uid: node.uid } satisfies DragPayload,
   })
-  const isContainer =
-    node.kind === 'serial' || node.kind === 'parallel' || node.kind === 'loop' || node.kind === 'branch' || node.kind === 'for_each'
+  const isContainer = isFlowKind(node.kind)
   return (
     <div
       id={`block-${node.uid}`}
@@ -203,15 +214,25 @@ function BlockView({ node }: { node: BlockNode }) {
         // container instead of forcing it wide (flex min-width:auto is the classic culprit
         // behind a card painting past its box — audit F11). The lane/arm containers no longer
         // clip (the Canvas is the single scroller), so this is what keeps a card honest.
+        //
+        // The border comes from cardBorderClass, which SELECTS exactly one class: containers
+        // wear their construct tint, leaves stay slate-300, and selection replaces both. The
+        // selection ring is `ring-2` rather than W13's `ring-1` because a canvas of tinted
+        // borders makes a 1px ring too easy to lose — the ring, not the border, is now the
+        // load-bearing selection cue.
         'min-w-0 rounded border bg-white text-sm shadow-sm ' +
-        (selected ? 'border-blue-500 ring-1 ring-blue-300 ' : 'border-slate-300 ') +
+        cardBorderClass({ kind: node.kind, selected }) + ' ' +
+        (selected ? 'ring-2 ring-blue-400 ' : '') +
         (isDragging ? 'opacity-40' : '')
       }
     >
       <div
         {...listeners}
         {...attributes}
-        className="flex min-w-0 cursor-grab items-center gap-1 px-2 py-1"
+        className={
+          'flex min-w-0 cursor-grab items-center gap-1 rounded-t px-2 py-1 ' +
+          headerFillClass(node.kind)
+        }
       >
         {isContainer ? (
           <IconButton
@@ -276,37 +297,40 @@ function BlockView({ node }: { node: BlockNode }) {
   )
 }
 
+/** A container's interior. Every construct now gets the same treatment — a depth-keyed
+ * neutral fill on the region that used to be pure padding — so containment reads as filled
+ * AREAS rather than as strokes you have to count.
+ *
+ * The `ml-2 border-l-2 border-slate-200` rule that loop and for_each carried before this
+ * increment is gone. It was a second vertical line drawn 8px inside the card border that was
+ * already there: a stroke without a fact. Both constructs are now told apart by their border
+ * and header hue instead (constructTint.ts), which is why they no longer need to be — and no
+ * longer are — byte-identical. */
 function ContainerBody({ node }: { node: BlockNode }) {
-  switch (node.kind) {
-    case 'serial':
-      return (
-        <div className="px-2 pb-2">
-          <BlockList parentUid={node.uid} slot="children" items={node.children} />
-        </div>
-      )
-    case 'parallel':
-      return (
-        <div className="px-2 pb-2">
-          <ParallelLanes node={node} />
-        </div>
-      )
-    case 'loop':
-      return (
-        <div className="ml-2 border-l-2 border-slate-200 px-2 pb-2">
-          <BlockList parentUid={node.uid} slot="body" items={node.body} />
-        </div>
-      )
-    case 'for_each':
-      return (
-        <div className="ml-2 border-l-2 border-slate-200 px-2 pb-2">
-          <BlockList parentUid={node.uid} slot="body" items={node.body} />
-        </div>
-      )
-    case 'branch':
-      return <BranchLanes node={node} />
-    default:
-      return null
-  }
+  const depth = useContext(DepthContext) + 1
+  const fill = interiorFillClass(depth)
+  const body = (() => {
+    switch (node.kind) {
+      case 'serial':
+        return <BlockList parentUid={node.uid} slot="children" items={node.children} />
+      case 'parallel':
+        return <ParallelLanes node={node} />
+      case 'loop':
+        return <BlockList parentUid={node.uid} slot="body" items={node.body} />
+      case 'for_each':
+        return <BlockList parentUid={node.uid} slot="body" items={node.body} />
+      case 'branch':
+        return <BranchLanes node={node} />
+      default:
+        return null
+    }
+  })()
+  if (body === null) return null
+  return (
+    <DepthContext.Provider value={depth}>
+      <div className={`rounded-b px-2 pb-2 ${fill}`}>{body}</div>
+    </DepthContext.Provider>
+  )
 }
 
 function ParallelLanes({ node }: { node: ParallelNode }) {
@@ -467,12 +491,12 @@ function BranchLanes({ node }: { node: BranchNode }) {
     //     min-w-48), shrinking only when the row is over-full. Leftover space stays leftover —
     //     it belongs to the card, not to whichever arm happens to be empty. Same doc, same
     //     canvas: THEN 461.2px (its content) / ELSE 192px (the min-w-48 floor).
-    <div className="flex gap-2 px-2 pb-2">
-      <div className="min-w-48 flex-initial">
+    <div className="flex gap-2">
+      <div className="min-w-48 flex-initial rounded border border-violet-200 px-1 pb-1">
         <p className="flex h-6 items-center text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
       </div>
-      <div className="min-w-48 flex-initial">
+      <div className="min-w-48 flex-initial rounded border border-violet-200 px-1 pb-1">
         {node.else === null ? (
           <>
             <p className="flex h-6 items-center text-[10px] uppercase text-caption">else</p>
