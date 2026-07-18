@@ -55,3 +55,33 @@ const FAILURE_POLICY: Record<BlockNode['kind'], FailureField[]> = {
 export function failureFields(kind: BlockNode['kind']): FailureField[] {
   return FAILURE_POLICY[kind]
 }
+
+/** Collapsed-header summary (design §4). Returning `null` for "all defaults" means the
+ * caller's open-by-default test is exactly `summary !== null`, so the disclosure state and
+ * the text describing it are derived from one expression and cannot drift apart.
+ *
+ * Each summary filters through its own membership function, so it can only ever mention a
+ * control the section actually renders. */
+export function timingSummary(
+  node: BlockNode,
+  parentKind: BlockNode['kind'] | null,
+): string | null {
+  const fields = timingFields(node.kind, parentKind)
+  const parts: string[] = []
+  if (fields.includes('gapAfter') && node.gapAfter !== null) parts.push(`gap after ${node.gapAfter}`)
+  if (fields.includes('startOffset') && node.startOffset !== null) {
+    parts.push(`start +${node.startOffset}`)
+  }
+  return parts.length > 0 ? parts.join(', ') : null
+}
+
+export function failureSummary(node: BlockNode): string | null {
+  const fields = failureFields(node.kind)
+  const parts: string[] = []
+  // 'fail' is the engine default, so only 'continue' is worth surfacing.
+  if (fields.includes('onError') && node.onError === 'continue') parts.push('continue')
+  if (fields.includes('retry') && node.retry !== undefined) {
+    parts.push(`retry ×${node.retry.attempts}`)
+  }
+  return parts.length > 0 ? parts.join(', ') : null
+}
