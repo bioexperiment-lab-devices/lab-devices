@@ -210,10 +210,14 @@ function BlockForm({ node }: { node: BlockNode }) {
               </select>
             </FieldRow>
           )}
-          {/* Narrowed by kind rather than by `failure.includes('retry')` so TypeScript can
-              prove the node is a Command/Measure. FAILURE_POLICY still decides whether the
-              SECTION renders; this decides whether the sub-form does. */}
-          {(node.kind === 'command' || node.kind === 'measure') && <RetrySection node={node} />}
+          {/* Both conditions are load-bearing. `failure.includes('retry')` keeps
+              FAILURE_POLICY the single authority on whether retry is offered at all — without
+              it, adding 'retry' to another kind's policy would make failureSummary advertise a
+              sub-form that never renders, silently and with no compile error. The kind check is
+              what lets TypeScript narrow node to Command/Measure, so RetrySection needs no cast. */}
+          {failure.includes('retry') && (node.kind === 'command' || node.kind === 'measure') && (
+            <RetrySection node={node} />
+          )}
         </InspectorSection>
       )}
     </div>
