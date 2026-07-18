@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { useDocStore } from '../stores/docStore'
 import { streamSources } from './refs'
 import { filterStreamNames } from './streamFilter'
+import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 
 /** Streams are name + units only (settled decision S5) — per-stream persistence is carried
@@ -48,7 +49,7 @@ export function StreamsPanel() {
         value={query}
         placeholder="filter streams…"
         onChange={(e) => setQuery(e.target.value)}
-        className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+        className={controlClass()}
       />
       <ul className="space-y-1">
         {query.trim() !== '' && matches.length === 0 && (
@@ -77,7 +78,7 @@ export function StreamsPanel() {
                     setEditing(null)
                   }
                 }}
-                className="w-24 rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
+                className={controlClass({ mono: true }) + ' w-24'}
               />
             ) : (
               <button
@@ -88,7 +89,7 @@ export function StreamsPanel() {
                   setError(null)
                   cancelled.current = false
                 }}
-                className="rounded px-1 font-mono text-xs hover:bg-slate-200"
+                className={inlineButtonClass()}
               >
                 {name}
               </button>
@@ -100,7 +101,7 @@ export function StreamsPanel() {
                   : `Written by a ${sources[name]} block`
               }
               className={
-                'shrink-0 rounded px-1 text-xs ' +
+                'flex h-6 shrink-0 items-center rounded px-1 text-xs ' +
                 (sources[name] === undefined ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600')
               }
             >
@@ -110,7 +111,7 @@ export function StreamsPanel() {
               value={s.units ?? ''}
               placeholder="units"
               onChange={(e) => setStreamUnits(name, e.target.value || null)}
-              className="w-14 rounded border border-slate-200 px-1 py-0.5 text-xs"
+              className={controlClass() + ' w-14'}
             />
             <IconButton
               icon={X}
@@ -129,16 +130,16 @@ export function StreamsPanel() {
           placeholder="stream name"
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
-          className="w-24 rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
+          className={controlClass({ mono: true }) + ' w-24'}
         />
         <input
           value={newUnits}
           placeholder="units"
           onChange={(e) => setNewUnits(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
-          className="w-14 rounded border border-slate-300 px-1 py-0.5 text-xs"
+          className={controlClass() + ' w-14'}
         />
-        <button onClick={add} className="rounded bg-slate-200 px-2 py-0.5 text-xs hover:bg-slate-300">
+        <button onClick={add} className={inlineButtonClass()}>
           Add
         </button>
       </div>

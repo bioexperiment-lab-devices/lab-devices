@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useDocStore } from '../stores/docStore'
+import { controlClass, inlineButtonClass } from '../ui/controls'
 
 /** Picker over declared streams + inline "+ new stream…" creation (audit F15: one
  * affordance for Measure AND Record — record.into stays a picker, never free text,
@@ -34,7 +35,7 @@ export function StreamIntoPicker(props: { value: string; onPick: (name: string) 
             onPick(e.target.value)
           }
         }}
-        className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+        className={controlClass()}
       >
         {value === '' && !adding && <option value="">— pick a stream —</option>}
         {names.map((n) => (
@@ -50,15 +51,15 @@ export function StreamIntoPicker(props: { value: string; onPick: (name: string) 
             value={name}
             placeholder="name"
             onChange={(e) => setName(e.target.value)}
-            className="w-20 rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
+            className={controlClass({ mono: true }) + ' w-20'}
           />
           <input
             value={units}
             placeholder="units"
             onChange={(e) => setUnits(e.target.value)}
-            className="w-14 rounded border border-slate-300 px-1 py-0.5 text-xs"
+            className={controlClass() + ' w-14'}
           />
-          <button onClick={create} className="rounded bg-slate-200 px-2 py-0.5 text-xs hover:bg-slate-300">
+          <button onClick={create} className={inlineButtonClass()}>
             Add
           </button>
         </div>

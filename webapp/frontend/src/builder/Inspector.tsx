@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useActiveTree, useDocStore } from '../stores/docStore'
 import { AutoGrowTextArea } from '../ui/AutoGrowTextArea'
-import { inlineButtonClass } from '../ui/controls'
+import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 import type { ParamSpec } from '../types/catalog'
 import type { ParamValue, RetryJson } from '../types/doc'
@@ -201,7 +201,7 @@ function BlockForm({ node }: { node: BlockNode }) {
           <select
             value={node.onError ?? 'fail'}
             onChange={(e) => patchBlock(node.uid, { onError: e.target.value as 'fail' | 'continue' })}
-            className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+            className={controlClass()}
           >
             <option value="fail">fail (stop the run)</option>
             <option value="continue">continue (tolerate the failure)</option>
@@ -374,7 +374,7 @@ function ActionForm({ node }: { node: CommandNode | MeasureNode }) {
         <select
           value={node.device}
           onChange={(e) => patchBlock(node.uid, { device: e.target.value })}
-          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+          className={controlClass()}
         >
           {!sameTypeRoles.includes(node.device) && <option value={node.device}>{node.device}</option>}
           {sameTypeRoles.map((r) => (
@@ -390,7 +390,7 @@ function ActionForm({ node }: { node: CommandNode | MeasureNode }) {
           onChange={(e) =>
             patchBlock(node.uid, { verb: e.target.value, retry: retryAfterVerbChange(node.retry) })
           }
-          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+          className={controlClass()}
         >
           {sameKindVerbs.every(([v]) => v !== node.verb) && (
             <option value={node.verb}>{node.verb}</option>
@@ -447,7 +447,7 @@ function ParamFields({ node, specs }: { node: CommandNode | MeasureNode; specs: 
       {unknown.map((name) => (
         <FieldRow key={name} label={`${name} (unknown)`}>
           <div className="flex items-center gap-1">
-            <span className="flex-1 truncate font-mono text-xs text-amber-700">
+            <span className="flex h-6 flex-1 items-center truncate font-mono text-xs text-amber-700">
               {paramInputText(node.params[name])}
             </span>
             <IconButton
@@ -489,7 +489,7 @@ function ParamInput(props: {
             const v = e.target.value
             onCommit(v === '' ? undefined : v === 'true')
           }}
-          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+          className={controlClass()}
         >
           <option value="">— unset —</option>
           <option value="true">true</option>
@@ -548,7 +548,7 @@ function OperatorInputForm({ node }: { node: OperatorInputNode }) {
         <select
           value={node.inputType}
           onChange={(e) => setType(e.target.value as InputType)}
-          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+          className={controlClass()}
         >
           <option value="int">int</option>
           <option value="float">float</option>
@@ -647,7 +647,7 @@ function LoopForm({ node }: { node: LoopNode }) {
             <select
               value={node.check}
               onChange={(e) => patchBlock(node.uid, { check: e.target.value as 'before' | 'after' })}
-              className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+              className={controlClass()}
             >
               <option value="after">after each pass</option>
               <option value="before">before each pass</option>
@@ -851,7 +851,7 @@ function GroupRefForm({ node }: { node: GroupRefNode }) {
         <select
           value={node.name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+          className={controlClass()}
         >
           {node.name === '' && <option value="">— pick a group —</option>}
           {node.name !== '' && !groupNames.includes(node.name) && (

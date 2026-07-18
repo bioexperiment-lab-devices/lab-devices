@@ -7,6 +7,7 @@ import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
 import { blockSummary } from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
+import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 import { KindIcon } from '../ui/icons'
 import { ScrollFades, useScrollEdges } from '../ui/ScrollX'
@@ -106,7 +107,7 @@ function ScopeSwitcher() {
       <select
         value={scope ?? ''}
         onChange={(e) => setScope(e.target.value === '' ? null : e.target.value)}
-        className="rounded border border-slate-300 bg-white px-1.5 py-0.5"
+        className={controlClass() + ' w-auto'}
       >
         <option value="">Main workflow</option>
         {groupNames.map((g) => (
@@ -131,9 +132,9 @@ function ScopeSwitcher() {
                 setError(null)
               }
             }}
-            className="w-28 rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
+            className={controlClass({ mono: true }) + ' w-28'}
           />
-          <button onClick={create} className="rounded bg-slate-200 px-2 py-0.5 hover:bg-slate-300">
+          <button onClick={create} className={inlineButtonClass()}>
             Add
           </button>
           <button
@@ -142,7 +143,7 @@ function ScopeSwitcher() {
               setName('')
               setError(null)
             }}
-            className="text-caption hover:text-slate-800"
+            className={inlineButtonClass({ subtle: true })}
           >
             cancel
           </button>
@@ -150,7 +151,7 @@ function ScopeSwitcher() {
       ) : (
         <button
           onClick={() => setAdding(true)}
-          className="rounded border border-dashed border-slate-300 px-2 py-0.5 text-caption hover:text-slate-700"
+          className={inlineButtonClass({ subtle: true })}
         >
           <Plus size={12} aria-hidden className="mr-0.5 inline" />New group…
         </button>

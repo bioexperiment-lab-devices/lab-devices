@@ -24,7 +24,7 @@ export function FieldRow(props: {
 }) {
   return (
     <label className={'text-xs ' + (props.grow ? 'flex min-h-0 flex-1 flex-col py-1' : 'block py-1')}>
-      <span className="mb-0.5 block text-slate-500">
+      <span className="mb-0.5 block text-caption">
         {props.label}
         {props.required && <span className="text-red-500"> *</span>}
       </span>

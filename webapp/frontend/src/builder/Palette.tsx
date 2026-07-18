@@ -8,6 +8,7 @@ import type { DragPayload } from './dnd'
 import { RolesPanel } from './RolesPanel'
 import { StreamsPanel } from './StreamsPanel'
 import { KindIcon } from '../ui/icons'
+import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 
 const STRUCTURE: Array<{ kind: StructureKind; title: string }> = [
@@ -92,12 +93,12 @@ function AddRoleForm() {
           placeholder="role name"
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
-          className="w-24 rounded border border-slate-300 px-2 py-1 font-mono text-xs"
+          className={controlClass({ mono: true }) + ' w-24'}
         />
         <select
           value={type}
           onChange={(e) => setType(e.target.value)}
-          className="rounded border border-slate-300 px-2 py-1 text-xs"
+          className={controlClass()}
         >
           <option value="">type…</option>
           {types.map((t) => (
@@ -106,7 +107,7 @@ function AddRoleForm() {
             </option>
           ))}
         </select>
-        <button onClick={add} className="rounded bg-slate-200 px-2 py-1 text-xs hover:bg-slate-300">
+        <button onClick={add} className={inlineButtonClass()}>
           Add
         </button>
       </div>
