@@ -1,7 +1,7 @@
 # Experiment Studio — canvas visual language (W14)
 
 **Date:** 2026-07-18
-**Status:** draft — awaiting user review
+**Status:** approved (forks user-settled 2026-07-18)
 **Scope:** frontend-only. No document-format change, no backend change, no engine change.
 **Predecessors:** W10 (UI-audit fixes), W11 (UI improvements), W12 (element-library taxonomy), W13 (UI improvements round 2, v0.9.0).
 
@@ -121,14 +121,19 @@ Non-negotiable, drawn from `webapp/frontend/CLAUDE.md` and prior increments' sca
 - **No document-format change**, so `docToTree`/`treeToDoc` are untouched and open+save stays a byte no-op (W9-settled).
 - **Icons stay lucide-only**; `∀`, `R×N`, `⤳`, `×N`, `●` remain typographic.
 
-## 5. Open fork for the user
+## 5. Where role color assignments live
 
-**Where do role color assignments live?**
+**User-settled 2026-07-18: browser-local `localStorage`, keyed by `type:name`.** Do not re-litigate.
 
-- **(a) Browser-local (`localStorage`), keyed by `type:name`.** Recommended, and the reading implied by "role type+name is a key". Zero doc-format change, zero backend work, and it delivers the stated payoff — `drug_pump` is the same color in every experiment you open. Cost: a colleague opening the same document on the shared stack sees different colors, and the assignment does not survive a new machine or a cleared browser.
-- **(b) In the document.** Colors travel with export/import and are shared across researchers. Cost: it is a document-format change, which pulls in the backend, validation, and the byte-no-op round-trip contract, and it makes a per-user reading aid into shared document state that two people can disagree about.
+This keeps the increment frontend-only and delivers the stated payoff — `drug_pump` is the same color in every experiment the user opens. The accepted costs, recorded so they are not rediscovered as bugs:
 
-This spec assumes **(a)** throughout. Choosing (b) changes the scope from frontend-only to full-stack and invalidates §4's "no document-format change".
+- A colleague opening the same document on the shared stack sees **different colors**. Role color is a per-user reading aid, not document state.
+- The assignment does **not** survive a new machine or a cleared browser. It is regenerated from the ramp in declaration order, so the canvas is never broken by its absence — only differently colored.
+- Nothing about role color is exported, imported, validated, or sent to the backend.
+
+The rejected alternative was storing colors in the document, which would share them across researchers and survive export, at the cost of a document-format change pulling in the backend, validation and the byte-no-op round-trip contract, and of turning a reading aid into shared state two people can disagree about.
+
+A stale key — a role deleted or renamed since assignment — is inert and must not be garbage-collected eagerly, because a rename followed by an undo must recover the original color.
 
 ## 6. Out of scope
 
