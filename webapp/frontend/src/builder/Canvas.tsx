@@ -5,7 +5,7 @@ import { useActiveTree, useDocStore } from '../stores/docStore'
 import { diagnosticsByUid, type MappedDiagnostic } from './paths'
 import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
-import { blockSummary } from './summary'
+import { blockSummary, faultMarker } from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
 import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
@@ -310,9 +310,7 @@ function ContainerBody({ node }: { node: BlockNode }) {
 }
 
 function ParallelLanes({ node }: { node: ParallelNode }) {
-  const removeBlock = useDocStore((s) => s.removeBlock)
   const insertBlock = useDocStore((s) => s.insertBlock)
-  const isEmptyLane = (lane: BlockNode) => lane.kind === 'serial' && lane.children.length === 0
   return (
     // No nested overflow here: the Canvas is the only horizontal scroller, so a wide lane
     // widens the canvas's content and scrolls THERE instead of being clipped inside this box.
@@ -330,23 +328,7 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
       />
       {node.children.map((lane, i) => (
         <Fragment key={lane.uid}>
-          <div className="min-w-48 flex-initial rounded border border-dashed border-slate-200 p-1">
-            <div className="flex h-6 items-center justify-between px-1 text-[10px] uppercase text-caption">
-              <span>lane {i + 1}</span>
-              {isEmptyLane(lane) && (
-                <IconButton
-                  icon={X}
-                  label="Remove lane"
-                  destructive
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    removeBlock(lane.uid)
-                  }}
-                />
-              )}
-            </div>
-            <BlockView node={lane} />
-          </div>
+          <Lane lane={lane} index={i} />
           <DropSlot at={{ parentUid: node.uid, slot: 'children', index: i + 1 }} horizontal hint={false} />
         </Fragment>
       ))}
@@ -368,6 +350,97 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
       >
         <Plus size={12} aria-hidden className="mr-0.5" />lane
       </button>
+    </div>
+  )
+}
+
+/** One lane of a Parallel. A `serial` child IS the lane (spec §3.4): its children render
+ * directly in the lane box and this header row is the serial's handle — click selects it
+ * (the Inspector edits its label/on_error there), drag moves/reorders it, and its label,
+ * fault markers and diagnostics show here, since there is no card to carry them. Emptying
+ * a lane therefore never destroys it; the ✕ (empty lanes only) and select+Delete stay the
+ * explicit removal paths. Any other kind is a legacy/imported bare-block lane and keeps
+ * the card rendering — both committed fixtures contain such lanes (spec §5). */
+function Lane({ lane, index }: { lane: BlockNode; index: number }) {
+  const select = useDocStore((s) => s.select)
+  const selected = useDocStore((s) => s.selectedUid === lane.uid)
+  const removeBlock = useDocStore((s) => s.removeBlock)
+  const duplicateBlock = useDocStore((s) => s.duplicateBlock)
+  const diags = useContext(DiagContext).get(lane.uid) ?? []
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: blockDraggableId(lane.uid),
+    data: { source: 'canvas', uid: lane.uid } satisfies DragPayload,
+  })
+  if (lane.kind !== 'serial') {
+    return (
+      <div className="min-w-48 flex-initial rounded border border-dashed border-slate-200 p-1">
+        <div className="flex h-6 items-center px-1 text-[10px] uppercase text-caption">
+          lane {index + 1}
+        </div>
+        <BlockView node={lane} />
+      </div>
+    )
+  }
+  const marker = faultMarker(lane).trim()
+  return (
+    <div
+      id={`block-${lane.uid}`}
+      ref={setNodeRef}
+      onClick={(e) => {
+        e.stopPropagation()
+        select(lane.uid)
+      }}
+      className={
+        'min-w-48 flex-initial rounded border border-dashed p-1 ' +
+        (selected ? 'border-blue-500 ring-1 ring-blue-300 ' : 'border-slate-200 ') +
+        (isDragging ? 'opacity-40' : '')
+      }
+    >
+      <div
+        {...listeners}
+        {...attributes}
+        className="flex h-6 min-w-0 cursor-grab items-center gap-1 px-1 text-[10px] uppercase text-caption"
+      >
+        <span className="shrink-0">lane {index + 1}</span>
+        {lane.label && (
+          // max-w-40 for the same intrinsic-width reason as BlockView's label span: under the
+          // canvas's width:max-content a nowrap span contributes its FULL untruncated width.
+          <span title={lane.label} className="max-w-40 truncate normal-case italic">
+            “{lane.label}”
+          </span>
+        )}
+        {marker && <span className="shrink-0 normal-case">{marker}</span>}
+        <span className="ml-auto flex items-center gap-1">
+          {diags.length > 0 && (
+            <span
+              title={diags.map((d) => d.message).join('\n')}
+              className="rounded-full bg-red-600 px-1.5 text-[10px] font-bold normal-case text-white"
+            >
+              {diags.length}
+            </span>
+          )}
+          <IconButton
+            icon={Copy}
+            label="Duplicate lane"
+            onClick={(e) => {
+              e.stopPropagation()
+              duplicateBlock(lane.uid)
+            }}
+          />
+          {lane.children.length === 0 && (
+            <IconButton
+              icon={X}
+              label="Remove lane"
+              destructive
+              onClick={(e) => {
+                e.stopPropagation()
+                removeBlock(lane.uid)
+              }}
+            />
+          )}
+        </span>
+      </div>
+      <BlockList parentUid={lane.uid} slot="children" items={lane.children} />
     </div>
   )
 }
