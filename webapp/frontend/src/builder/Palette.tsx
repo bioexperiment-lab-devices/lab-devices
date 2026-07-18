@@ -117,12 +117,16 @@ function AddRoleForm() {
   )
 }
 
-/** Lists declared groups for management (design §5.2's second editing scope): the scope
- * switcher (Canvas.tsx) is where a group's BODY is switched to and edited; this panel is
- * where it's found, jumped to, and removed once nothing cites it — the same "list, jump,
- * delete-with-a-refusal-reason" shape RolesPanel already gives roles. No rename control here:
- * unlike roles/streams, nothing in this task calls for one, and `renameGroup` already exists
- * on the store for a future UI to wire up without a frontend change here. */
+/** Lists declared groups for management (design §5.2's second editing scope). Each row's
+ * primary interaction is now dragging its chip onto the canvas to insert a `group_ref` call
+ * for that group, the same drag-from-palette pattern as the Structure/Control/Repeat/Roles
+ * sections above. The pencil `IconButton` beside the chip is the scope switcher: it jumps
+ * (Canvas.tsx) to that group's BODY for editing and turns blue (`active`) while that group's
+ * scope is the one currently being edited. The trailing `X` still removes a group once nothing
+ * cites it, refusing with a reason otherwise — the same "jump, delete-with-a-refusal-reason"
+ * shape RolesPanel already gives roles. No rename control here: unlike roles/streams, nothing
+ * in this task calls for one, and `renameGroup` already exists on the store for a future UI to
+ * wire up without a frontend change here. */
 function GroupsPanel() {
   const groups = useDocStore((s) => s.groups)
   const scope = useDocStore((s) => s.scope)
@@ -154,7 +158,7 @@ function GroupsPanel() {
             <IconButton
               icon={Pencil}
               label="Edit this group's body"
-              className={scope === name ? 'text-blue-700' : ''}
+              active={scope === name}
               onClick={() => setScope(name)}
             />
             <IconButton
