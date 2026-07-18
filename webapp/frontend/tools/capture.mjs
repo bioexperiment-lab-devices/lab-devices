@@ -137,6 +137,22 @@ const states = [
     },
   },
   {
+    name: 'group-scope-deep',
+    description:
+      "the torture fixture's `deep_group`, whose body nests serial>branch>parallel>loop>serial. " +
+      'This is the state that makes the depth zebra and the group-scope hatch non-vacuous AT THE ' +
+      'SAME TIME. Measured on the running app: 7 rendered container levels with both zebra ' +
+      'classes present (bg-slate-50 x7, bg-slate-100 x14) and bg-hatch mounted x1. Without a ' +
+      'group-scope state carrying real nesting, interiorFillClass() would only ever be observed ' +
+      'at depth 1 and `interiorFillClass(2)` would be reported clean by a rule that never saw it — ' +
+      'W12 shipped exactly that defect, a rule reporting clean on rows that never mounted.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.torture)
+      await selectScope(page, 'deep_group')
+    },
+  },
+  {
     name: 'scope-switcher-long-group',
     description:
       'a group whose name is far longer than any fixture ships — the ScopeSwitcher <select> ' +

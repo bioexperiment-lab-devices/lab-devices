@@ -37,6 +37,36 @@
   keeps this honest: it flags sibling controls on a shared visual line whose heights disagree
   by more than 1px. Run `npm run capture` against a real doc after touching any control class.
 
+## Colour
+
+- Construct tints, role swatches and state colours are three separate languages and must
+  not be mixed. Hue (blue/red/amber/emerald) is reserved for **state**: selection, error,
+  warning, valid. Construct identity uses the pale tints in `src/builder/constructTint.ts`;
+  device roles use the saturated ramp in `src/builder/roleColors.ts`. Both deliberately
+  exclude every reserved family. Adding a canvas colour outside those two modules is how
+  the error language stops being readable.
+- **Any class baked into a helper is un-overridable by concatenation — for every property,
+  not just width.** `cardBorderClass` and friends *select* and return exactly one class per
+  property. Never `helperClass() + ' border-blue-500'`: equal-specificity utilities in the
+  same `@layer utilities` block are decided by declaration order in the compiled stylesheet,
+  not by class-string order. W11 hit this on `width`, W12 hit it on `text` colour, where an
+  appended `text-blue-700` lost to a baked-in `text-slate-500` and the highlight never
+  rendered while looking perfect in source.
+- **Tailwind class names must be complete literals in source.** Tailwind 4 scans source
+  text; `` `bg-${family}-500` `` compiles to no CSS at all.
+- Hatching (`bg-hatch`, `edge-hatch` in `index.css`) means exactly one thing: *this stands
+  for something not shown here*. It has exactly two sanctioned uses — group scope and
+  `group_ref`. A third dilutes it to decoration.
+- **Text must never sit directly on the hatch.** A striped surface has no single background
+  colour, so the probe's R5 scores text against the worst stripe: `text-caption`/slate-600
+  clears at 6.15:1 but `text-hint`/slate-500 measures 3.86:1 and fails. Give hint text an
+  opaque backing (`bg-white shadow-sm`) whenever a group scope is active, as the empty-tree
+  and drop-slot hints do.
+- New coloured surfaces are verified with `npm run capture` (R5 `text-contrast`), not by
+  eye. Measured on the real app: the five construct tints carry header text at 9.44–17.22:1
+  and caption text at 6.91–7.27:1, all clear of the 4.5:1 AA floor
+  (`docs/visual-language/after/README.md`).
+
 ## Text colors
 
 - Meaning-carrying secondary text uses `text-caption` (slate-600); incidental
