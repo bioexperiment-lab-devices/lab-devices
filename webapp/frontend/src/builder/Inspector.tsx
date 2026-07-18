@@ -61,7 +61,7 @@ export function Inspector() {
   const activeTree = useActiveTree()
   const node = selectedUid ? findNode(activeTree, selectedUid) : null
   return (
-    <aside className="w-80 shrink-0 overflow-y-auto border-l border-slate-200 bg-slate-50 p-3">
+    <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-slate-50 p-3">
       {node ? (
         <BlockForm key={node.uid} node={node} />
       ) : scope === null ? (
@@ -83,10 +83,12 @@ function GroupProperties({ name }: { name: string }) {
   const setGroupParams = useDocStore((s) => s.setGroupParams)
   const params = group?.params ?? []
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <h2 className="mb-2 text-sm font-semibold text-slate-700">Group: {name}</h2>
-      <FieldRow label="Params (one per line)">
-        <TextAreaField
+      <FieldRow label="Params (one per line)" grow>
+        <AutoGrowTextArea
+          fillParent
+          maxLines={200}
           mono
           value={params.join('\n')}
           onCommit={(v) =>
@@ -100,8 +102,10 @@ function GroupProperties({ name }: { name: string }) {
           }
         />
       </FieldRow>
-      <p className="mt-2 text-xs text-caption">{group?.body.length ?? 0} top-level blocks.</p>
-      <p className="mt-4 text-xs text-caption">Select a block to edit its parameters.</p>
+      {/* mt-auto pins these to the bottom of the panel (finding #5a): the params field
+          above grows into the free space instead of leaving dead panel below it. */}
+      <p className="mt-auto pt-2 text-xs text-caption">{group?.body.length ?? 0} top-level blocks.</p>
+      <p className="mt-1 text-xs text-caption">Select a block to edit its parameters.</p>
     </div>
   )
 }
@@ -113,16 +117,24 @@ function DocProperties() {
   const streams = useDocStore((s) => s.streams)
   const tree = useDocStore((s) => s.tree)
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <h2 className="mb-2 text-sm font-semibold text-slate-700">Experiment</h2>
-      <FieldRow label="Description">
-        <TextAreaField value={description ?? ''} onCommit={(v) => setDescription(v || null)} />
+      <FieldRow label="Description" grow>
+        <AutoGrowTextArea
+          fillParent
+          maxLines={200}
+          value={description ?? ''}
+          onCommit={(v) => setDescription(v || null)}
+          placeholder="what this experiment does"
+        />
       </FieldRow>
-      <p className="mt-2 text-xs text-caption">
+      {/* mt-auto pins these to the bottom of the panel (finding #5a): the description
+          above grows into the free space instead of leaving 800px of dead panel. */}
+      <p className="mt-auto pt-2 text-xs text-caption">
         {Object.keys(roles).length} roles · {Object.keys(streams).length} streams ·{' '}
         {tree.length} top-level blocks
       </p>
-      <p className="mt-4 text-xs text-caption">Select a block to edit its parameters.</p>
+      <p className="mt-1 text-xs text-caption">Select a block to edit its parameters.</p>
     </div>
   )
 }

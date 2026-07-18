@@ -10,9 +10,20 @@ import { AutoGrowTextArea } from '../ui/AutoGrowTextArea'
 import { IconButton } from '../ui/IconButton'
 import { useDismissable } from '../ui/useDismissable'
 
-export function FieldRow(props: { label: string; required?: boolean; children: ReactNode }) {
+export function FieldRow(props: {
+  label: string
+  required?: boolean
+  /** Lets this row's field grow to fill the remaining space in a flex-column parent and
+   * scroll internally once it runs out, instead of the row just sizing to its content
+   * (Inspector's "Experiment"/"Group" panels — the description/params field grows while
+   * the trailing summary lines stay pinned to the bottom). `min-h-0` is load-bearing: without
+   * it a flex child refuses to shrink below its content, so the field pushes the pinned
+   * lines off the panel instead of scrolling. */
+  grow?: boolean
+  children: ReactNode
+}) {
   return (
-    <label className="block py-1 text-xs">
+    <label className={'text-xs ' + (props.grow ? 'flex min-h-0 flex-1 flex-col py-1' : 'block py-1')}>
       <span className="mb-0.5 block text-slate-500">
         {props.label}
         {props.required && <span className="text-red-500"> *</span>}
