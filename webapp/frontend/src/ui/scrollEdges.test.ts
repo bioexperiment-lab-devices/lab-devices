@@ -40,4 +40,12 @@ describe('scrollEdges', () => {
     expect(scrollEdges({ scrollLeft: 0.4, scrollWidth: 1000, clientWidth: 500 }).atStart).toBe(true)
     expect(scrollEdges({ scrollLeft: 499.6, scrollWidth: 1000, clientWidth: 500 }).atEnd).toBe(true)
   })
+
+  it('does not tolerate a real gap just past the tolerance boundary', () => {
+    // The sub-pixel case above proves SOME tolerance exists but never pins its size — a
+    // tolerance accidentally widened past 1px would still pass it. 1.5px is a real, scrollable
+    // gap, not rounding noise, so the fade must stay shown (edge not reached) here.
+    expect(scrollEdges({ scrollLeft: 1.5, scrollWidth: 1000, clientWidth: 500 }).atStart).toBe(false)
+    expect(scrollEdges({ scrollLeft: 498.5, scrollWidth: 1000, clientWidth: 500 }).atEnd).toBe(false)
+  })
 })
