@@ -1,7 +1,9 @@
-import { SquareFunction, X } from 'lucide-react'
+import { Plus, SquareFunction, X } from 'lucide-react'
 import { useState } from 'react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useActiveTree, useDocStore } from '../stores/docStore'
+import { AutoGrowTextArea } from '../ui/AutoGrowTextArea'
+import { inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 import type { ParamSpec } from '../types/catalog'
 import type { ParamValue, RetryJson } from '../types/doc'
@@ -451,7 +453,7 @@ function ParamInput(props: {
   const [exprMode, setExprMode] = useState(typeof value === 'string')
   if (spec.type === 'string') {
     return (
-      <TextField
+      <AutoGrowTextArea
         value={typeof value === 'string' ? value : paramInputText(value)}
         onCommit={(t) => onCommit(coerceParamInput(t, 'string'))}
         placeholder={spec.required ? 'required' : 'optional'}
@@ -536,7 +538,7 @@ function OperatorInputForm({ node }: { node: OperatorInputNode }) {
         </select>
       </FieldRow>
       <FieldRow label="Prompt">
-        <TextField
+        <AutoGrowTextArea
           value={node.prompt ?? ''}
           onCommit={(v) => patchBlock(node.uid, { prompt: v || null })}
           placeholder="shown to the operator"
@@ -655,16 +657,16 @@ function BranchForm({ node }: { node: BranchNode }) {
       {node.else === null ? (
         <button
           onClick={() => patchBlock(node.uid, { else: [] })}
-          className="rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-slate-500 hover:text-slate-700"
+          className={inlineButtonClass({ subtle: true }) + ' w-full'}
         >
-          + add else lane
+          <Plus size={12} aria-hidden className="mr-0.5" />add else lane
         </button>
       ) : (
         <button
           disabled={node.else.length > 0}
           title={node.else.length > 0 ? 'Empty the else lane first' : undefined}
           onClick={() => patchBlock(node.uid, { else: null })}
-          className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-500 enabled:hover:text-red-600 disabled:opacity-40"
+          className={inlineButtonClass() + ' w-full enabled:hover:text-red-600'}
         >
           remove else lane
         </button>
@@ -716,7 +718,7 @@ function ConditionForm({ node }: { node: AbortNode | AlarmNode }) {
         />
       </FieldRow>
       <FieldRow label="Message" required>
-        <TextField
+        <AutoGrowTextArea
           value={node.message}
           onCommit={(v) => patchBlock(node.uid, { message: v })}
           placeholder={node.kind === 'abort' ? 'why the run must stop' : 'what to flag'}
