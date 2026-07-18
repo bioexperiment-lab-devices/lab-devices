@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { buildMappingRows, mappingComplete, mergePrefill, prefillMapping } from './preflight'
+import {
+  buildMappingRows,
+  mappingComplete,
+  mergePrefill,
+  prefillMapping,
+  unmappedCount,
+  type MappingRow,
+} from './preflight'
 import type { LabDevice } from '../types/labs'
 
 const dev = (id: string, type: string): LabDevice =>
@@ -50,5 +57,17 @@ describe('mergePrefill', () => {
   it('never clobbers an existing selection', () => {
     const chosen = { feed: 'pump_2' }
     expect(mergePrefill(chosen, roles, devices, { feed: 'pump_1' })).toBe(chosen)
+  })
+})
+
+describe('unmappedCount', () => {
+  it('counts rows without a device (audit F22)', () => {
+    const rows: MappingRow[] = [
+      { role: 'a', type: 't', options: [], selected: 'dev1' },
+      { role: 'b', type: 't', options: [], selected: null },
+      { role: 'c', type: 't', options: [], selected: null },
+    ]
+    expect(unmappedCount(rows)).toBe(2)
+    expect(unmappedCount([])).toBe(0)
   })
 })

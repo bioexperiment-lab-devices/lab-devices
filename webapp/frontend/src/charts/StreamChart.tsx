@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { alignSeries, type NamedSeries } from './align'
-import { formatElapsed } from '../records/format'
+import { dedupeConsecutive, formatElapsed } from '../records/format'
 
 export const SERIES_COLORS = [
   '#2a78d6', '#1baf7a', '#eda100', '#008300', '#4a3aa7', '#e34948',
@@ -35,7 +35,7 @@ export function StreamChart(props: { series: ChartSeries[]; height?: number }) {
       height,
       scales: { x: { time: false } },
       axes: [
-        { ...AXIS, values: (_u, ticks) => ticks.map((t) => formatElapsed(t)) },
+        { ...AXIS, values: (_u, ticks) => dedupeConsecutive(ticks.map((t) => formatElapsed(t))) },
         { ...AXIS },
       ],
       series: [

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { Redo2, Undo2 } from 'lucide-react'
 import { ApiError } from '../api/client'
 import {
   createExperiment,
@@ -30,7 +31,7 @@ function ValidationChip() {
   const validationError = useDocStore((s) => s.validationError)
   const count = useDocStore((s) => s.diagnostics.length)
   if (validating) {
-    return <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-500">validating…</span>
+    return <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-700">validating…</span>
   }
   if (validationError !== null) {
     return <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">validation unavailable</span>
@@ -162,7 +163,7 @@ export function Toolbar() {
       <div className="w-64">
         <TextField value={name} onCommit={setName} placeholder="experiment name" />
       </div>
-      {dirty && <span title="Unsaved changes" className="text-amber-500">●</span>}
+      {dirty && <span title="Unsaved changes" className="text-amber-600">●</span>}
       <ValidationChip />
       {error && (
         <span title={error} className="truncate text-xs text-red-600">
@@ -175,11 +176,23 @@ export function Toolbar() {
         </span>
       )}
       <span className="ml-auto flex items-center gap-1">
-        <button className={buttonClass} disabled={!canUndo} onClick={undo} title="Undo (⌘Z)">
-          ↶
+        <button
+          className={buttonClass}
+          disabled={!canUndo}
+          onClick={undo}
+          title="Undo (⌘Z)"
+          aria-label="Undo"
+        >
+          <Undo2 size={14} aria-hidden />
         </button>
-        <button className={buttonClass} disabled={!canRedo} onClick={redo} title="Redo (⇧⌘Z)">
-          ↷
+        <button
+          className={buttonClass}
+          disabled={!canRedo}
+          onClick={redo}
+          title="Redo (⇧⌘Z)"
+          aria-label="Redo"
+        >
+          <Redo2 size={14} aria-hidden />
         </button>
         <button className={buttonClass} disabled={busy} onClick={fresh}>
           New
