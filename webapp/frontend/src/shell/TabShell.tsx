@@ -1,7 +1,5 @@
 import type { ReactNode } from 'react'
-
-export const TABS = ['Devices', 'Builder', 'Run', 'Records'] as const
-export type Tab = (typeof TABS)[number]
+import { labScopedTab, TABS, type Tab } from './tabs'
 
 export function TabShell(props: {
   active: Tab
@@ -38,16 +36,23 @@ export function TabShell(props: {
           ))}
         </nav>
         <span className="ml-auto flex min-w-0 items-center gap-3 self-center py-3">
-          <span
-            className={
-              'shrink-0 rounded-full px-2 py-0.5 text-xs ' +
-              (props.lab ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-caption')
-            }
-          >
-            {props.lab ? `lab: ${props.lab}` : 'no lab selected'}
-          </span>
+          {/* The pill claims the current view is bound to a lab, so it may only appear where
+              that is true. On the Builder it read as an unmet precondition for work that has
+              no lab dependency at all; on Records it read as a filter over a table that is
+              never filtered by lab (RecordsTable renders its own per-row lab column). */}
+          {labScopedTab(props.active) && (
+            <span
+              className={
+                'shrink-0 rounded-full px-2 py-0.5 text-xs ' +
+                (props.lab ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-caption')
+              }
+            >
+              {props.lab ? `lab: ${props.lab}` : 'no lab selected'}
+            </span>
+          )}
           {/* truncate + title: a long health string must shorten, not wrap the single row
-              at 1024px (spec §3.2). min-w-0 on the parent is what lets it shrink. */}
+              at 1024px (spec §3.2). min-w-0 on the parent is what lets it shrink. This is the
+              server's health, not the lab's, so it stays on every tab. */}
           <span title={props.statusLine} className="truncate text-xs text-hint">
             {props.statusLine}
           </span>
