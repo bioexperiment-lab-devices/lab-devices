@@ -1,14 +1,12 @@
 import { useState, type ReactNode } from 'react'
-import { useDraggable } from '@dnd-kit/core'
 import { ChevronDown, ChevronRight, X } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
 import type { ControlKind, RepeatKind, StructureKind } from './tree'
-import type { DragPayload } from './dnd'
-import { RolesPanel } from './RolesPanel'
+import { Chip } from './Chip'
+import { RolesSection } from './RolesSection'
 import { StreamsPanel } from './StreamsPanel'
 import { KindIcon } from '../ui/icons'
-import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 
 const STRUCTURE: Array<{ kind: StructureKind; title: string }> = [
@@ -36,26 +34,6 @@ const REPEAT: Array<{ kind: RepeatKind; title: string }> = [
   { kind: 'group_ref', title: 'Group ref' },
 ]
 
-function Chip(props: { id: string; payload: DragPayload; children: ReactNode }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: props.id,
-    data: props.payload,
-  })
-  return (
-    <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      className={
-        'flex cursor-grab select-none items-center rounded border border-slate-300 bg-white px-2 py-1 text-xs shadow-sm ' +
-        (isDragging ? 'opacity-40' : 'hover:border-slate-400')
-      }
-    >
-      {props.children}
-    </div>
-  )
-}
-
 function Section(props: { title: string; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(props.defaultOpen ?? true)
   return (
@@ -69,50 +47,6 @@ function Section(props: { title: string; defaultOpen?: boolean; children: ReactN
       </button>
       {open && <div className="px-1">{props.children}</div>}
     </section>
-  )
-}
-
-function AddRoleForm() {
-  const catalog = useCatalogStore((s) => s.catalog)
-  const addRole = useDocStore((s) => s.addRole)
-  const [name, setName] = useState('')
-  const [type, setType] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const types = Object.keys(catalog?.device_types ?? {})
-  const add = () => {
-    if (!name || !type) return
-    const err = addRole(name, type)
-    setError(err)
-    if (!err) setName('')
-  }
-  return (
-    <div className="mt-2 space-y-1">
-      <div className="flex items-center gap-1">
-        <input
-          value={name}
-          placeholder="role name"
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && add()}
-          className={controlClass({ mono: true, width: 'w-24' })}
-        />
-        <select
-          value={type}
-          onChange={(e) => setType(e.target.value)}
-          className={controlClass()}
-        >
-          <option value="">type…</option>
-          {types.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        <button onClick={add} className={inlineButtonClass()}>
-          Add
-        </button>
-      </div>
-      {error && <p className="text-xs text-red-600">{error}</p>}
-    </div>
   )
 }
 
@@ -168,9 +102,7 @@ function GroupsPanel() {
 }
 
 export function Palette() {
-  const catalog = useCatalogStore((s) => s.catalog)
   const catalogError = useCatalogStore((s) => s.error)
-  const roles = useDocStore((s) => s.roles)
 
   return (
     <aside className="w-64 shrink-0 space-y-2 overflow-y-auto border-r border-slate-200 bg-slate-50 p-2">
@@ -218,41 +150,7 @@ export function Palette() {
       </Section>
       <Section title="Roles">
         {catalogError && <p className="text-xs text-red-600">catalog unavailable: {catalogError}</p>}
-        {Object.entries(roles).map(([role, def]) => {
-          const verbs = catalog?.device_types[def.type]
-          return (
-            <div key={role} className="mb-2">
-              <p className="py-1 font-mono text-xs text-slate-600">
-                {role} <span className="text-caption">· {def.type}</span>
-              </p>
-              {verbs ? (
-                <div className="flex flex-wrap gap-1">
-                  {Object.entries(verbs).map(([verb, spec]) => (
-                    <Chip
-                      key={verb}
-                      id={`palette-verb-${role}-${verb}`}
-                      payload={{
-                        source: 'palette-verb',
-                        role,
-                        verb,
-                        verbKind: spec.kind,
-                      }}
-                    >
-                      <KindIcon kind={spec.kind === 'measure' ? 'measure' : 'command'} className="mr-1" />
-                      {verb}
-                    </Chip>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-amber-600">unknown device type '{def.type}'</p>
-              )}
-            </div>
-          )
-        })}
-        <AddRoleForm />
-      </Section>
-      <Section title="Manage roles" defaultOpen={false}>
-        <RolesPanel />
+        <RolesSection />
       </Section>
       <Section title="Streams" defaultOpen={false}>
         <StreamsPanel />
