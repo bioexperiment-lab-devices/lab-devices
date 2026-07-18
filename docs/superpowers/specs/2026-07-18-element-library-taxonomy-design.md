@@ -152,9 +152,11 @@ name+params becomes a draggable `Chip` with `id` `palette-group-${name}` — uni
 names are already unique keys of the store's `groups` record, and disjoint from the block chips'
 `palette-block-` prefix. The jump and delete actions stay as explicit buttons beside it.
 
-Click and drag coexist on that chip without a separate handle because the `PointerSensor` is
-already configured with `activationConstraint: { distance: 4 }` (`BuilderTab.tsx:71`) — a
-press that never travels 4px is delivered as a click, not a drag.
+Click and drag don't conflict on this row because they don't live on the same element: the
+chip itself carries only the drag listeners (`useDraggable`) and has no `onClick` at all. The
+jump action that used to be the chip's click handler moved to its own `Pencil` `IconButton`
+beside the chip, so a press-and-release on the chip is simply a drag that never left the
+ground — there is nothing on that element to disambiguate it from.
 
 A hint line — "Drag a group onto the canvas to call it." — sits under the populated list, because
 the affordance is otherwise undiscoverable once no `Group ref` chip advertises it. It goes under
@@ -184,13 +186,19 @@ payload for one case would push a group-shaped parameter through every unrelated
 
 In `BuilderTab.tsx`:
 
-- `STRUCTURE_TITLES` (line 25) is renamed `BLOCK_TITLES`. Its contents are unchanged — it still
-  maps all twelve kinds including `group_ref`, which the drag overlay needs.
+- `STRUCTURE_TITLES` (line 25) is renamed `BLOCK_TITLES` and derived from `BLOCK_SECTIONS`
+  (`paletteSections.ts`) instead of hand-maintained, so it can never disagree with the palette's
+  own chip titles. It therefore covers only the eleven kinds `BLOCK_SECTIONS` lists, not
+  `group_ref` — the `palette-group` arm below supplies that label itself, from the group's own
+  name rather than a fixed "Group ref" string.
 - `dragOverlayInfo` (line 44) gains a `palette-group` arm returning
   `{ label: name, kind: 'group_ref' }`, so a dragged group shows the group-ref icon and its own
   name rather than the generic "Group ref".
-- `onDragEnd` (line 120) gains a `palette-group` arm inserting
-  `{ ...newPaletteNode('group_ref'), name }`.
+- `onDragEnd` (line 120) gains a `palette-group` arm inserting `newGroupRefNode(name)` — a
+  dedicated constructor (`tree.ts`) rather than `{ ...newPaletteNode('group_ref'), name }`, for
+  the same reason `palette-group` is its own `DragPayload` variant above: `newPaletteNode`
+  takes a kind and nothing else, so the group-shaped parameter gets its own constructor
+  instead of being pushed through every unrelated `newPaletteNode` call.
 
 The two `payload.source === 'palette-structure'` comparisons (lines 45 and 120) become
 `'palette-block'`.
