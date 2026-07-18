@@ -301,6 +301,16 @@ describe('lane auto-wrap on insert/move/duplicate', () => {
     expect(par.children[0].uid).toBe(cmd.uid) // original untouched
     expect(par.children[1].kind).toBe('serial') // clone wrapped
   })
+  it('insertNode into parallel children wraps a group_ref chip drop', () => {
+    const p = newPaletteNode('parallel')
+    const g = newGroupRefNode('wash')
+    const out = insertNode([p], g, { parentUid: p.uid, slot: 'children', index: 2 })
+    const par = out[0]
+    if (par.kind !== 'parallel') throw new Error('expected parallel')
+    const lane = par.children[2]
+    if (lane.kind !== 'serial') throw new Error('expected wrapped lane')
+    expect(lane.children.map((c) => c.uid)).toEqual([g.uid])
+  })
 })
 
 describe('newGroupRefNode', () => {

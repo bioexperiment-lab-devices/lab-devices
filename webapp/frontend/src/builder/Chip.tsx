@@ -2,9 +2,9 @@ import type { ReactNode } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import type { DragPayload } from './dnd'
 
-/** Draggable palette chip (structure kinds and role verbs). Unchanged from its former
- * Palette-local self; it lives alone so Palette and RolesSection can both import it
- * without a component-level cycle. */
+/** Draggable palette chip: block-section chips (Flow/Data/Pause/Safety), role verb chips,
+ * and the Groups panel's per-group chips. Unchanged from its former Palette-local self; it
+ * lives alone so Palette and RolesSection can both import it without a component-level cycle. */
 export function Chip(props: {
   id: string
   payload: DragPayload
