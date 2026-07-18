@@ -2,22 +2,35 @@ import { describe, expect, it } from 'vitest'
 import { BLOCK_SECTIONS } from './paletteSections'
 import { newPaletteNode, type PaletteKind } from './tree'
 
-/** Every kind `newPaletteNode` can construct. Hand-maintained: TypeScript cannot enumerate a
- * union at runtime. Adding a member to `PaletteKind` means adding it here AND to a section —
- * which is exactly the decision this suite exists to force. */
-const ALL_KINDS: PaletteKind[] = [
-  'serial', 'parallel', 'branch', 'loop', 'for_each',
-  'compute', 'record',
-  'wait', 'operator_input',
-  'alarm', 'abort',
-  'group_ref',
-]
+/** The complete kind→section mapping this suite exists to guard. `Record<Exclude<PaletteKind,
+ * 'group_ref'>, string>` makes TypeScript itself force this table to stay exhaustive as
+ * `PaletteKind` changes: add, rename, or remove a kind in tree.ts and this literal fails to
+ * compile until the table is updated to match — a hand-maintained array cannot do that, only
+ * catch a mismatch at test-run time. This also supplies the "every kind except group_ref" list
+ * the coverage test below needs, replacing what used to be a separately hand-maintained
+ * ALL_KINDS array; keeping both would have been two registries asserting the same fact. */
+const EXPECTED_SECTION: Record<Exclude<PaletteKind, 'group_ref'>, string> = {
+  serial: 'Flow',
+  parallel: 'Flow',
+  branch: 'Flow',
+  loop: 'Flow',
+  for_each: 'Flow',
+  compute: 'Data',
+  record: 'Data',
+  wait: 'Pause',
+  operator_input: 'Pause',
+  alarm: 'Safety',
+  abort: 'Safety',
+}
 
 const listed = (): PaletteKind[] => BLOCK_SECTIONS.flatMap((s) => s.items.map((i) => i.kind))
 
+const sectionOf = (k: PaletteKind): string | undefined =>
+  BLOCK_SECTIONS.find((s) => s.items.some((i) => i.kind === k))?.title
+
 describe('palette block sections', () => {
   it('covers every palette kind except group_ref', () => {
-    expect([...listed()].sort()).toEqual(ALL_KINDS.filter((k) => k !== 'group_ref').sort())
+    expect([...listed()].sort()).toEqual(Object.keys(EXPECTED_SECTION).sort())
   })
 
   it('never lists a kind in two sections', () => {
@@ -29,10 +42,19 @@ describe('palette block sections', () => {
     expect(listed()).not.toContain('group_ref')
   })
 
+  // Subsumed mechanically by 'assigns every kind to its expected section' below, but kept as
+  // its own named test: loop and for_each were the specific pair split across Control and
+  // Repeat whose drift motivated this whole re-cut into Flow/Data/Pause/Safety. A test that
+  // names that defect is worth more than the duplication costs.
   it('groups loop and for_each together', () => {
-    const section = (k: PaletteKind) => BLOCK_SECTIONS.find((s) => s.items.some((i) => i.kind === k))?.title
-    expect(section('loop')).toBe('Flow')
-    expect(section('for_each')).toBe('Flow')
+    expect(sectionOf('loop')).toBe('Flow')
+    expect(sectionOf('for_each')).toBe('Flow')
+  })
+
+  it('assigns every kind to its expected section', () => {
+    for (const [kind, section] of Object.entries(EXPECTED_SECTION)) {
+      expect(sectionOf(kind as PaletteKind)).toBe(section)
+    }
   })
 
   it('gives every chip a non-empty title and a constructible kind', () => {

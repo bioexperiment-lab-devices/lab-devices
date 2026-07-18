@@ -116,7 +116,7 @@ function AddRoleForm() {
 
 /** Lists declared groups for management (design §5.2's second editing scope). Each row's
  * primary interaction is now dragging its chip onto the canvas to insert a `group_ref` call
- * for that group, the same drag-from-palette pattern as the Structure/Control/Repeat/Roles
+ * for that group, the same drag-from-palette pattern as the Flow/Data/Pause/Safety/Roles
  * sections above. The pencil `IconButton` beside the chip is the scope switcher: it jumps
  * (Canvas.tsx) to that group's BODY for editing and turns blue (`active`) while that group's
  * scope is the one currently being edited. The trailing `X` still removes a group once nothing
