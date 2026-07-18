@@ -1,4 +1,4 @@
-import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { ChevronDown, ChevronRight, Copy, Plus, X } from 'lucide-react'
 import { useActiveTree, useDocStore } from '../stores/docStore'
@@ -9,6 +9,7 @@ import { blockSummary } from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
 import { IconButton } from '../ui/IconButton'
 import { KindIcon } from '../ui/icons'
+import { ScrollFades, useScrollEdges } from '../ui/ScrollX'
 
 const DiagContext = createContext<Map<string, MappedDiagnostic[]>>(new Map())
 
@@ -37,19 +38,35 @@ export function Canvas() {
       ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [scrollToUid])
 
+  // The canvas is the app's SINGLE horizontal scroller (finding #1, finding #5b). The fades
+  // are absolute overlays rendered as a sibling of the scroller inside this `relative` wrapper
+  // — not children of it: `useScrollEdges` re-observes the scroller's children, so a fade
+  // living among them would risk a resize feedback loop, and it would scroll away with the
+  // content instead of staying pinned to the viewport edge.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const edges = useScrollEdges(scrollRef)
+
   return (
     <DiagContext.Provider value={byUid}>
-      <div
-        className="min-w-0 flex-1 overflow-auto bg-slate-100 p-4"
-        onClick={() => select(null)}
-      >
-        <ScopeSwitcher />
-        {activeTree.length === 0 && (
-          <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-caption">
-            Drag blocks from the palette to start building.
-          </p>
-        )}
-        <BlockList parentUid={null} slot="blocks" items={activeTree} />
+      <div className="relative min-w-0 flex-1">
+        <div
+          ref={scrollRef}
+          className="h-full overflow-auto bg-slate-100 p-4"
+          onClick={() => select(null)}
+        >
+          {/* w-max lets a wide subtree make the canvas scroll instead of clipping inside a
+              nested box; min-w-full keeps a narrow doc filling the viewport. */}
+          <div className="w-max min-w-full">
+            <ScopeSwitcher />
+            {activeTree.length === 0 && (
+              <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-caption">
+                Drag blocks from the palette to start building.
+              </p>
+            )}
+            <BlockList parentUid={null} slot="blocks" items={activeTree} />
+          </div>
+        </div>
+        <ScrollFades edges={edges} from="from-slate-100" />
       </div>
     </DiagContext.Provider>
   )
@@ -183,7 +200,8 @@ function BlockView({ node }: { node: BlockNode }) {
       className={
         // min-w-0: a card that sits in a flex lane/branch-arm must be able to shrink to its
         // container instead of forcing it wide (flex min-width:auto is the classic culprit
-        // behind a card painting past its box — audit F11). See BranchLanes' overflow clip.
+        // behind a card painting past its box — audit F11). The lane/arm containers no longer
+        // clip (the Canvas is the single scroller), so this is what keeps a card honest.
         'min-w-0 rounded border bg-white text-sm shadow-sm ' +
         (selected ? 'border-blue-500 ring-1 ring-blue-300 ' : 'border-slate-300 ') +
         (isDragging ? 'opacity-40' : '')
@@ -281,7 +299,9 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
   const insertBlock = useDocStore((s) => s.insertBlock)
   const isEmptyLane = (lane: BlockNode) => lane.kind === 'serial' && lane.children.length === 0
   return (
-    <div className="flex items-stretch overflow-x-auto scroll-x-shadow">
+    // No nested overflow here: the Canvas is the only horizontal scroller, so a wide lane
+    // widens the canvas's content and scrolls THERE instead of being clipped inside this box.
+    <div className="flex items-stretch">
       <DropSlot
         at={{ parentUid: node.uid, slot: 'children', index: 0 }}
         horizontal
@@ -289,7 +309,7 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
       />
       {node.children.map((lane, i) => (
         <Fragment key={lane.uid}>
-          <div className="min-w-48 flex-1 rounded border border-dashed border-slate-200 p-1">
+          <div className="min-w-48 flex-auto rounded border border-dashed border-slate-200 p-1">
             <div className="flex h-6 items-center justify-between px-1 text-[10px] uppercase text-caption">
               <span>lane {i + 1}</span>
               {isEmptyLane(lane) && (
@@ -330,16 +350,21 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
 function BranchLanes({ node }: { node: BranchNode }) {
   const patchBlock = useDocStore((s) => s.patchBlock)
   return (
-    // overflow-x-auto (audit F11): a too-wide arm — e.g. a nested parallel whose lanes hold
-    // their min-w-48 floor — now scrolls inside the branch card instead of painting its
-    // content past the card edge over a sibling's action icons. The arms keep min-w-48 flex-1
-    // (the design floor); the container scrolling is what contains the overflow.
-    <div className="flex gap-2 overflow-x-auto scroll-x-shadow px-2 pb-2">
-      <div className="min-w-48 flex-1">
+    // W10 put `overflow-x-auto` here for audit F11 (a too-wide arm painting past the card edge
+    // over a sibling's action icons). That clipping is gone: the Canvas is now the single
+    // horizontal scroller, so a wide arm widens the canvas content and scrolls there — reachable
+    // rather than hidden. BlockView's `min-w-0` (F11's other half) stays and still does its job.
+    //
+    // flex-auto, not flex-1: `flex: 1 1 0%` is a hard equal split that ignores content, which is
+    // why an empty ELSE arm claimed half the card while THEN's content was cramped (finding #5b).
+    // `flex: 1 1 auto` bases each arm on its own content and shares only the leftover space, so a
+    // light arm settles toward its min-w-48 floor and a heavy arm takes the slack.
+    <div className="flex gap-2 px-2 pb-2">
+      <div className="min-w-48 flex-auto">
         <p className="flex h-6 items-center text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
       </div>
-      <div className="min-w-48 flex-1">
+      <div className="min-w-48 flex-auto">
         {node.else === null ? (
           <>
             <p className="flex h-6 items-center text-[10px] uppercase text-caption">else</p>
