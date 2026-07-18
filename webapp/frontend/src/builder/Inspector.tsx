@@ -305,7 +305,11 @@ function RetrySection({ node }: { node: CommandNode | MeasureNode }) {
             </div>
           )}
           {locked ? (
-            <p className="rounded border border-dashed border-slate-300 bg-slate-100 p-1.5 text-[11px] text-hint">
+            // text-caption, not text-hint: this box's own bg-slate-100 is a tinted surface
+            // (same shade as the canvas depth zebra), and text-hint/slate-500 measures
+            // 4.35:1 there — under the 4.5:1 AA floor (probe R5, frontend/CLAUDE.md
+            // "Colour"/"Text colors"). slate-600 clears at ~6.9:1 on this background.
+            <p className="rounded border border-dashed border-slate-300 bg-slate-100 p-1.5 text-[11px] text-caption">
               attempts/backoff are hidden until "allow repeat" is checked above
             </p>
           ) : retry !== undefined ? (

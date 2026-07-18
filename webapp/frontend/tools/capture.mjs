@@ -368,9 +368,12 @@ const states = [
     setup: async (page) => {
       await gotoBuilder(page)
       await importDoc(page, FIXTURES.torture)
-      // valve_03 · configure is the one command in this fixture with a bool param
-      // (hold_torque) — confirmed empirically against the running app, not just grepped
-      // from the fixture file.
+      // valve_03 · configure carries a bool param (hold_torque), which is what renders
+      // the select-plus-expression-toggle row R4 needs. It is not the only such block in
+      // this fixture — od_meter_01 · measure (include_raw) and od_meter_02 ·
+      // set_thermostat (enabled) are siblings of it in the same top-level `serial`
+      // (gen_torture.py's every_catalog_verb()) — but any one of the three renders the
+      // same row shape, so this state only needs to mount one.
       await selectBlock(page, /valve_03 · configure/)
       // Assert the row this state exists for actually mounted — a future fixture edit that
       // changes valve_03's params (or drops the bool one) would otherwise leave this state

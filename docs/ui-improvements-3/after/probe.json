@@ -8,13 +8,13 @@
       "documentScrollWidth": 1024,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 2025,
+        "scrollWidth": 2057,
         "clientWidth": 382
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 2025,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 2057,
           "clientWidth": 382
         }
       ]
@@ -29,13 +29,13 @@
       "documentScrollWidth": 1024,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 1702,
+        "scrollWidth": 1770,
         "clientWidth": 382
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 1702,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100.bg-hatch",
+          "scrollWidth": 1770,
           "clientWidth": 382
         }
       ]
@@ -50,13 +50,13 @@
       "documentScrollWidth": 1024,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 2025,
+        "scrollWidth": 2057,
         "clientWidth": 382
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 2025,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 2057,
           "clientWidth": 382
         }
       ]
@@ -71,13 +71,13 @@
       "documentScrollWidth": 1024,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 1702,
+        "scrollWidth": 1770,
         "clientWidth": 382
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 1702,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100.bg-hatch",
+          "scrollWidth": 1770,
           "clientWidth": 382
         }
       ]
@@ -92,13 +92,34 @@
       "documentScrollWidth": 1024,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3822,
+        "scrollWidth": 3934,
         "clientWidth": 382
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3822,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3934,
+          "clientWidth": 382
+        }
+      ]
+    }
+  },
+  {
+    "state": "group-scope-deep",
+    "viewport": "1024x720",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1024,
+      "documentScrollWidth": 1024,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 664,
+        "clientWidth": 382
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100.bg-hatch",
+          "scrollWidth": 664,
           "clientWidth": 382
         }
       ]
@@ -113,13 +134,13 @@
       "documentScrollWidth": 1024,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 855,
+        "scrollWidth": 871,
         "clientWidth": 382
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 855,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100.bg-hatch",
+          "scrollWidth": 871,
           "clientWidth": 382
         },
         {
@@ -139,13 +160,13 @@
       "documentScrollWidth": 1024,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 382
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 382
         }
       ]
@@ -160,13 +181,13 @@
       "documentScrollWidth": 1024,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 382
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 382
         }
       ]
@@ -181,13 +202,13 @@
       "documentScrollWidth": 1024,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 1702,
+        "scrollWidth": 1770,
         "clientWidth": 382
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 1702,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100.bg-hatch",
+          "scrollWidth": 1770,
           "clientWidth": 382
         }
       ]
@@ -202,13 +223,13 @@
       "documentScrollWidth": 1024,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 382
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 382
         }
       ]
@@ -223,13 +244,13 @@
       "documentScrollWidth": 1024,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 382
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 382
         }
       ]
@@ -244,13 +265,13 @@
       "documentScrollWidth": 1024,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 382
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 382
         }
       ]
@@ -265,13 +286,13 @@
       "documentScrollWidth": 1440,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 2025,
+        "scrollWidth": 2057,
         "clientWidth": 798
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 2025,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 2057,
           "clientWidth": 798
         }
       ]
@@ -286,13 +307,13 @@
       "documentScrollWidth": 1440,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 1702,
+        "scrollWidth": 1770,
         "clientWidth": 798
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 1702,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100.bg-hatch",
+          "scrollWidth": 1770,
           "clientWidth": 798
         }
       ]
@@ -307,13 +328,13 @@
       "documentScrollWidth": 1440,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 2025,
+        "scrollWidth": 2057,
         "clientWidth": 798
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 2025,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 2057,
           "clientWidth": 798
         }
       ]
@@ -328,13 +349,13 @@
       "documentScrollWidth": 1440,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 1702,
+        "scrollWidth": 1770,
         "clientWidth": 798
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 1702,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100.bg-hatch",
+          "scrollWidth": 1770,
           "clientWidth": 798
         }
       ]
@@ -349,16 +370,28 @@
       "documentScrollWidth": 1440,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3822,
+        "scrollWidth": 3934,
         "clientWidth": 798
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3822,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3934,
           "clientWidth": 798
         }
       ]
+    }
+  },
+  {
+    "state": "group-scope-deep",
+    "viewport": "1440x900",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1440,
+      "documentScrollWidth": 1440,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": null,
+      "horizontalScrollers": []
     }
   },
   {
@@ -370,13 +403,13 @@
       "documentScrollWidth": 1440,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 855,
+        "scrollWidth": 871,
         "clientWidth": 798
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 855,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100.bg-hatch",
+          "scrollWidth": 871,
           "clientWidth": 798
         },
         {
@@ -396,13 +429,13 @@
       "documentScrollWidth": 1440,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 798
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 798
         }
       ]
@@ -417,13 +450,13 @@
       "documentScrollWidth": 1440,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 798
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 798
         }
       ]
@@ -438,13 +471,13 @@
       "documentScrollWidth": 1440,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 1702,
+        "scrollWidth": 1770,
         "clientWidth": 798
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 1702,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100.bg-hatch",
+          "scrollWidth": 1770,
           "clientWidth": 798
         }
       ]
@@ -459,13 +492,13 @@
       "documentScrollWidth": 1440,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 798
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 798
         }
       ]
@@ -480,13 +513,13 @@
       "documentScrollWidth": 1440,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 798
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 798
         }
       ]
@@ -501,13 +534,13 @@
       "documentScrollWidth": 1440,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 798
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 798
         }
       ]
@@ -522,13 +555,13 @@
       "documentScrollWidth": 1920,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 2025,
+        "scrollWidth": 2057,
         "clientWidth": 1278
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 2025,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 2057,
           "clientWidth": 1278
         }
       ]
@@ -543,13 +576,13 @@
       "documentScrollWidth": 1920,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 1702,
+        "scrollWidth": 1770,
         "clientWidth": 1278
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 1702,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100.bg-hatch",
+          "scrollWidth": 1770,
           "clientWidth": 1278
         }
       ]
@@ -564,13 +597,13 @@
       "documentScrollWidth": 1920,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 2025,
+        "scrollWidth": 2057,
         "clientWidth": 1278
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 2025,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 2057,
           "clientWidth": 1278
         }
       ]
@@ -585,13 +618,13 @@
       "documentScrollWidth": 1920,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 1702,
+        "scrollWidth": 1770,
         "clientWidth": 1278
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 1702,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100.bg-hatch",
+          "scrollWidth": 1770,
           "clientWidth": 1278
         }
       ]
@@ -606,16 +639,28 @@
       "documentScrollWidth": 1920,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3822,
+        "scrollWidth": 3934,
         "clientWidth": 1278
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3822,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3934,
           "clientWidth": 1278
         }
       ]
+    }
+  },
+  {
+    "state": "group-scope-deep",
+    "viewport": "1920x1080",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1920,
+      "documentScrollWidth": 1920,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": null,
+      "horizontalScrollers": []
     }
   },
   {
@@ -645,13 +690,13 @@
       "documentScrollWidth": 1920,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 1278
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 1278
         }
       ]
@@ -666,13 +711,13 @@
       "documentScrollWidth": 1920,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 1278
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 1278
         }
       ]
@@ -687,13 +732,13 @@
       "documentScrollWidth": 1920,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 1702,
+        "scrollWidth": 1770,
         "clientWidth": 1278
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 1702,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100.bg-hatch",
+          "scrollWidth": 1770,
           "clientWidth": 1278
         }
       ]
@@ -708,13 +753,13 @@
       "documentScrollWidth": 1920,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 1278
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 1278
         }
       ]
@@ -729,13 +774,13 @@
       "documentScrollWidth": 1920,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 1278
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 1278
         }
       ]
@@ -750,13 +795,13 @@
       "documentScrollWidth": 1920,
       "pageOverflowsViewport": false,
       "canvasScrollerOverflow": {
-        "scrollWidth": 3864,
+        "scrollWidth": 3976,
         "clientWidth": 1278
       },
       "horizontalScrollers": [
         {
-          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
-          "scrollWidth": 3864,
+          "selector": "h-full.overflow-auto.p-4.bg-slate-100",
+          "scrollWidth": 3976,
           "clientWidth": 1278
         }
       ]
