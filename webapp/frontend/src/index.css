@@ -12,3 +12,30 @@
 @utility text-hint {
   color: var(--color-slate-500);
 }
+
+/* "Stands for something that is not shown here" — the ONLY meaning hatching carries
+   (design §3.5). Used in exactly two places: the canvas backdrop while editing a group
+   body (a subroutine, not the main workflow) and a group_ref card's left edge (a leaf
+   that expands to a whole subtree rendered nowhere on screen). Not a decoration: adding
+   a third hatched surface for any other reason dilutes it back to noise.
+
+   Both are low-coverage slate-200 on a light ground, chosen so text over them still
+   clears AA — verify with the probe, not by eye, whenever either is moved. */
+@utility bg-hatch {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 5px,
+    var(--color-slate-200) 5px 6px
+  );
+}
+
+@utility edge-hatch {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--color-slate-300) 0 2px,
+    transparent 2px 5px
+  );
+  background-size: 5px 100%;
+  background-repeat: repeat-y;
+  background-position: left top;
+}

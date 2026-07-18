@@ -35,6 +35,7 @@ export function Canvas() {
   // (docStore.ts) resolve the same scope for every block op, so reads here always agree
   // with what insertBlock/moveBlock/etc. would write to.
   const activeTree = useActiveTree()
+  const scope = useDocStore((s) => s.scope)
   const select = useDocStore((s) => s.select)
   const diagnostics = useDocStore((s) => s.diagnostics)
   const byUid = useMemo(() => diagnosticsByUid(diagnostics), [diagnostics])
@@ -67,7 +68,13 @@ export function Canvas() {
       <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-slate-200">
         <div
           ref={scrollRef}
-          className="h-full overflow-auto bg-slate-100 p-4"
+          className={
+            // Editing a group body was pixel-identical to editing the main workflow — the
+            // only cue was the value in a dropdown. The hatch says "this is a subroutine"
+            // without stealing any content space.
+            'h-full overflow-auto p-4 ' +
+            (scope === null ? 'bg-slate-100' : 'bg-slate-100 bg-hatch')
+          }
           onClick={() => select(null)}
         >
           {/* w-max lets a wide subtree make the canvas scroll instead of clipping inside a
@@ -126,7 +133,13 @@ function ScopeSwitcher() {
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="mb-2 flex flex-wrap items-center gap-2 text-xs"
+      className={
+        // Text must not sit directly on the canvas hatch (Canvas's backdrop, above): this
+        // strip goes solid white whenever a group scope is active so "Editing: [ ... ]"
+        // stays readable over it.
+        'mb-2 flex flex-wrap items-center gap-2 rounded px-2 py-1 text-xs ' +
+        (scope === null ? '' : 'bg-white shadow-sm')
+      }
     >
       <span className="font-semibold text-caption">Editing:</span>
       <select
@@ -236,6 +249,10 @@ function BlockView({ node }: { node: BlockNode }) {
         // load-bearing selection cue.
         'min-w-0 rounded border bg-white text-sm shadow-sm ' +
         cardBorderClass({ kind: node.kind, selected }) + ' ' +
+        // A group_ref is a leaf that expands to an entire subtree rendered nowhere on
+        // screen (design §3.5) — the edge hatch is the one sanctioned cue for that, paired
+        // with pl-1.5 so the header content clears the hatched strip instead of sitting on it.
+        (node.kind === 'group_ref' ? 'edge-hatch pl-1.5 ' : '') +
         (selected ? 'ring-2 ring-blue-400 ' : '') +
         (isDragging ? 'opacity-40' : '')
       }
