@@ -22,7 +22,7 @@ import {
 const DiagContext = createContext<Map<string, MappedDiagnostic[]>>(new Map())
 
 /** Nesting depth of the list currently being rendered. 0 is the canvas backdrop; the
- * outermost container's interior is 1. Only ContainerBody and BranchLanes provide it —
+ * outermost container's interior is 1. Only ContainerBody provides it —
  * BlockList is depth-transparent, so a container's own card sits at its PARENT's depth
  * and only its interior descends. */
 const DepthContext = createContext(0)
