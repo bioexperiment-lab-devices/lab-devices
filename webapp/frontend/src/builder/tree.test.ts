@@ -15,12 +15,14 @@ import {
   retryAfterVerbChange,
   updateNode,
   withFreshUids,
+  wrapAsLane,
   type BlockNode,
   type SerialNode,
   type ParallelNode,
   type LoopNode,
   type ForEachNode,
 } from './tree'
+import type { VerbSpec } from '../types/catalog'
 
 const wait = (uid: string): BlockNode => ({
   uid, kind: 'wait', duration: '1s', label: null, gapAfter: null, startOffset: null,
@@ -216,5 +218,83 @@ describe('tree ops', () => {
     expect(node.kind).toBe('group_ref')
     expect(node).toMatchObject({ name: '', args: {} })
     expect(childSlots(node)).toEqual([])
+  })
+})
+
+describe('wrapAsLane', () => {
+  it('passes a serial through unchanged (same object)', () => {
+    const s = newPaletteNode('serial')
+    expect(wrapAsLane(s)).toBe(s)
+  })
+  it('wraps a non-serial in a fresh plain serial', () => {
+    const w = newPaletteNode('wait')
+    const lane = wrapAsLane(w)
+    expect(lane.kind).toBe('serial')
+    if (lane.kind !== 'serial') return
+    expect(lane.children).toEqual([w])
+    expect(lane.label).toBeNull()
+    expect(lane.uid).not.toBe(w.uid)
+  })
+})
+
+describe('lane auto-wrap on insert/move/duplicate', () => {
+  it('insertNode into parallel children wraps a non-serial block', () => {
+    const p = newPaletteNode('parallel') // seeds two empty serial lanes
+    const w = newPaletteNode('wait')
+    const out = insertNode([p], w, { parentUid: p.uid, slot: 'children', index: 2 })
+    const par = out[0]
+    if (par.kind !== 'parallel') throw new Error('expected parallel')
+    expect(par.children).toHaveLength(3)
+    expect(par.children[2].kind).toBe('serial')
+    const lane = par.children[2]
+    if (lane.kind !== 'serial') return
+    expect(lane.children.map((c) => c.uid)).toEqual([w.uid])
+  })
+  it('insertNode into parallel children passes a serial through as the lane', () => {
+    const p = newPaletteNode('parallel')
+    const s = newPaletteNode('serial')
+    const out = insertNode([p], s, { parentUid: p.uid, slot: 'children', index: 0 })
+    const par = out[0]
+    if (par.kind !== 'parallel') throw new Error('expected parallel')
+    expect(par.children[0].uid).toBe(s.uid)
+  })
+  it('insertNode into a serial slot does NOT wrap', () => {
+    const s = newPaletteNode('serial')
+    const w = newPaletteNode('wait')
+    const out = insertNode([s], w, { parentUid: s.uid, slot: 'children', index: 0 })
+    const ser = out[0]
+    if (ser.kind !== 'serial') throw new Error('expected serial')
+    expect(ser.children[0].uid).toBe(w.uid)
+  })
+  it('moveNode of a block from inside a lane to lane level wraps it and keeps the source lane', () => {
+    const p = newPaletteNode('parallel')
+    const w = newPaletteNode('wait')
+    const seeded = insertNode(
+      [p],
+      w,
+      { parentUid: (p as { children: BlockNode[] }).children[0].uid, slot: 'children', index: 0 },
+    )
+    const out = moveNode(seeded, w.uid, { parentUid: p.uid, slot: 'children', index: 2 })
+    const par = out[0]
+    if (par.kind !== 'parallel') throw new Error('expected parallel')
+    expect(par.children).toHaveLength(3) // lane 1 (now empty) survives, new lane appended
+    const first = par.children[0]
+    if (first.kind !== 'serial') throw new Error('expected serial lane')
+    expect(first.children).toHaveLength(0)
+    const moved = par.children[2]
+    if (moved.kind !== 'serial') throw new Error('expected wrapped lane')
+    expect(moved.children.map((c) => c.uid)).toEqual([w.uid])
+  })
+  it('duplicateNode of a bare-block lane wraps the clone', () => {
+    const p = newPaletteNode('parallel')
+    const cmd = newVerbNode('pump', 'dispense', { kind: 'command', params: [] } as VerbSpec)
+    if (p.kind !== 'parallel') throw new Error('expected parallel')
+    const tree: BlockNode[] = [{ ...p, children: [cmd] }]
+    const [out] = duplicateNode(tree, cmd.uid)
+    const par = out[0]
+    if (par.kind !== 'parallel') throw new Error('expected parallel')
+    expect(par.children).toHaveLength(2)
+    expect(par.children[0].uid).toBe(cmd.uid) // original untouched
+    expect(par.children[1].kind).toBe('serial') // clone wrapped
   })
 })
