@@ -2,9 +2,11 @@ import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useSta
 import { useDraggable } from '@dnd-kit/core'
 import { ChevronDown, ChevronRight, Copy, Plus, X } from 'lucide-react'
 import { useActiveTree, useDocStore } from '../stores/docStore'
+import { useRoleColorStore } from '../stores/roleColorStore'
 import { diagnosticsByUid, type MappedDiagnostic } from './paths'
 import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
+import { assignRoleColors } from './roleColors'
 import { blockSummary, blockSummaryParts, faultMarker } from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
 import { controlClass, inlineButtonClass } from '../ui/controls'
@@ -188,6 +190,17 @@ function BlockList(props: { parentUid: string | null; slot: string; items: Block
   )
 }
 
+/** The swatch class for a block's device role, or null when the block has no role or the
+ * user cleared that role's colour. Resolved from the doc's roles rather than stored on the
+ * block, so every command and measure of a role shares one colour by construction. */
+function useRoleColor(node: BlockNode): string | null {
+  const roles = useDocStore((s) => s.roles)
+  const overrides = useRoleColorStore((s) => s.overrides)
+  const assigned = useMemo(() => assignRoleColors(roles, overrides), [roles, overrides])
+  if (node.kind !== 'command' && node.kind !== 'measure') return null
+  return assigned[node.device] ?? null
+}
+
 function BlockView({ node }: { node: BlockNode }) {
   const select = useDocStore((s) => s.select)
   const selected = useDocStore((s) => s.selectedUid === node.uid)
@@ -201,6 +214,7 @@ function BlockView({ node }: { node: BlockNode }) {
     data: { source: 'canvas', uid: node.uid } satisfies DragPayload,
   })
   const isContainer = isFlowKind(node.kind)
+  const swatch = useRoleColor(node)
   return (
     <div
       id={`block-${node.uid}`}
@@ -245,6 +259,12 @@ function BlockView({ node }: { node: BlockNode }) {
           />
         ) : (
           <span aria-hidden className="h-6 w-6 shrink-0" />
+        )}
+        {swatch && (
+          <span
+            aria-hidden
+            className={`h-2.5 w-2.5 shrink-0 rounded-sm ${swatch}`}
+          />
         )}
         <KindIcon kind={node.kind} />
         {/* max-w-80 (20rem): under width:max-content a nowrap truncate span's intrinsic
