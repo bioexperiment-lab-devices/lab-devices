@@ -11,32 +11,25 @@ export function TabShell(props: {
   children: ReactNode
 }) {
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      <header className="border-b border-slate-200 bg-white px-6 py-3">
-        <div className="flex items-baseline justify-between">
-          <h1 className="text-lg font-semibold">Experiment Studio</h1>
-          <span className="flex items-center gap-3">
-            <span
-              className={
-                'rounded-full px-2 py-0.5 text-xs ' +
-                (props.lab ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-caption')
-              }
-            >
-              {props.lab ? `lab: ${props.lab}` : 'no lab selected'}
-            </span>
-            <span className="text-xs text-hint">{props.statusLine}</span>
-          </span>
-        </div>
-        <nav className="mt-3 flex gap-2">
+    // h-screen flex column (not min-h-screen + page scroll): <main> owns the scrolling, so
+    // nothing downstream needs to know the header's height — this is what retired
+    // BuilderTab's h-[calc(100vh-9rem)], which hard-coded the old two-row header.
+    <div className="flex h-screen flex-col bg-slate-100 text-slate-900">
+      <header className="flex shrink-0 items-stretch gap-6 border-b border-slate-200 bg-white px-6">
+        <h1 className="self-center py-3 text-lg font-semibold">Experiment Studio</h1>
+        {/* items-stretch + border-b-2 on each tab: the buttons run the full header height,
+            so the active tab's underline sits ON the header's own border — reading as an
+            attached tab, not a floating pill. */}
+        <nav className="flex items-stretch gap-1">
           {TABS.map((tab, i) => (
             <button
               key={tab}
               onClick={() => props.onSelect(tab)}
               className={
-                'rounded-full px-4 py-1.5 text-sm transition-colors ' +
+                'inline-flex items-center border-b-2 px-3 text-sm transition-colors ' +
                 (tab === props.active
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-slate-200 text-slate-600 hover:bg-slate-300')
+                  ? 'border-slate-900 font-medium text-slate-900'
+                  : 'border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900')
               }
             >
               <span className="mr-1.5 font-mono text-xs opacity-60">{i + 1}</span>
@@ -44,8 +37,23 @@ export function TabShell(props: {
             </button>
           ))}
         </nav>
+        <span className="ml-auto flex min-w-0 items-center gap-3 self-center py-3">
+          <span
+            className={
+              'shrink-0 rounded-full px-2 py-0.5 text-xs ' +
+              (props.lab ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-caption')
+            }
+          >
+            {props.lab ? `lab: ${props.lab}` : 'no lab selected'}
+          </span>
+          {/* truncate + title: a long health string must shorten, not wrap the single row
+              at 1024px (spec §3.2). min-w-0 on the parent is what lets it shrink. */}
+          <span title={props.statusLine} className="truncate text-xs text-hint">
+            {props.statusLine}
+          </span>
+        </span>
       </header>
-      <main className="p-6">{props.children}</main>
+      <main className="min-h-0 flex-1 overflow-y-auto p-6">{props.children}</main>
     </div>
   )
 }

@@ -127,7 +127,7 @@ export function BuilderTab() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-9rem)] flex-col gap-2">
+    <div className="flex h-full flex-col gap-2">
       <Toolbar />
       <DndContext
         sensors={sensors}
