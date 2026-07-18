@@ -10,12 +10,21 @@ const found = await page.evaluate(probeRules)
 await browser.close()
 
 const rules = [...new Set(found.map((v) => v.rule))].sort()
-const expected = [
-  'clipped-overflow',
-  'sibling-height-mismatch',
-  'tiny-target',
-  'truncate-without-title',
-]
+// Exactly one plant per rule, EXCEPT sibling-height-mismatch, which carries three
+// deliberately: the original center-aligned mismatch (R4), plus two added to close blind
+// spots found in review — R4b (an align-items:stretch row whose children set explicit,
+// mismatched heights: stretch does not override an explicit height, so this survives
+// stretch and a rule that skipped all stretch rows could never see it) and R4c (a control
+// nested one level below row.children inside a plain grouping div, invisible to a
+// direct-children-only scan). This is a deliberate, documented count, not a loosened
+// assertion — the "exactly N" check below still fails on any drift.
+const expectedCounts = {
+  'clipped-overflow': 1,
+  'sibling-height-mismatch': 3,
+  'tiny-target': 1,
+  'truncate-without-title': 1,
+}
+const expected = Object.keys(expectedCounts).sort()
 
 // An untested probe reporting zero violations is indistinguishable from a working app, and
 // is MORE dangerous than no probe. It must be proven to find planted bugs before its
@@ -28,10 +37,10 @@ if (missing.length) {
 const counts = Object.fromEntries(
   expected.map((r) => [r, found.filter((v) => v.rule === r).length]),
 )
-const overfired = expected.filter((r) => counts[r] !== 1)
+const overfired = expected.filter((r) => counts[r] !== expectedCounts[r])
 if (overfired.length) {
   console.error(
-    `FAIL — expected exactly one hit per rule, got ${JSON.stringify(counts)} (traps firing?)`,
+    `FAIL — expected ${JSON.stringify(expectedCounts)} hits per rule, got ${JSON.stringify(counts)} (traps firing?)`,
   )
   process.exit(1)
 }

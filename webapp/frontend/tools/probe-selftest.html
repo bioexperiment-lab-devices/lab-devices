@@ -9,6 +9,29 @@
   .row button { height: 26px; }
   .okrow { display: flex; align-items: center; }
   .okrow input, .okrow button { height: 24px; }
+
+  /* Finding 1: align-items:stretch does NOT make explicit heights agree. */
+  .stretchrow { display: flex; align-items: stretch; gap: 4px; }
+  .stretchrow .h6 { height: 24px; }
+  .stretchrow .h7 { height: 28px; }
+  .stretchrow-ok { display: flex; align-items: stretch; gap: 4px; }
+  /* Forces the row's cross-size to 30px so the auto-height input/button stretch above the
+     24px tiny-target floor — without this they'd stretch to their ~21px content height and
+     trip R3 instead of testing R4's stretch-equalization guard. Not a control, so R4 never
+     compares against it. */
+  .stretchrow-ok .filler { height: 30px; width: 1px; }
+
+  /* Finding 2: a control nested one level below row.children, inside a plain grouping div
+     (mirrors the Toolbar's button grouping). */
+  .grouprow { display: flex; align-items: center; gap: 4px; }
+  .grouprow .h6 { height: 24px; }
+  .grouprow .h7 { height: 28px; }
+
+  /* Finding 2 guard: flex-wrap puts these on two visual lines; heights match WITHIN each
+     line, so this must not fire even though the container mixes 24px and 30px overall. */
+  .wraprow { display: flex; flex-wrap: wrap; gap: 4px; width: 108px; }
+  .wraprow .a, .wraprow .b { height: 24px; width: 50px; box-sizing: border-box; }
+  .wraprow .c, .wraprow .d { height: 30px; width: 50px; box-sizing: border-box; }
 </style>
 
 <!-- PLANT R1 -->
@@ -19,6 +42,17 @@
 <button style="height:16px;width:16px">x</button>
 <!-- PLANT R4 -->
 <div class="row"><input /><button>go</button></div>
+<!-- PLANT R4b (Finding 1): align-items:stretch with BOTH children setting an explicit
+     height (the real CONTROL_H-mismatch shape). Stretch does not override an explicit
+     height, so this mismatch survives stretch and a rule that skips all stretch rows can
+     never see it. -->
+<div class="stretchrow"><input class="h6" /><button class="h7">go</button></div>
+<!-- PLANT R4c (Finding 2): the button sits one level below row.children, inside a plain
+     (non-flex) grouping div — a direct-children-only scan cannot reach it. -->
+<div class="grouprow">
+  <input class="h6" />
+  <div class="group"><button class="h7">go</button></div>
+</div>
 
 <!-- TRAP: scrollable overflow is reachable, must NOT fire R1 -->
 <div style="overflow-x:auto;width:50px"><span style="display:inline-block;width:200px">ok</span></div>
@@ -29,6 +63,17 @@
 <div class="trunc" title="full text here">another ellipsised label, R1 must ignore this</div>
 <!-- TRAP: matching heights must NOT fire R4 -->
 <div class="okrow"><input /><button>go</button></div>
+<!-- TRAP (Finding 1): genuine align-items:stretch with NO explicit heights legitimately
+     equalizes; must NOT fire R4 -->
+<div class="stretchrow-ok"><input /><button>go</button><div class="filler"></div></div>
+<!-- TRAP (Finding 2): flex-wrap forces two visual lines (a,b on line 1; c,d on line 2);
+     heights match within each line even though the container mixes 24px/30px overall —
+     must NOT fire R4. Guards the vertical-overlap line clustering against comparing
+     controls across wrapped lines. -->
+<div class="wraprow">
+  <button class="a">a</button><button class="b">b</button>
+  <button class="c">c</button><button class="d">d</button>
+</div>
 <!-- TRAP: a native text input whose value overflows its box must NOT fire R1. Chromium
      reports overflow-x:clip here, but the input scrolls its own value, so the text is
      reachable. Observed for real on the Inspector's Label field with a long morbidostat

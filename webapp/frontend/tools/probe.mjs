@@ -77,23 +77,77 @@ export function probeRules() {
 
   // R4 — sibling controls disagree about height. THIS IS THE NEW RULE (spec §5): the audit
   // had no rule for it, which is why all twelve C-sites shipped in 0.8.0.
+  //
+  // No `align-items: stretch` skip. An earlier version had one, commented "stretch makes
+  // heights agree by definition" — false whenever a child sets an explicit height, which is
+  // exactly what this codebase's control token does (`CONTROL_H = 'h-6'`, src/ui/controls.ts):
+  // per the flexbox spec, `stretch` only inflates a flex item whose cross-size is `auto`; an
+  // item with an explicit height keeps it. Measured in Chromium: two children with explicit
+  // 24px/28px heights under `align-items: stretch` render at 24/28 (mismatch preserved, spread
+  // 4px); two children with NO explicit height under the same `align-items: stretch` render
+  // identically (spread 0px). So dropping the skip and relying solely on the >1px threshold
+  // below catches the real defect (explicit-height mismatch survives stretch) without flagging
+  // genuine stretch equalization (auto-height children truly render at equal heights) — no
+  // false positive, no re-introduced blind spot.
+  //
+  // Controls are gathered by descending into plain (non-flex) wrapper divs — a control one
+  // level deeper than `row.children` (e.g. the Toolbar's button grouping, or a chip wrapped in
+  // its own div) was invisible to a direct-children-only scan. Descent stops at any element
+  // that is itself a flex row: that element gets its own pass through this same loop, so
+  // descending into it here would double-count it and could wrongly compare controls that
+  // belong to an independently-laid-out nested row.
+  //
+  // Gathered controls are then clustered by vertical overlap into visual lines before
+  // comparing heights, so a `flex-wrap` container that wraps into multiple lines only compares
+  // controls that actually share a rendered row — two controls on different wrapped lines can
+  // have wildly different heights without it being a mismatch of anything.
+  const rowControls = (row) => {
+    const found = []
+    const walk = (el) => {
+      for (const child of el.children) {
+        if (['BUTTON', 'INPUT', 'SELECT'].includes(child.tagName)) {
+          found.push(child)
+          continue
+        }
+        const cs = getComputedStyle(child)
+        const isNestedRow = cs.display === 'flex' && !cs.flexDirection.startsWith('column')
+        if (!isNestedRow) walk(child) // a nested flex row is inspected in its own iteration
+      }
+    }
+    walk(row)
+    return found
+  }
   for (const row of document.querySelectorAll('*')) {
     const s = getComputedStyle(row)
     if (s.display !== 'flex' || s.flexDirection.startsWith('column')) continue
-    if (s.alignItems === 'stretch') continue // stretch makes heights agree by definition
-    const controls = Array.from(row.children).filter((c) =>
-      ['BUTTON', 'INPUT', 'SELECT'].includes(c.tagName),
-    )
+    const controls = rowControls(row)
     if (controls.length < 2) continue
-    const hs = controls.map((c) => c.getBoundingClientRect().height).filter((h) => h > 0)
-    if (hs.length < 2) continue
-    const spread = Math.max(...hs) - Math.min(...hs)
-    if (spread > 1) {
-      out.push({
-        rule: 'sibling-height-mismatch',
-        selector: cssPath(row),
-        detail: `spread ${spread.toFixed(1)}px`,
-      })
+    const withRect = controls
+      .map((c) => ({ c, r: c.getBoundingClientRect() }))
+      .filter((x) => x.r.height > 0)
+      .sort((a, b) => a.r.top - b.r.top)
+    const lines = []
+    for (const item of withRect) {
+      const line = lines.find((l) => item.r.top < l.bottom && item.r.bottom > l.top)
+      if (line) {
+        line.items.push(item)
+        line.top = Math.min(line.top, item.r.top)
+        line.bottom = Math.max(line.bottom, item.r.bottom)
+      } else {
+        lines.push({ items: [item], top: item.r.top, bottom: item.r.bottom })
+      }
+    }
+    for (const line of lines) {
+      if (line.items.length < 2) continue
+      const hs = line.items.map((x) => x.r.height)
+      const spread = Math.max(...hs) - Math.min(...hs)
+      if (spread > 1) {
+        out.push({
+          rule: 'sibling-height-mismatch',
+          selector: cssPath(row),
+          detail: `spread ${spread.toFixed(1)}px`,
+        })
+      }
     }
   }
 

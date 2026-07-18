@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# tools/capture.mjs's default --out target, so a bare `npm run capture` can't dirty the tree
+capture-out
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
