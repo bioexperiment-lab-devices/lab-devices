@@ -7,7 +7,8 @@ import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 import type { ParamSpec } from '../types/catalog'
 import type { ParamValue, RetryJson } from '../types/doc'
-import { gapAfterEligible } from './inspectorRules'
+import { failureFields, failureSummary, timingFields, timingSummary } from './inspectorRules'
+import { InspectorSection } from './InspectorSection'
 import { coerceParamInput, coerceValueInput, paramInputText } from './params'
 import { StreamIntoPicker } from './StreamIntoPicker'
 import {
@@ -151,20 +152,18 @@ function BlockForm({ node }: { node: BlockNode }) {
   const patchBlock = useDocStore((s) => s.patchBlock)
   const loc = findLocation(activeTree, node.uid)
   const parentKind = loc?.parent?.kind ?? null
-  // Gap-after eligibility (audit F5): see inspectorRules.ts for the engine-execution
-  // rationale — it is broader than "top level or serial", also covering loop/branch/
-  // for_each body children, which all run through the same shared runner.
-  const showGapAfter = gapAfterEligible(node.kind, parentKind)
-  // for_each may not carry start_offset at all (expand.py:26 _FOR_EACH_FORBIDDEN) —
-  // it is a splice, so there is no single runtime block for the key to attach to.
-  const showStartOffset = node.kind !== 'for_each' && parentKind === 'parallel'
+  // An empty list means the section does not render at all (design §3.3): `for_each` gets
+  // no tail whatsoever (expand.py:26 forbids all four keys on a splice) and `abort` gets no
+  // "On failure" (tolerating a safety stop is a contradiction, engine design 2026-07-16
+  // §5.1). Both absences state the engine's rule better than a disabled control would.
+  const timing = timingFields(node.kind, parentKind)
+  const failure = failureFields(node.kind)
   return (
     <div>
       <h2 className="mb-2 text-sm font-semibold text-slate-700">{KIND_TITLES[node.kind]}</h2>
-      <KindBody node={node} />
-      <h3 className="mt-3 border-t border-slate-200 pt-2 text-xs font-semibold uppercase text-caption">
-        Timing & label
-      </h3>
+      {/* Label is the one field that means the same thing for all fourteen kinds, so it
+          leads every form. The h2 keeps naming the kind, so nothing about kind legibility
+          regresses (design §3.1). */}
       <FieldRow label="Label">
         <TextField
           value={node.label ?? ''}
@@ -172,43 +171,55 @@ function BlockForm({ node }: { node: BlockNode }) {
           placeholder="optional display name"
         />
       </FieldRow>
-      {showGapAfter && (
-        <FieldRow label="Gap after">
-          <DurationField
-            value={node.gapAfter}
-            allowEmpty
-            onCommit={(v) => patchBlock(node.uid, { gapAfter: v })}
-          />
-        </FieldRow>
+      <KindBody node={node} />
+      {timing.length > 0 && (
+        <InspectorSection title="Timing" summary={timingSummary(node, parentKind)}>
+          {timing.includes('gapAfter') && (
+            <FieldRow label="Gap after">
+              <DurationField
+                value={node.gapAfter}
+                allowEmpty
+                onCommit={(v) => patchBlock(node.uid, { gapAfter: v })}
+              />
+            </FieldRow>
+          )}
+          {timing.includes('startOffset') && (
+            <FieldRow label="Start offset">
+              <DurationField
+                value={node.startOffset}
+                allowEmpty
+                onCommit={(v) => patchBlock(node.uid, { startOffset: v })}
+              />
+            </FieldRow>
+          )}
+        </InspectorSection>
       )}
-      {showStartOffset && (
-        <FieldRow label="Start offset">
-          <DurationField
-            value={node.startOffset}
-            allowEmpty
-            onCommit={(v) => patchBlock(node.uid, { startOffset: v })}
-          />
-        </FieldRow>
+      {failure.length > 0 && (
+        <InspectorSection title="On failure" summary={failureSummary(node)}>
+          {failure.includes('onError') && (
+            <FieldRow label="On error">
+              <select
+                value={node.onError ?? 'fail'}
+                onChange={(e) =>
+                  patchBlock(node.uid, { onError: e.target.value as 'fail' | 'continue' })
+                }
+                className={controlClass()}
+              >
+                <option value="fail">fail (stop the run)</option>
+                <option value="continue">continue (tolerate the failure)</option>
+              </select>
+            </FieldRow>
+          )}
+          {/* Both conditions are load-bearing. `failure.includes('retry')` keeps
+              FAILURE_POLICY the single authority on whether retry is offered at all — without
+              it, adding 'retry' to another kind's policy would make failureSummary advertise a
+              sub-form that never renders, silently and with no compile error. The kind check is
+              what lets TypeScript narrow node to Command/Measure, so RetrySection needs no cast. */}
+          {failure.includes('retry') && (node.kind === 'command' || node.kind === 'measure') && (
+            <RetrySection node={node} />
+          )}
+        </InspectorSection>
       )}
-      {/* abort forbids on_error: "continue" — tolerating a safety stop is a contradiction
-          (engine design 2026-07-16 §5.1), so the control is omitted rather than offered and
-          rejected. The related rule (an abort may have no tolerant ANCESTOR) is the backend
-          validator's; it surfaces as a diagnostic, not as a second frontend opinion.
-          for_each forbids on_error outright (expand.py:26) for the same splice reason as
-          gap_after/start_offset above — same suppression pattern, different block-level key. */}
-      {node.kind !== 'abort' && node.kind !== 'for_each' && (
-        <FieldRow label="On error">
-          <select
-            value={node.onError ?? 'fail'}
-            onChange={(e) => patchBlock(node.uid, { onError: e.target.value as 'fail' | 'continue' })}
-            className={controlClass()}
-          >
-            <option value="fail">fail (stop the run)</option>
-            <option value="continue">continue (tolerate the failure)</option>
-          </select>
-        </FieldRow>
-      )}
-      {(node.kind === 'command' || node.kind === 'measure') && <RetrySection node={node} />}
     </div>
   )
 }
@@ -294,7 +305,11 @@ function RetrySection({ node }: { node: CommandNode | MeasureNode }) {
             </div>
           )}
           {locked ? (
-            <p className="rounded border border-dashed border-slate-300 bg-slate-100 p-1.5 text-[11px] text-hint">
+            // text-caption, not text-hint: this box's own bg-slate-100 is a tinted surface
+            // (same shade as the canvas depth zebra), and text-hint/slate-500 measures
+            // 4.35:1 there — under the 4.5:1 AA floor (probe R5, frontend/CLAUDE.md
+            // "Colour"/"Text colors"). slate-600 clears at ~6.9:1 on this background.
+            <p className="rounded border border-dashed border-slate-300 bg-slate-100 p-1.5 text-[11px] text-caption">
               attempts/backoff are hidden until "allow repeat" is checked above
             </p>
           ) : retry !== undefined ? (
@@ -402,12 +417,14 @@ function ActionForm({ node }: { node: CommandNode | MeasureNode }) {
           ))}
         </select>
       </FieldRow>
-      {node.kind === 'measure' && <IntoPicker node={node} />}
       {spec ? (
         <ParamFields node={node} specs={spec.params} />
       ) : (
         <p className="text-xs text-amber-700">verb not in catalog — params not editable</p>
       )}
+      {/* Result destination last: configure the action, then say where its value goes.
+          It used to sit above the params, splitting a verb from its own arguments. */}
+      {node.kind === 'measure' && <IntoPicker node={node} />}
     </div>
   )
 }
@@ -556,13 +573,6 @@ function OperatorInputForm({ node }: { node: OperatorInputNode }) {
           <option value="enum">enum</option>
         </select>
       </FieldRow>
-      <FieldRow label="Prompt">
-        <AutoGrowTextArea
-          value={node.prompt ?? ''}
-          onCommit={(v) => patchBlock(node.uid, { prompt: v || null })}
-          placeholder="shown to the operator"
-        />
-      </FieldRow>
       {numeric && (
         <>
           <FieldRow label="Min">
@@ -602,6 +612,15 @@ function OperatorInputForm({ node }: { node: OperatorInputNode }) {
           />
         </FieldRow>
       )}
+      {/* Last: the type and its constraints define what the operator may enter, so they
+          belong together; the prompt is the operator-facing prose describing the result. */}
+      <FieldRow label="Prompt">
+        <AutoGrowTextArea
+          value={node.prompt ?? ''}
+          onCommit={(v) => patchBlock(node.uid, { prompt: v || null })}
+          placeholder="shown to the operator"
+        />
+      </FieldRow>
     </div>
   )
 }

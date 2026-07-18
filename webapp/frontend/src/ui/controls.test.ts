@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { iconButtonClass } from './IconButton'
-import { CONTROL_H, badgeClass, controlClass, inlineButtonClass, textAreaClass } from './controls'
+import {
+  CONTROL_H,
+  badgeClass,
+  controlClass,
+  inlineButtonClass,
+  sectionHeaderClass,
+  textAreaClass,
+} from './controls'
 
 /** The height classes present in a class string. */
 const heights = (cls: string) => cls.split(/\s+/).filter((c) => /^h-\d/.test(c))
@@ -138,5 +145,21 @@ describe('badgeClass', () => {
   it('bounds the badge to its row so an inner span can ellipsize a long name', () => {
     expect(badgeClass()).toContain('max-w-full')
     expect(badgeClass({ active: true })).toContain('max-w-full')
+  })
+})
+
+describe('sectionHeaderClass', () => {
+  it('carries the shared control height so it lines up with the fields below it', () => {
+    expect(sectionHeaderClass()).toContain('h-6')
+  })
+  it('is left-aligned and emits no competing justify utility', () => {
+    const cls = sectionHeaderClass()
+    expect(cls).toContain('justify-start')
+    // The cascade trap: two justify-* utilities in one class string means the compiled
+    // stylesheet order decides, not this string's order.
+    expect(cls).not.toContain('justify-center')
+  })
+  it('uses text-caption, since the header names a real setting group', () => {
+    expect(sectionHeaderClass()).toContain('text-caption')
   })
 })

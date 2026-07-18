@@ -54,8 +54,12 @@ async function importDoc(page, file) {
   await page.waitForTimeout(400) // let validation settle so the chip is not mid-flight
 }
 
-/** Select the first block card whose one-line summary matches `re`, by clicking its
- * drag header (the card's own onClick is what sets selection). */
+/** Select the first block card whose `textContent` matches `re`, by clicking its drag
+ * header (the card's own onClick is what sets selection). Matches raw `textContent`, not
+ * the accessible name — the distinction is load-bearing: the `∀` glyph on a `for_each`
+ * card is `aria-hidden`, so it appears in `textContent` but is invisible to the accessible
+ * name, which is exactly why the `for_each` selector below needed its leading anchor
+ * removed (see `inspector-tail-absent` below). */
 async function selectBlock(page, re) {
   const uid = await page.evaluate((src) => {
     const rx = new RegExp(src)
@@ -87,6 +91,33 @@ async function selectScope(page, group) {
 const scopeSelect = (page) => page.locator('select:has(option:text-is("Main workflow"))')
 /** The ScopeSwitcher row itself, so "New group…"/"Add" resolve inside it. */
 const scopeRow = (page) => scopeSelect(page).locator('xpath=..')
+
+/** A block whose DIRECT parent is `parallel` — the only position where `timingFields`
+ * (inspectorRules.ts) offers `Start offset` instead of `Gap after`. Settled on lane 1 of
+ * ui-audit-torture.json's top-level 8-lane `parallel` (blocks[5]): every lane there is a
+ * `serial`, and W13 makes a `serial` lane render AS the lane itself (Canvas.tsx `Lane`) —
+ * its handle row's accessible text is `lane 1` (from the lane index), immediately followed
+ * by the block's own quoted label (also "lane 1" in this fixture, coincidentally), so the
+ * DOM text is `lane 1"lane 1"`. Confirmed empirically against the running app: selecting
+ * this block and opening Timing shows exactly one `Start offset` field and zero `Gap
+ * after` fields — see the `inspector-tail-start-offset` state below, which asserts this
+ * rather than trusting the selector. */
+const PARALLEL_CHILD = /^lane 1\b/
+
+/** Expand a collapsed Inspector tail section by title. The accessible name gains the
+ * collapsed-state summary once a value is set (`Timing · gap after 30s`), so anchor the
+ * match at the start rather than using an exact name. */
+async function expandSection(page, title) {
+  const header = page.getByRole('button', { name: new RegExp(`^${title}`) })
+  if ((await header.getAttribute('aria-expanded')) === 'false') await header.click()
+  await page.waitForTimeout(150)
+  // Verify the click actually landed — a selector that silently matched nothing (0 elements)
+  // or a section that refused to open would otherwise leave every caller's state "clean" with
+  // the tail still collapsed, which is the exact vacuous-pass trap this harness exists to catch.
+  if ((await header.getAttribute('aria-expanded')) !== 'true') {
+    throw new Error(`${title} section did not expand`)
+  }
+}
 
 const states = [
   {
@@ -170,6 +201,186 @@ const states = [
       await page.waitForTimeout(400)
       await page.getByRole('button', { name: 'Groups', exact: true }).click()
       await page.waitForTimeout(200)
+    },
+  },
+  {
+    name: 'inspector-tail-autoopen',
+    description:
+      'both tail sections auto-opened by non-default values. Sets the values, then selects ' +
+      'AWAY and back so BlockForm remounts and the auto-open path (summary !== null) is what ' +
+      'opens them — not the clicks that set them.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.torture)
+      await selectBlock(page, /^\s*wait /)
+      await expandSection(page, 'Timing')
+      await page.getByLabel('Gap after').fill('30s')
+      await page.getByLabel('Gap after').press('Enter')
+      await expandSection(page, 'On failure')
+      await page.getByLabel('On error').selectOption('continue')
+      await page.waitForTimeout(200)
+      await selectBlock(page, /^\s*Abort if /) // away…
+      await selectBlock(page, /^\s*wait /) // …and back: remount, auto-open
+      // Assert both sections actually auto-opened — a section that silently stayed
+      // collapsed after the remount would still leave R4 nothing to measure, and no error
+      // would surface anywhere else in this harness.
+      const timingHeader = page.getByRole('button', { name: /^Timing/ })
+      const failureHeader = page.getByRole('button', { name: /^On failure/ })
+      if ((await timingHeader.getAttribute('aria-expanded')) !== 'true') {
+        throw new Error('Timing did not auto-open after the away-and-back reselect')
+      }
+      if ((await failureHeader.getAttribute('aria-expanded')) !== 'true') {
+        throw new Error('On failure did not auto-open after the away-and-back reselect')
+      }
+      if ((await page.getByLabel('Gap after').count()) !== 1) {
+        throw new Error('Gap after not visible after Timing auto-opened')
+      }
+      if ((await page.getByLabel('On error').count()) !== 1) {
+        throw new Error('On error not visible after On failure auto-opened')
+      }
+      // The auto-open path is `open = summary !== null` at mount (InspectorSection.tsx) —
+      // aria-expanded alone can't distinguish that from a stale click, since both render
+      // identically once open. The collapsed-state summary text is the one piece of DOM
+      // evidence that the computed summary is genuinely non-null, but InspectorSection only
+      // renders it while collapsed — so toggle Timing closed to read it, then back open to
+      // leave the captured screenshot showing both sections expanded as described above.
+      await timingHeader.click()
+      const collapsedName = (await timingHeader.textContent()) ?? ''
+      if (!/gap after 30s/.test(collapsedName)) {
+        throw new Error(`Timing's collapsed summary did not carry its value: "${collapsedName}"`)
+      }
+      await timingHeader.click()
+      await page.waitForTimeout(150)
+      if ((await timingHeader.getAttribute('aria-expanded')) !== 'true') {
+        throw new Error('Timing did not reopen after the summary-text check')
+      }
+    },
+  },
+  {
+    name: 'inspector-tail-expanded',
+    description:
+      'a block at all defaults with both tail sections manually expanded — the collapsed ' +
+      'default would leave R4 (sibling-height-mismatch) nothing to measure on these rows, ' +
+      'which is exactly how W12 shipped a vacuously clean probe run.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.torture)
+      await selectBlock(page, /^\s*Alarm if /)
+      await expandSection(page, 'Timing')
+      await expandSection(page, 'On failure')
+      // expandSection already throws if its own click didn't land, but assert the fields
+      // themselves rendered too — a collapsed section mounts no children at all
+      // (InspectorSection.tsx), so this is the concrete proof R4 has rows to measure here.
+      if ((await page.getByLabel('Gap after').count()) !== 1) {
+        throw new Error('Timing expanded but Gap after is not visible')
+      }
+      if ((await page.getByLabel('On error').count()) !== 1) {
+        throw new Error('On failure expanded but On error is not visible')
+      }
+    },
+  },
+  {
+    name: 'inspector-retry-hazard',
+    description:
+      'the densest mixed-control rows in the panel: the amber allow_repeat hazard box open ' +
+      'under On failure, for a verb the catalog does not report as retry_safe.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.morbidostat)
+      // pump.dispense takes a RELATIVE volume_ml, so the engine registry leaves it
+      // retry_safe = False — retrying after a partial dispense double-doses the culture.
+      // It lives in groups.service, which the main tree cannot reach.
+      await selectScope(page, 'service')
+      await selectBlock(page, / · dispense/)
+      await expandSection(page, 'On failure')
+      await page.getByLabel('retry on failure').check()
+      await page.waitForTimeout(200)
+      // Assert the premise this state depends on: dispense is NOT retry_safe, so ticking
+      // the box opens the amber hazard box rather than materialising `retry` directly. If
+      // the catalog ever marked dispense retry_safe, this would silently capture a less
+      // dense shape (no hazard box) with nothing else to notice.
+      if ((await page.getByLabel(/allow repeat/).count()) !== 1) {
+        throw new Error(
+          'the allow_repeat hazard box did not appear — dispense may no longer be retry-unsafe',
+        )
+      }
+    },
+  },
+  {
+    name: 'inspector-tail-start-offset',
+    description:
+      'a block sitting in a parallel lane, whose Timing section offers Start offset INSTEAD of ' +
+      'Gap after (a lane has no next-in-list). The only state that renders that control, and ' +
+      'the one field the Task 4 browser check never exercised.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.torture)
+      await selectBlock(page, PARALLEL_CHILD)
+      await expandSection(page, 'Timing')
+      // Assert PARALLEL_CHILD really is a parallel's direct child, not just trust the
+      // selector — a `Gap after` field here would mean the block picked has a `serial`
+      // or other non-parallel parent, and every row below would measure the wrong shape.
+      if ((await page.getByLabel('Start offset').count()) !== 1) {
+        throw new Error('PARALLEL_CHILD did not render Start offset — not a parallel lane child')
+      }
+      if ((await page.getByLabel('Gap after').count()) !== 0) {
+        throw new Error('PARALLEL_CHILD rendered Gap after — not a parallel lane child')
+      }
+    },
+  },
+  {
+    name: 'inspector-tail-absent',
+    description:
+      'a for_each block, which renders NO tail at all (expand.py:26 forbids all four ' +
+      'block-level keys on a splice). Guards the empty-section path against a regression ' +
+      'that renders an empty bordered box.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.torture)
+      // No leading `\s*` anchor: for_each is the one kind with no Lucide icon (icons.tsx
+      // BLOCK_ICONS.for_each is null) — KindIcon renders a literal `∀` text glyph instead,
+      // which lands in the card header's textContent BEFORE blockSummary's text. Anchoring
+      // at the very start (as the other selectBlock regexes do) never matches; confirmed
+      // empirically against the running app.
+      await selectBlock(page, /For each /)
+      // Assert the stated purpose directly: zero section headers of either kind, not just
+      // "no error was thrown while looking for one" — a stray Timing/On failure header
+      // here would mean `timingFields`/`failureFields` stopped returning `[]` for for_each.
+      if ((await page.getByRole('button', { name: /^Timing/ }).count()) !== 0) {
+        throw new Error('for_each rendered a Timing header — expected none')
+      }
+      if ((await page.getByRole('button', { name: /^On failure/ }).count()) !== 0) {
+        throw new Error('for_each rendered an On failure header — expected none')
+      }
+    },
+  },
+  {
+    name: 'inspector-bool-param-toggle',
+    description:
+      'a command with a bool param selected — the ONE R4-visible "control beside a button" ' +
+      'row in the Inspector. Three rows pair a control with a button: ExpressionInput ' +
+      '(textarea + IconButton) and the unknown-param remove row (span + IconButton) are both ' +
+      'invisible to R4, which only collects BUTTON/INPUT/SELECT (probe.mjs) — deliberately, ' +
+      'since a textarea is height-free and auto-grows, so a rule that flagged it would fire on ' +
+      'correct multi-line code. The bool-param branch\'s `<select>` beside its "Use an ' +
+      'expression" IconButton is the only one of the three built from collectable tags, so it ' +
+      'is the only row this state needs to mount.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.torture)
+      // valve_03 · configure carries a bool param (hold_torque), which is what renders
+      // the select-plus-expression-toggle row R4 needs. It is not the only such block in
+      // this fixture — od_meter_01 · measure (include_raw) and od_meter_02 ·
+      // set_thermostat (enabled) are siblings of it in the same top-level `serial`
+      // (gen_torture.py's every_catalog_verb()) — but any one of the three renders the
+      // same row shape, so this state only needs to mount one.
+      await selectBlock(page, /valve_03 · configure/)
+      // Assert the row this state exists for actually mounted — a future fixture edit that
+      // changes valve_03's params (or drops the bool one) would otherwise leave this state
+      // silently measuring whatever row happens to render instead of the one that matters.
+      if ((await page.getByRole('button', { name: 'Use an expression' }).count()) !== 1) {
+        throw new Error('valve_03 · configure did not render the bool-param expression toggle')
+      }
     },
   },
 ]
