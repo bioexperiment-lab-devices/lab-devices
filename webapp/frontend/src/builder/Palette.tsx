@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useDraggable } from '@dnd-kit/core'
+import { ChevronDown, ChevronRight, X } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
 import type { ControlKind, RepeatKind, StructureKind } from './tree'
@@ -7,6 +8,7 @@ import type { DragPayload } from './dnd'
 import { RolesPanel } from './RolesPanel'
 import { StreamsPanel } from './StreamsPanel'
 import { KindIcon } from '../ui/icons'
+import { IconButton } from '../ui/IconButton'
 
 const STRUCTURE: Array<{ kind: StructureKind; title: string }> = [
   { kind: 'serial', title: 'Serial' },
@@ -62,7 +64,7 @@ function Section(props: { title: string; defaultOpen?: boolean; children: ReactN
         className="flex w-full items-center justify-between px-1 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500"
       >
         {props.title}
-        <span>{open ? '−' : '+'}</span>
+        {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
       </button>
       {open && <div className="px-1">{props.children}</div>}
     </section>
@@ -90,12 +92,12 @@ function AddRoleForm() {
           placeholder="role name"
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
-          className="w-24 rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
+          className="w-24 rounded border border-slate-300 px-2 py-1 font-mono text-xs"
         />
         <select
           value={type}
           onChange={(e) => setType(e.target.value)}
-          className="rounded border border-slate-300 px-1 py-0.5 text-xs"
+          className="rounded border border-slate-300 px-2 py-1 text-xs"
         >
           <option value="">type…</option>
           {types.map((t) => (
@@ -104,7 +106,7 @@ function AddRoleForm() {
             </option>
           ))}
         </select>
-        <button onClick={add} className="rounded bg-slate-200 px-2 py-0.5 text-xs hover:bg-slate-300">
+        <button onClick={add} className="rounded bg-slate-200 px-2 py-1 text-xs hover:bg-slate-300">
           Add
         </button>
       </div>
@@ -128,7 +130,7 @@ function GroupsPanel() {
   const entries = Object.entries(groups)
   if (entries.length === 0) {
     return (
-      <p className="px-1 text-xs text-slate-400">
+      <p className="px-1 text-xs text-hint">
         No groups yet — add one from the scope switcher above the canvas.
       </p>
     )
@@ -147,16 +149,16 @@ function GroupsPanel() {
           >
             {name}
           </button>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-caption">
             ({group.params.join(', ')})
           </span>
-          <button
-            title="Delete group"
+          <IconButton
+            icon={X}
+            label="Delete group"
+            destructive
+            className="ml-auto"
             onClick={() => setError(removeGroup(name))}
-            className="ml-auto rounded px-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600"
-          >
-            ✕
-          </button>
+          />
         </li>
       ))}
       {error && <li className="text-xs text-red-600">{error}</li>}
@@ -220,7 +222,7 @@ export function Palette() {
           return (
             <div key={role} className="mb-2">
               <p className="py-1 font-mono text-xs text-slate-600">
-                {role} <span className="text-slate-400">· {def.type}</span>
+                {role} <span className="text-caption">· {def.type}</span>
               </p>
               {verbs ? (
                 <div className="flex flex-wrap gap-1">
