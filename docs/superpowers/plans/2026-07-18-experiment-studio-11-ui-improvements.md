@@ -1437,9 +1437,18 @@ export function probeRules() {
   }
 
   // R1 — clipped overflow: content wider than its box under a non-scrolling overflow.
+  //
+  // The exclusion is load-bearing, not a convenience. Tailwind's `truncate` compiles to
+  // `overflow:hidden; white-space:nowrap; text-overflow:ellipsis`, so EVERY actively
+  // ellipsizing element satisfies the naive condition by construction — the app has 16 of
+  // them. Without this guard the rule can never return empty, goes permanently red, and
+  // gets ignored, which is worse than not having it. Deliberate single-line ellipsis is
+  // R2's business (it checks the text is still reachable via `title`), not R1's.
   for (const el of document.querySelectorAll('*')) {
-    const o = getComputedStyle(el).overflowX
-    if ((o === 'hidden' || o === 'clip') && el.scrollWidth > el.clientWidth + 1) {
+    const s = getComputedStyle(el)
+    const ellipsized = s.whiteSpace === 'nowrap' && s.textOverflow === 'ellipsis'
+    if (ellipsized) continue
+    if ((s.overflowX === 'hidden' || s.overflowX === 'clip') && el.scrollWidth > el.clientWidth + 1) {
       out.push({ rule: 'clipped-overflow', selector: cssPath(el), detail: `${el.scrollWidth} > ${el.clientWidth}` })
     }
   }
@@ -1512,6 +1521,9 @@ Create `tools/probe-selftest.html` with exactly four planted violations and at l
 <div style="overflow-x:auto;width:50px"><span style="display:inline-block;width:200px">ok</span></div>
 <!-- TRAP: truncation WITH a title is fine, must NOT fire R2 -->
 <div class="trunc" title="full text here">a label long enough to be ellipsised</div>
+<!-- TRAP: deliberate single-line ellipsis must NOT fire R1 (it is R2's business, and every
+     `truncate` in the app would otherwise match R1 by construction) -->
+<div class="trunc" title="full text here">another ellipsised label, R1 must ignore this</div>
 <!-- TRAP: matching heights must NOT fire R4 -->
 <div class="okrow"><input /><button>go</button></div>
 ```
