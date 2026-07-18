@@ -2,18 +2,33 @@ import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useSta
 import { useDraggable } from '@dnd-kit/core'
 import { ChevronDown, ChevronRight, Copy, Plus, X } from 'lucide-react'
 import { useActiveTree, useDocStore } from '../stores/docStore'
+import { useRoleColorStore } from '../stores/roleColorStore'
 import { diagnosticsByUid, type MappedDiagnostic } from './paths'
 import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
-import { blockSummary, faultMarker } from './summary'
+import { assignRoleColors } from './roleColors'
+import { blockSummary, blockSummaryParts, faultMarker } from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
 import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 import { KindIcon } from '../ui/icons'
 import { ScrollFades, useScrollEdges } from '../ui/ScrollX'
 import { useDismissable } from '../ui/useDismissable'
+import {
+  cardBorderClass,
+  constructBorderClass,
+  headerFillClass,
+  interiorFillClass,
+  isFlowKind,
+} from './constructTint'
 
 const DiagContext = createContext<Map<string, MappedDiagnostic[]>>(new Map())
+
+/** Nesting depth of the list currently being rendered. 0 is the canvas backdrop; the
+ * outermost container's interior is 1. Only ContainerBody provides it —
+ * BlockList is depth-transparent, so a container's own card sits at its PARENT's depth
+ * and only its interior descends. */
+const DepthContext = createContext(0)
 
 export function Canvas() {
   // The canvas renders whichever list `scope` names (design §5.2): the main workflow tree
@@ -21,6 +36,7 @@ export function Canvas() {
   // (docStore.ts) resolve the same scope for every block op, so reads here always agree
   // with what insertBlock/moveBlock/etc. would write to.
   const activeTree = useActiveTree()
+  const scope = useDocStore((s) => s.scope)
   const select = useDocStore((s) => s.select)
   const diagnostics = useDocStore((s) => s.diagnostics)
   const byUid = useMemo(() => diagnosticsByUid(diagnostics), [diagnostics])
@@ -53,7 +69,13 @@ export function Canvas() {
       <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-slate-200">
         <div
           ref={scrollRef}
-          className="h-full overflow-auto bg-slate-100 p-4"
+          className={
+            // Editing a group body was pixel-identical to editing the main workflow — the
+            // only cue was the value in a dropdown. The hatch says "this is a subroutine"
+            // without stealing any content space.
+            'h-full overflow-auto p-4 ' +
+            (scope === null ? 'bg-slate-100' : 'bg-slate-100 bg-hatch')
+          }
           onClick={() => select(null)}
         >
           {/* w-max lets a wide subtree make the canvas scroll instead of clipping inside a
@@ -61,7 +83,15 @@ export function Canvas() {
           <div className="w-max min-w-full">
             <ScopeSwitcher />
             {activeTree.length === 0 && (
-              <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-caption">
+              <p
+                className={
+                  // Same reasoning as ScopeSwitcher's strip, above: this hint's text must not
+                  // sit directly on the canvas hatch, so it goes solid white whenever a group
+                  // scope is active.
+                  'mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-caption ' +
+                  (scope === null ? '' : 'bg-white shadow-sm')
+                }
+              >
                 Drag blocks from the palette to start building.
               </p>
             )}
@@ -112,7 +142,13 @@ function ScopeSwitcher() {
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="mb-2 flex flex-wrap items-center gap-2 text-xs"
+      className={
+        // Text must not sit directly on the canvas hatch (Canvas's backdrop, above): this
+        // strip goes solid white whenever a group scope is active so "Editing: [ ... ]"
+        // stays readable over it.
+        'mb-2 flex flex-wrap items-center gap-2 rounded px-2 py-1 text-xs ' +
+        (scope === null ? '' : 'bg-white shadow-sm')
+      }
     >
       <span className="font-semibold text-caption">Editing:</span>
       <select
@@ -176,6 +212,17 @@ function BlockList(props: { parentUid: string | null; slot: string; items: Block
   )
 }
 
+/** The swatch class for a block's device role, or null when the block has no role or the
+ * user cleared that role's colour. Resolved from the doc's roles rather than stored on the
+ * block, so every command and measure of a role shares one colour by construction. */
+function useRoleColor(node: BlockNode): string | null {
+  const roles = useDocStore((s) => s.roles)
+  const overrides = useRoleColorStore((s) => s.overrides)
+  const assigned = useMemo(() => assignRoleColors(roles, overrides), [roles, overrides])
+  if (node.kind !== 'command' && node.kind !== 'measure') return null
+  return assigned[node.device] ?? null
+}
+
 function BlockView({ node }: { node: BlockNode }) {
   const select = useDocStore((s) => s.select)
   const selected = useDocStore((s) => s.selectedUid === node.uid)
@@ -188,8 +235,8 @@ function BlockView({ node }: { node: BlockNode }) {
     id: blockDraggableId(node.uid),
     data: { source: 'canvas', uid: node.uid } satisfies DragPayload,
   })
-  const isContainer =
-    node.kind === 'serial' || node.kind === 'parallel' || node.kind === 'loop' || node.kind === 'branch' || node.kind === 'for_each'
+  const isContainer = isFlowKind(node.kind)
+  const swatch = useRoleColor(node)
   return (
     <div
       id={`block-${node.uid}`}
@@ -203,15 +250,29 @@ function BlockView({ node }: { node: BlockNode }) {
         // container instead of forcing it wide (flex min-width:auto is the classic culprit
         // behind a card painting past its box — audit F11). The lane/arm containers no longer
         // clip (the Canvas is the single scroller), so this is what keeps a card honest.
+        //
+        // The border comes from cardBorderClass, which SELECTS exactly one class: containers
+        // wear their construct tint, leaves stay slate-300, and selection replaces both. The
+        // selection ring is `ring-2` rather than W13's `ring-1` because a canvas of tinted
+        // borders makes a 1px ring too easy to lose — the ring, not the border, is now the
+        // load-bearing selection cue.
         'min-w-0 rounded border bg-white text-sm shadow-sm ' +
-        (selected ? 'border-blue-500 ring-1 ring-blue-300 ' : 'border-slate-300 ') +
+        cardBorderClass({ kind: node.kind, selected }) + ' ' +
+        // A group_ref is a leaf that expands to an entire subtree rendered nowhere on
+        // screen (design §3.5) — the edge hatch is the one sanctioned cue for that, paired
+        // with pl-1.5 so the header content clears the hatched strip instead of sitting on it.
+        (node.kind === 'group_ref' ? 'edge-hatch pl-1.5 ' : '') +
+        (selected ? 'ring-2 ring-blue-400 ' : '') +
         (isDragging ? 'opacity-40' : '')
       }
     >
       <div
         {...listeners}
         {...attributes}
-        className="flex min-w-0 cursor-grab items-center gap-1 px-2 py-1"
+        className={
+          'flex min-w-0 cursor-grab items-center gap-1 rounded-t px-2 py-1 ' +
+          headerFillClass(node.kind)
+        }
       >
         {isContainer ? (
           <IconButton
@@ -225,6 +286,12 @@ function BlockView({ node }: { node: BlockNode }) {
         ) : (
           <span aria-hidden className="h-6 w-6 shrink-0" />
         )}
+        {swatch && (
+          <span
+            aria-hidden
+            className={`h-2.5 w-2.5 shrink-0 rounded-sm ${swatch}`}
+          />
+        )}
         <KindIcon kind={node.kind} />
         {/* max-w-80 (20rem): under width:max-content a nowrap truncate span's intrinsic
             contribution is its full untruncated text (min-w-0 on this row only lets items
@@ -233,7 +300,22 @@ function BlockView({ node }: { node: BlockNode }) {
             canvas's single scroller. 20rem covers a `device · verb (k=v, k=v)` summary
             (routinely 35-50 chars) in full at this text-sm size while still capping a
             pathologically long device/verb/param-value string. */}
-        <span title={blockSummary(node)} className="max-w-80 truncate">{blockSummary(node)}</span>
+        <span title={blockSummary(node)} className="max-w-80 truncate">
+          {blockSummaryParts(node).map((s, i) => (
+            <span
+              key={i}
+              className={
+                s.role === 'subject'
+                  ? 'font-medium text-slate-900'
+                  : s.role === 'verb'
+                    ? 'text-slate-700'
+                    : 'text-caption'
+              }
+            >
+              {s.text}
+            </span>
+          ))}
+        </span>
         {node.label && (
           // max-w-40 (10rem): the label is a short user-typed nickname rendered at text-xs —
           // 10rem comfortably fits an ordinary one or two-word label while still capping an
@@ -276,37 +358,40 @@ function BlockView({ node }: { node: BlockNode }) {
   )
 }
 
+/** A container's interior. Every construct now gets the same treatment — a depth-keyed
+ * neutral fill on the region that used to be pure padding — so containment reads as filled
+ * AREAS rather than as strokes you have to count.
+ *
+ * The `ml-2 border-l-2 border-slate-200` rule that loop and for_each carried before this
+ * increment is gone. It was a second vertical line drawn 8px inside the card border that was
+ * already there: a stroke without a fact. Both constructs are now told apart by their border
+ * and header hue instead (constructTint.ts), which is why they no longer need to be — and no
+ * longer are — byte-identical. */
 function ContainerBody({ node }: { node: BlockNode }) {
-  switch (node.kind) {
-    case 'serial':
-      return (
-        <div className="px-2 pb-2">
-          <BlockList parentUid={node.uid} slot="children" items={node.children} />
-        </div>
-      )
-    case 'parallel':
-      return (
-        <div className="px-2 pb-2">
-          <ParallelLanes node={node} />
-        </div>
-      )
-    case 'loop':
-      return (
-        <div className="ml-2 border-l-2 border-slate-200 px-2 pb-2">
-          <BlockList parentUid={node.uid} slot="body" items={node.body} />
-        </div>
-      )
-    case 'for_each':
-      return (
-        <div className="ml-2 border-l-2 border-slate-200 px-2 pb-2">
-          <BlockList parentUid={node.uid} slot="body" items={node.body} />
-        </div>
-      )
-    case 'branch':
-      return <BranchLanes node={node} />
-    default:
-      return null
-  }
+  const depth = useContext(DepthContext) + 1
+  const fill = interiorFillClass(depth)
+  const body = (() => {
+    switch (node.kind) {
+      case 'serial':
+        return <BlockList parentUid={node.uid} slot="children" items={node.children} />
+      case 'parallel':
+        return <ParallelLanes node={node} />
+      case 'loop':
+        return <BlockList parentUid={node.uid} slot="body" items={node.body} />
+      case 'for_each':
+        return <BlockList parentUid={node.uid} slot="body" items={node.body} />
+      case 'branch':
+        return <BranchLanes node={node} />
+      default:
+        return null
+    }
+  })()
+  if (body === null) return null
+  return (
+    <DepthContext.Provider value={depth}>
+      <div className={`rounded-b px-2 pb-2 ${fill}`}>{body}</div>
+    </DepthContext.Provider>
+  )
 }
 
 function ParallelLanes({ node }: { node: ParallelNode }) {
@@ -391,8 +476,13 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
         select(lane.uid)
       }}
       className={
+        // A lane is a selectable `serial`, so it wears BlockView's selection cue exactly —
+        // `ring-2 ring-blue-400` (see the comment on BlockView's card class). The same state
+        // must not have two renderings: W13's `ring-1 ring-blue-300` survived here after
+        // every other selectable card moved to ring-2, which left lane selection reading as
+        // a weaker kind of selected on a canvas where the ring is the load-bearing cue.
         'min-w-48 flex-initial rounded border border-dashed p-1 ' +
-        (selected ? 'border-blue-500 ring-1 ring-blue-300 ' : 'border-slate-200 ') +
+        (selected ? 'border-blue-500 ring-2 ring-blue-400 ' : 'border-slate-200 ') +
         (isDragging ? 'opacity-40' : '')
       }
     >
@@ -467,12 +557,15 @@ function BranchLanes({ node }: { node: BranchNode }) {
     //     min-w-48), shrinking only when the row is over-full. Leftover space stays leftover —
     //     it belongs to the card, not to whichever arm happens to be empty. Same doc, same
     //     canvas: THEN 461.2px (its content) / ELSE 192px (the min-w-48 floor).
-    <div className="flex gap-2 px-2 pb-2">
-      <div className="min-w-48 flex-initial">
+    <div className="flex gap-2">
+      {/* The arm borders read `branch`'s tint out of CONSTRUCT_CHROME rather than repeating
+          `border-violet-200`: construct identity is encoded in exactly one place, so
+          retinting branch retints its arms too. */}
+      <div className={'min-w-48 flex-initial rounded border px-1 pb-1 ' + constructBorderClass('branch')}>
         <p className="flex h-6 items-center text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
       </div>
-      <div className="min-w-48 flex-initial">
+      <div className={'min-w-48 flex-initial rounded border px-1 pb-1 ' + constructBorderClass('branch')}>
         {node.else === null ? (
           <>
             <p className="flex h-6 items-center text-[10px] uppercase text-caption">else</p>
