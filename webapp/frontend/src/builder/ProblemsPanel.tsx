@@ -24,7 +24,7 @@ export function ProblemsPanel() {
           <TriangleAlert size={14} aria-hidden />
           {validationError ? 'validation unavailable' : `${diagnostics.length} problem${diagnostics.length === 1 ? '' : 's'}`}
         </span>
-        <span className="ml-auto text-slate-400">
+        <span className="ml-auto text-caption">
           {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
         </span>
       </button>
@@ -64,7 +64,7 @@ export function ProblemsPanel() {
                 className="text-left enabled:hover:underline disabled:cursor-default"
               >
                 <span className="mr-1 rounded bg-slate-200 px-1 font-mono text-[10px]">{d.category}</span>
-                <span className="mr-1 font-mono text-[10px] text-slate-400">{d.path}</span>
+                <span className="mr-1 font-mono text-[10px] text-caption">{d.path}</span>
                 {d.message}
               </button>
             </li>

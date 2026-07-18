@@ -67,7 +67,7 @@ export function StreamChart(props: { series: ChartSeries[]; height?: number }) {
 
   if (props.series.length === 0) {
     return (
-      <div className="flex h-40 items-center justify-center rounded-lg border border-slate-200 bg-white text-xs text-slate-400">
+      <div className="flex h-40 items-center justify-center rounded-lg border border-slate-200 bg-white text-xs text-hint">
         no samples yet
       </div>
     )

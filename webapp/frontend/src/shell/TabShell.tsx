@@ -19,12 +19,12 @@ export function TabShell(props: {
             <span
               className={
                 'rounded-full px-2 py-0.5 text-xs ' +
-                (props.lab ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400')
+                (props.lab ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-caption')
               }
             >
               {props.lab ? `lab: ${props.lab}` : 'no lab selected'}
             </span>
-            <span className="text-xs text-slate-500">{props.statusLine}</span>
+            <span className="text-xs text-hint">{props.statusLine}</span>
           </span>
         </div>
         <nav className="mt-3 flex gap-2">
