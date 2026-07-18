@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Redo2, Undo2 } from 'lucide-react'
 import { ApiError } from '../api/client'
+import { inlineButtonClass } from '../ui/controls'
 import {
   createExperiment,
   duplicateExperiment,
@@ -46,8 +47,7 @@ function ValidationChip() {
   return <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">valid</span>
 }
 
-const buttonClass =
-  'rounded border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white'
+const buttonClass = inlineButtonClass()
 
 export function Toolbar() {
   const name = useDocStore((s) => s.name)
@@ -175,61 +175,69 @@ export function Toolbar() {
           {note}
         </span>
       )}
-      <span className="ml-auto flex items-center gap-1">
-        <button
-          className={buttonClass}
-          disabled={!canUndo}
-          onClick={undo}
-          title="Undo (⌘Z)"
-          aria-label="Undo"
-        >
-          <Undo2 size={16} aria-hidden />
-        </button>
-        <button
-          className={buttonClass}
-          disabled={!canRedo}
-          onClick={redo}
-          title="Redo (⇧⌘Z)"
-          aria-label="Redo"
-        >
-          <Redo2 size={16} aria-hidden />
-        </button>
-        <button className={buttonClass} disabled={busy} onClick={fresh}>
-          New
-        </button>
-        <button className={buttonClass} disabled={busy} onClick={() => setLoadOpen(true)}>
-          Load
-        </button>
-        <button className={buttonClass} disabled={busy} onClick={() => void save()}>
-          Save
-        </button>
-        <button className={buttonClass} disabled={busy} onClick={saveAs}>
-          Save as
-        </button>
-        <button
-          className={buttonClass}
-          disabled={busy || serverId === null}
-          title={serverId === null ? 'Save first' : 'Duplicate on the server and open the copy'}
-          onClick={() => void duplicate()}
-        >
-          Duplicate
-        </button>
-        <button
-          className={buttonClass}
-          disabled={busy}
-          title="Download this experiment as a JSON file"
-          onClick={exportDoc}
-        >
-          Export
-        </button>
-        <button
-          className={buttonClass}
-          disabled={busy}
-          title="Import an experiment from a JSON file"
-          onClick={() => fileRef.current?.click()}
-        >
-          Import
-        </button>
+      <span className="ml-auto flex items-center gap-3">
+        <span className="flex items-center gap-1">
+          <button
+            className={buttonClass}
+            disabled={!canUndo}
+            onClick={undo}
+            title="Undo (⌘Z)"
+            aria-label="Undo"
+          >
+            <Undo2 size={16} aria-hidden />
+          </button>
+          <button
+            className={buttonClass}
+            disabled={!canRedo}
+            onClick={redo}
+            title="Redo (⇧⌘Z)"
+            aria-label="Redo"
+          >
+            <Redo2 size={16} aria-hidden />
+          </button>
+        </span>
+        <span aria-hidden className="h-4 w-px bg-slate-200" />
+        <span className="flex items-center gap-1">
+          <button className={buttonClass} disabled={busy} onClick={fresh}>
+            New
+          </button>
+          <button className={buttonClass} disabled={busy} onClick={() => setLoadOpen(true)}>
+            Load
+          </button>
+          <button className={buttonClass} disabled={busy} onClick={() => void save()}>
+            Save
+          </button>
+          <button className={buttonClass} disabled={busy} onClick={saveAs}>
+            Save as
+          </button>
+          <button
+            className={buttonClass}
+            disabled={busy || serverId === null}
+            title={serverId === null ? 'Save first' : 'Duplicate on the server and open the copy'}
+            onClick={() => void duplicate()}
+          >
+            Duplicate
+          </button>
+        </span>
+        <span aria-hidden className="h-4 w-px bg-slate-200" />
+        <span className="flex items-center gap-1">
+          <button
+            className={buttonClass}
+            disabled={busy}
+            title="Download this experiment as a JSON file"
+            onClick={exportDoc}
+          >
+            Export
+          </button>
+          <button
+            className={buttonClass}
+            disabled={busy}
+            title="Import an experiment from a JSON file"
+            onClick={() => fileRef.current?.click()}
+          >
+            Import
+          </button>
+        </span>
       </span>
       <input
         ref={fileRef}

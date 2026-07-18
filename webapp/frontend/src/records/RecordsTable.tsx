@@ -3,6 +3,7 @@ import { Download, Pencil, X } from 'lucide-react'
 import { recordDownloadUrl } from '../api/records'
 import { useRecordsStore } from '../stores/recordsStore'
 import type { RecordRow } from '../types/records'
+import { controlClass } from '../ui/controls'
 import { IconButton, iconButtonClass } from '../ui/IconButton'
 import { STATUS_STYLES, formatDuration, formatWhen } from './format'
 
@@ -47,7 +48,7 @@ function NameCell(props: { row: RecordRow }) {
               setEditing(false)
             }
           }}
-          className="w-full rounded border border-slate-300 px-1 py-0.5 text-sm"
+          className={controlClass()}
         />
         {error && <p className="text-xs text-red-600">{error}</p>}
       </div>

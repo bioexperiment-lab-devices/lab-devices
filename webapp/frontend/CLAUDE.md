@@ -13,6 +13,30 @@
   tolerated-error marker, `×N` loop count, the `●` unsaved dot, ellipses, prose
   dashes.
 
+## Control height
+
+- Every text input, select, and inline button renders at **24px** via `controlClass()` /
+  `inlineButtonClass()` from `src/ui/controls.ts`, matching `IconButton`'s hit-area floor.
+  Height belongs in that module and nowhere else — a component needing a different height
+  is a bug in the component. Four competing height scales shipped in 0.8.0 and left twelve
+  visibly crooked rows (docs/superpowers/specs/2026-07-18-experiment-studio-ui-improvements-design.md, cause C-A).
+- Textareas are exempt from the fixed height (they are multi-line by definition) but share
+  the same border and padding, via `textAreaClass()`.
+- A button that must match the height of the row it sits in rather than a text control asks
+  for `inlineButtonClass({ stretch: true })` (Canvas's "+ lane"). The option *replaces* the
+  height class — do not append `self-stretch` yourself: `align-self` is ignored once a
+  cross-size is set, so the button would silently stay 24px.
+- **Pass `width` as an option; never concatenate one.** `controlClass({ width: 'w-28' })`,
+  not `controlClass() + ' w-28'`. `w-full` and fixed widths are equal-specificity utilities
+  in the same `@layer utilities` block, so the cascade is decided by declaration order in the
+  compiled stylesheet, not by class-string order — and `w-full` sorts last. An appended width
+  therefore loses silently and the control renders full-width. The `width` option *selects*
+  the class instead of appending, so only one width class is ever emitted and there is no
+  cascade fight to lose.
+- The probe's `sibling-height-mismatch` rule (`webapp/frontend/tools/probe.mjs`, R4) is what
+  keeps this honest: it flags sibling controls on a shared visual line whose heights disagree
+  by more than 1px. Run `npm run capture` against a real doc after touching any control class.
+
 ## Text colors
 
 - Meaning-carrying secondary text uses `text-caption` (slate-600); incidental

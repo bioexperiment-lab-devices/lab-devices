@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { useDocStore } from '../stores/docStore'
+import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 
 /** Inline rename/delete list for roles (spec §4.2): rename cascades through every
@@ -65,7 +66,7 @@ export function RolesPanel() {
                     setEditing(null)
                   }
                 }}
-                className="w-28 rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
+                className={controlClass({ mono: true, width: 'w-28' })}
               />
             ) : (
               <button
@@ -76,7 +77,7 @@ export function RolesPanel() {
                   setError(null)
                   cancelled.current = false
                 }}
-                className="rounded px-1 font-mono text-xs hover:bg-slate-200"
+                className={inlineButtonClass()}
               >
                 {name}
               </button>

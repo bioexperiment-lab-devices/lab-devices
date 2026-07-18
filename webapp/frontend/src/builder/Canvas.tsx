@@ -1,4 +1,4 @@
-import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { ChevronDown, ChevronRight, Copy, Plus, X } from 'lucide-react'
 import { useActiveTree, useDocStore } from '../stores/docStore'
@@ -7,8 +7,11 @@ import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
 import { blockSummary } from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
+import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 import { KindIcon } from '../ui/icons'
+import { ScrollFades, useScrollEdges } from '../ui/ScrollX'
+import { useDismissable } from '../ui/useDismissable'
 
 const DiagContext = createContext<Map<string, MappedDiagnostic[]>>(new Map())
 
@@ -37,19 +40,35 @@ export function Canvas() {
       ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [scrollToUid])
 
+  // The canvas is the app's SINGLE horizontal scroller (finding #1, finding #5b). The fades
+  // are absolute overlays rendered as a sibling of the scroller inside this `relative` wrapper
+  // — not children of it: `useScrollEdges` re-observes the scroller's children, so a fade
+  // living among them would risk a resize feedback loop, and it would scroll away with the
+  // content instead of staying pinned to the viewport edge.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const edges = useScrollEdges(scrollRef)
+
   return (
     <DiagContext.Provider value={byUid}>
-      <div
-        className="min-w-0 flex-1 overflow-auto bg-slate-100 p-4"
-        onClick={() => select(null)}
-      >
-        <ScopeSwitcher />
-        {activeTree.length === 0 && (
-          <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-caption">
-            Drag blocks from the palette to start building.
-          </p>
-        )}
-        <BlockList parentUid={null} slot="blocks" items={activeTree} />
+      <div className="relative min-w-0 flex-1">
+        <div
+          ref={scrollRef}
+          className="h-full overflow-auto bg-slate-100 p-4"
+          onClick={() => select(null)}
+        >
+          {/* w-max lets a wide subtree make the canvas scroll instead of clipping inside a
+              nested box; min-w-full keeps a narrow doc filling the viewport. */}
+          <div className="w-max min-w-full">
+            <ScopeSwitcher />
+            {activeTree.length === 0 && (
+              <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-caption">
+                Drag blocks from the palette to start building.
+              </p>
+            )}
+            <BlockList parentUid={null} slot="blocks" items={activeTree} />
+          </div>
+        </div>
+        <ScrollFades edges={edges} from="from-slate-100" />
       </div>
     </DiagContext.Provider>
   )
@@ -79,6 +98,16 @@ function ScopeSwitcher() {
       setName('')
     }
   }
+  const cancelAdding = () => {
+    setAdding(false)
+    setName('')
+    setError(null)
+  }
+  // The "+ New group…" trigger unmounts entirely once `adding` is true (the ternary below
+  // swaps it out for this input row), so it can never be clicked while the ref is live —
+  // unlike StreamIntoPicker's <select>, there is no coexisting trigger that also needs to
+  // count as "inside". Wrapping just the input/Add/cancel row is the correct boundary here.
+  const addingRef = useDismissable(adding, cancelAdding)
 
   return (
     <div
@@ -89,7 +118,7 @@ function ScopeSwitcher() {
       <select
         value={scope ?? ''}
         onChange={(e) => setScope(e.target.value === '' ? null : e.target.value)}
-        className="rounded border border-slate-300 bg-white px-1.5 py-0.5"
+        className={controlClass({ width: 'w-auto' })}
       >
         <option value="">Main workflow</option>
         {groupNames.map((g) => (
@@ -100,7 +129,7 @@ function ScopeSwitcher() {
         ))}
       </select>
       {adding ? (
-        <div className="flex items-center gap-1">
+        <div ref={addingRef} className="flex items-center gap-1">
           <input
             autoFocus
             value={name}
@@ -108,32 +137,21 @@ function ScopeSwitcher() {
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') create()
-              if (e.key === 'Escape') {
-                setAdding(false)
-                setName('')
-                setError(null)
-              }
+              if (e.key === 'Escape') cancelAdding()
             }}
-            className="w-28 rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
+            className={controlClass({ mono: true, width: 'w-28' })}
           />
-          <button onClick={create} className="rounded bg-slate-200 px-2 py-0.5 hover:bg-slate-300">
+          <button onClick={create} className={inlineButtonClass()}>
             Add
           </button>
-          <button
-            onClick={() => {
-              setAdding(false)
-              setName('')
-              setError(null)
-            }}
-            className="text-caption hover:text-slate-800"
-          >
+          <button onClick={cancelAdding} className={inlineButtonClass({ subtle: true })}>
             cancel
           </button>
         </div>
       ) : (
         <button
           onClick={() => setAdding(true)}
-          className="rounded border border-dashed border-slate-300 px-2 py-0.5 text-caption hover:text-slate-700"
+          className={inlineButtonClass({ subtle: true })}
         >
           <Plus size={12} aria-hidden className="mr-0.5 inline" />New group…
         </button>
@@ -183,14 +201,19 @@ function BlockView({ node }: { node: BlockNode }) {
       className={
         // min-w-0: a card that sits in a flex lane/branch-arm must be able to shrink to its
         // container instead of forcing it wide (flex min-width:auto is the classic culprit
-        // behind a card painting past its box — audit F11). See BranchLanes' overflow clip.
+        // behind a card painting past its box — audit F11). The lane/arm containers no longer
+        // clip (the Canvas is the single scroller), so this is what keeps a card honest.
         'min-w-0 rounded border bg-white text-sm shadow-sm ' +
         (selected ? 'border-blue-500 ring-1 ring-blue-300 ' : 'border-slate-300 ') +
         (isDragging ? 'opacity-40' : '')
       }
     >
-      <div {...listeners} {...attributes} className="flex cursor-grab items-center gap-1 px-2 py-1">
-        {isContainer && (
+      <div
+        {...listeners}
+        {...attributes}
+        className="flex min-w-0 cursor-grab items-center gap-1 px-2 py-1"
+      >
+        {isContainer ? (
           <IconButton
             icon={collapsed ? ChevronRight : ChevronDown}
             label={collapsed ? 'Expand' : 'Collapse'}
@@ -199,11 +222,23 @@ function BlockView({ node }: { node: BlockNode }) {
               toggleCollapsed(node.uid)
             }}
           />
+        ) : (
+          <span aria-hidden className="h-6 w-6 shrink-0" />
         )}
         <KindIcon kind={node.kind} />
-        <span title={blockSummary(node)} className="truncate">{blockSummary(node)}</span>
+        {/* max-w-80 (20rem): under width:max-content a nowrap truncate span's intrinsic
+            contribution is its full untruncated text (min-w-0 on this row only lets items
+            shrink — it can't cap that contribution), so an explicit max-width is what makes
+            `truncate` actually ellipsize instead of widening every card up the tree to the
+            canvas's single scroller. 20rem covers a `device · verb (k=v, k=v)` summary
+            (routinely 35-50 chars) in full at this text-sm size while still capping a
+            pathologically long device/verb/param-value string. */}
+        <span title={blockSummary(node)} className="max-w-80 truncate">{blockSummary(node)}</span>
         {node.label && (
-          <span title={node.label} className="truncate text-xs italic text-caption">“{node.label}”</span>
+          // max-w-40 (10rem): the label is a short user-typed nickname rendered at text-xs —
+          // 10rem comfortably fits an ordinary one or two-word label while still capping an
+          // arbitrarily long pasted one, so it can't be the thing that drives canvas width.
+          <span title={node.label} className="max-w-40 truncate text-xs italic text-caption">“{node.label}”</span>
         )}
         <span className="ml-auto flex items-center gap-1">
           {diags.length > 0 && (
@@ -279,7 +314,15 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
   const insertBlock = useDocStore((s) => s.insertBlock)
   const isEmptyLane = (lane: BlockNode) => lane.kind === 'serial' && lane.children.length === 0
   return (
-    <div className="flex items-stretch overflow-x-auto scroll-x-shadow">
+    // No nested overflow here: the Canvas is the only horizontal scroller, so a wide lane
+    // widens the canvas's content and scrolls THERE instead of being clipped inside this box.
+    //
+    // Lanes are `flex-initial` for the same reason the branch arms are (see BranchLanes): a
+    // grow factor makes an EMPTY lane claim an equal share of whatever space is left, which is
+    // finding #5b's "free space on one side, hidden content on the other" in a different
+    // container. Sizing to content also keeps the "+ lane" button next to the last lane rather
+    // than shoved to the far edge by the lanes' growth.
+    <div className="flex items-stretch">
       <DropSlot
         at={{ parentUid: node.uid, slot: 'children', index: 0 }}
         horizontal
@@ -287,8 +330,8 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
       />
       {node.children.map((lane, i) => (
         <Fragment key={lane.uid}>
-          <div className="min-w-48 flex-1 rounded border border-dashed border-slate-200 p-1">
-            <div className="flex items-center justify-between px-1 text-[10px] uppercase text-caption">
+          <div className="min-w-48 flex-initial rounded border border-dashed border-slate-200 p-1">
+            <div className="flex h-6 items-center justify-between px-1 text-[10px] uppercase text-caption">
               <span>lane {i + 1}</span>
               {isEmptyLane(lane) && (
                 <IconButton
@@ -317,9 +360,13 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
             index: node.children.length,
           })
         }}
-        className="m-1 shrink-0 self-center rounded border border-dashed border-slate-300 bg-white px-2 py-1 text-xs text-caption hover:text-slate-600"
+        // `stretch` instead of the 24px token: this button runs the full height of the lanes
+        // beside it, which is why it is the one sanctioned height exception (controls.ts).
+        // `m-1` is the button's existing inset from the lane row, and it is a margin — not a
+        // width or a colour — so nothing in the helper competes with it in the cascade.
+        className={inlineButtonClass({ subtle: true, stretch: true }) + ' m-1'}
       >
-        <Plus size={12} aria-hidden className="mr-0.5 inline" />lane
+        <Plus size={12} aria-hidden className="mr-0.5" />lane
       </button>
     </div>
   )
@@ -328,29 +375,57 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
 function BranchLanes({ node }: { node: BranchNode }) {
   const patchBlock = useDocStore((s) => s.patchBlock)
   return (
-    // overflow-x-auto (audit F11): a too-wide arm — e.g. a nested parallel whose lanes hold
-    // their min-w-48 floor — now scrolls inside the branch card instead of painting its
-    // content past the card edge over a sibling's action icons. The arms keep min-w-48 flex-1
-    // (the design floor); the container scrolling is what contains the overflow.
-    <div className="flex gap-2 overflow-x-auto scroll-x-shadow px-2 pb-2">
-      <div className="min-w-48 flex-1">
-        <p className="text-[10px] uppercase text-caption">then</p>
+    // W10 put `overflow-x-auto` here for audit F11 (a too-wide arm painting past the card edge
+    // over a sibling's action icons). That clipping is gone: the Canvas is now the single
+    // horizontal scroller, so a wide arm widens the canvas content and scrolls there — reachable
+    // rather than hidden. BlockView's `min-w-0` (F11's other half) stays and still does its job.
+    //
+    // flex-initial (`flex: 0 1 auto`), per design §4.2 #5b — NOT flex-1 and NOT flex-auto:
+    //   • flex-1 (`1 1 0%`) is a hard equal split that ignores content — the original defect,
+    //     an empty ELSE arm claiming half the card while THEN's content was cramped.
+    //   • flex-auto (`1 1 auto`) still carries flex-grow:1 on BOTH arms, so leftover space is
+    //     *still* split 50/50 — only the starting point differs. Measured on a doc with one
+    //     card in THEN and `else: null`, canvas 1294px (1920px viewport): flex-auto gave
+    //     THEN 808.7px / ELSE 427.3px. The ELSE arm holds nothing but the "+ add else" button
+    //     (~80px of content) and took an equal 347.5px share of the slack — finding #5b,
+    //     reproduced. The committed fixtures cannot catch it: morbidostat and torture both
+    //     overflow, so slack is zero and grow never runs.
+    //   • flex-initial has no grow at all: each arm sits at its content width (floored by
+    //     min-w-48), shrinking only when the row is over-full. Leftover space stays leftover —
+    //     it belongs to the card, not to whichever arm happens to be empty. Same doc, same
+    //     canvas: THEN 461.2px (its content) / ELSE 192px (the min-w-48 floor).
+    <div className="flex gap-2 px-2 pb-2">
+      <div className="min-w-48 flex-initial">
+        <p className="flex h-6 items-center text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
       </div>
-      <div className="min-w-48 flex-1">
+      <div className="min-w-48 flex-initial">
         {node.else === null ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              patchBlock(node.uid, { else: [] })
-            }}
-            className="mt-4 rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-caption hover:text-slate-600"
-          >
-            <Plus size={12} aria-hidden className="mr-0.5 inline" />add else
-          </button>
+          <>
+            <p className="flex h-6 items-center text-[10px] uppercase text-caption">else</p>
+            <div className="flex flex-col">
+              {/* Mirrors the leading `DropSlot` of the THEN arm's BlockList — a vertical
+                  DropSlot renders `my-0.5 h-2` (DropSlot.tsx), and this arm has no BlockList
+                  to render one. Without it the two arms' first rows sit 12px out of line.
+                  If DropSlot's vertical size changes, change this to match. */}
+              <div className="my-0.5 h-2" />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  patchBlock(node.uid, { else: [] })
+                }}
+                // Same control as the Inspector's "+ add else lane" (Inspector.tsx), and
+                // routed through the same helper so a change to the subtle variant reaches
+                // both. h-6 matches the old py-1.5 + text-xs box to the pixel.
+                className={inlineButtonClass({ subtle: true, width: 'w-full' })}
+              >
+                <Plus size={12} aria-hidden className="mr-0.5" />add else
+              </button>
+            </div>
+          </>
         ) : (
           <>
-            <p className="flex items-center justify-between text-[10px] uppercase text-caption">
+            <p className="flex h-6 items-center justify-between text-[10px] uppercase text-caption">
               <span>else</span>
               {node.else.length === 0 && (
                 <IconButton

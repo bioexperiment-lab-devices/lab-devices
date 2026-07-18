@@ -1,7 +1,9 @@
-import { SquareFunction, X } from 'lucide-react'
+import { Plus, SquareFunction, X } from 'lucide-react'
 import { useState } from 'react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useActiveTree, useDocStore } from '../stores/docStore'
+import { AutoGrowTextArea } from '../ui/AutoGrowTextArea'
+import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 import type { ParamSpec } from '../types/catalog'
 import type { ParamValue, RetryJson } from '../types/doc'
@@ -36,6 +38,13 @@ import {
   type WaitNode,
 } from './tree'
 
+/** Sentinel maxLines value for fields paired with fillParent. When set, the
+ * autoGrowHeight line-cap branch is intentionally unreachable — the parent's
+ * max-h-full height constraint is the true bound, not the line count. Prevents
+ * future maintainers from "helpfully" shrinking this value and reintroducing
+ * dead panel space. */
+const UNCAPPED_LINES = 200
+
 const KIND_TITLES: Record<BlockNode['kind'], string> = {
   command: 'Command',
   measure: 'Measure',
@@ -59,7 +68,7 @@ export function Inspector() {
   const activeTree = useActiveTree()
   const node = selectedUid ? findNode(activeTree, selectedUid) : null
   return (
-    <aside className="w-80 shrink-0 overflow-y-auto border-l border-slate-200 bg-slate-50 p-3">
+    <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-slate-50 p-3">
       {node ? (
         <BlockForm key={node.uid} node={node} />
       ) : scope === null ? (
@@ -81,10 +90,12 @@ function GroupProperties({ name }: { name: string }) {
   const setGroupParams = useDocStore((s) => s.setGroupParams)
   const params = group?.params ?? []
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <h2 className="mb-2 text-sm font-semibold text-slate-700">Group: {name}</h2>
-      <FieldRow label="Params (one per line)">
-        <TextAreaField
+      <FieldRow label="Params (one per line)" grow>
+        <AutoGrowTextArea
+          fillParent
+          maxLines={UNCAPPED_LINES}
           mono
           value={params.join('\n')}
           onCommit={(v) =>
@@ -98,8 +109,10 @@ function GroupProperties({ name }: { name: string }) {
           }
         />
       </FieldRow>
-      <p className="mt-2 text-xs text-caption">{group?.body.length ?? 0} top-level blocks.</p>
-      <p className="mt-4 text-xs text-caption">Select a block to edit its parameters.</p>
+      {/* mt-auto pins these to the bottom of the panel (finding #5a): the params field
+          above grows into the free space instead of leaving dead panel below it. */}
+      <p className="mt-auto pt-2 text-xs text-caption">{group?.body.length ?? 0} top-level blocks.</p>
+      <p className="mt-1 text-xs text-caption">Select a block to edit its parameters.</p>
     </div>
   )
 }
@@ -111,16 +124,24 @@ function DocProperties() {
   const streams = useDocStore((s) => s.streams)
   const tree = useDocStore((s) => s.tree)
   return (
-    <div>
+    <div className="flex min-h-0 flex-1 flex-col">
       <h2 className="mb-2 text-sm font-semibold text-slate-700">Experiment</h2>
-      <FieldRow label="Description">
-        <TextAreaField value={description ?? ''} onCommit={(v) => setDescription(v || null)} />
+      <FieldRow label="Description" grow>
+        <AutoGrowTextArea
+          fillParent
+          maxLines={UNCAPPED_LINES}
+          value={description ?? ''}
+          onCommit={(v) => setDescription(v || null)}
+          placeholder="what this experiment does"
+        />
       </FieldRow>
-      <p className="mt-2 text-xs text-caption">
+      {/* mt-auto pins these to the bottom of the panel (finding #5a): the description
+          above grows into the free space instead of leaving 800px of dead panel. */}
+      <p className="mt-auto pt-2 text-xs text-caption">
         {Object.keys(roles).length} roles · {Object.keys(streams).length} streams ·{' '}
         {tree.length} top-level blocks
       </p>
-      <p className="mt-4 text-xs text-caption">Select a block to edit its parameters.</p>
+      <p className="mt-1 text-xs text-caption">Select a block to edit its parameters.</p>
     </div>
   )
 }
@@ -180,7 +201,7 @@ function BlockForm({ node }: { node: BlockNode }) {
           <select
             value={node.onError ?? 'fail'}
             onChange={(e) => patchBlock(node.uid, { onError: e.target.value as 'fail' | 'continue' })}
-            className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+            className={controlClass()}
           >
             <option value="fail">fail (stop the run)</option>
             <option value="continue">continue (tolerate the failure)</option>
@@ -353,7 +374,7 @@ function ActionForm({ node }: { node: CommandNode | MeasureNode }) {
         <select
           value={node.device}
           onChange={(e) => patchBlock(node.uid, { device: e.target.value })}
-          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+          className={controlClass()}
         >
           {!sameTypeRoles.includes(node.device) && <option value={node.device}>{node.device}</option>}
           {sameTypeRoles.map((r) => (
@@ -369,7 +390,7 @@ function ActionForm({ node }: { node: CommandNode | MeasureNode }) {
           onChange={(e) =>
             patchBlock(node.uid, { verb: e.target.value, retry: retryAfterVerbChange(node.retry) })
           }
-          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+          className={controlClass()}
         >
           {sameKindVerbs.every(([v]) => v !== node.verb) && (
             <option value={node.verb}>{node.verb}</option>
@@ -426,7 +447,7 @@ function ParamFields({ node, specs }: { node: CommandNode | MeasureNode; specs: 
       {unknown.map((name) => (
         <FieldRow key={name} label={`${name} (unknown)`}>
           <div className="flex items-center gap-1">
-            <span className="flex-1 truncate font-mono text-xs text-amber-700">
+            <span className="flex h-6 flex-1 items-center truncate font-mono text-xs text-amber-700">
               {paramInputText(node.params[name])}
             </span>
             <IconButton
@@ -451,7 +472,7 @@ function ParamInput(props: {
   const [exprMode, setExprMode] = useState(typeof value === 'string')
   if (spec.type === 'string') {
     return (
-      <TextField
+      <AutoGrowTextArea
         value={typeof value === 'string' ? value : paramInputText(value)}
         onCommit={(t) => onCommit(coerceParamInput(t, 'string'))}
         placeholder={spec.required ? 'required' : 'optional'}
@@ -468,7 +489,7 @@ function ParamInput(props: {
             const v = e.target.value
             onCommit(v === '' ? undefined : v === 'true')
           }}
-          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+          className={controlClass()}
         >
           <option value="">— unset —</option>
           <option value="true">true</option>
@@ -527,7 +548,7 @@ function OperatorInputForm({ node }: { node: OperatorInputNode }) {
         <select
           value={node.inputType}
           onChange={(e) => setType(e.target.value as InputType)}
-          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+          className={controlClass()}
         >
           <option value="int">int</option>
           <option value="float">float</option>
@@ -536,7 +557,7 @@ function OperatorInputForm({ node }: { node: OperatorInputNode }) {
         </select>
       </FieldRow>
       <FieldRow label="Prompt">
-        <TextField
+        <AutoGrowTextArea
           value={node.prompt ?? ''}
           onCommit={(v) => patchBlock(node.uid, { prompt: v || null })}
           placeholder="shown to the operator"
@@ -562,7 +583,12 @@ function OperatorInputForm({ node }: { node: OperatorInputNode }) {
       )}
       {node.inputType === 'enum' && (
         <FieldRow label="Choices (one per line)" required>
-          <TextAreaField
+          {/* Auto-grows like GroupProperties' "Params (one per line)" — same field shape, so
+              the same behaviour. A fixed 3 rows turned an enum with 20 choices into a
+              scroller. Capped by AutoGrowTextArea's default 12 lines rather than
+              UNCAPPED_LINES: Params sits in a `grow` FieldRow whose `fillParent` bounds it
+              against the panel, and this row has no such bound to fall back on. */}
+          <AutoGrowTextArea
             mono
             value={(node.choices ?? []).join('\n')}
             onCommit={(v) =>
@@ -626,7 +652,7 @@ function LoopForm({ node }: { node: LoopNode }) {
             <select
               value={node.check}
               onChange={(e) => patchBlock(node.uid, { check: e.target.value as 'before' | 'after' })}
-              className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+              className={controlClass()}
             >
               <option value="after">after each pass</option>
               <option value="before">before each pass</option>
@@ -655,16 +681,16 @@ function BranchForm({ node }: { node: BranchNode }) {
       {node.else === null ? (
         <button
           onClick={() => patchBlock(node.uid, { else: [] })}
-          className="rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-slate-500 hover:text-slate-700"
+          className={inlineButtonClass({ subtle: true, width: 'w-full' })}
         >
-          + add else lane
+          <Plus size={12} aria-hidden className="mr-0.5" />add else lane
         </button>
       ) : (
         <button
           disabled={node.else.length > 0}
           title={node.else.length > 0 ? 'Empty the else lane first' : undefined}
           onClick={() => patchBlock(node.uid, { else: null })}
-          className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-500 enabled:hover:text-red-600 disabled:opacity-40"
+          className={inlineButtonClass({ width: 'w-full' }) + ' enabled:hover:text-red-600'}
         >
           remove else lane
         </button>
@@ -716,7 +742,7 @@ function ConditionForm({ node }: { node: AbortNode | AlarmNode }) {
         />
       </FieldRow>
       <FieldRow label="Message" required>
-        <TextField
+        <AutoGrowTextArea
           value={node.message}
           onCommit={(v) => patchBlock(node.uid, { message: v })}
           placeholder={node.kind === 'abort' ? 'why the run must stop' : 'what to flag'}
@@ -830,7 +856,7 @@ function GroupRefForm({ node }: { node: GroupRefNode }) {
         <select
           value={node.name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+          className={controlClass()}
         >
           {node.name === '' && <option value="">— pick a group —</option>}
           {node.name !== '' && !groupNames.includes(node.name) && (

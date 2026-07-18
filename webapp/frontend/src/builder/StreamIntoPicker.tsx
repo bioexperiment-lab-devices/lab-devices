@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { useDocStore } from '../stores/docStore'
+import { controlClass, inlineButtonClass } from '../ui/controls'
+import { useDismissable } from '../ui/useDismissable'
 
 /** Picker over declared streams + inline "+ new stream…" creation (audit F15: one
  * affordance for Measure AND Record — record.into stays a picker, never free text,
@@ -23,18 +25,32 @@ export function StreamIntoPicker(props: { value: string; onPick: (name: string) 
       setUnits('')
     }
   }
+  const cancelAdding = () => {
+    setAdding(false)
+    setName('')
+    setUnits('')
+    setError(null)
+  }
+  // The ref wraps the <select> too, not just the inline form below it: the select is the
+  // trigger that opens adding mode (picking "__new__") and it stays mounted and visible
+  // the whole time adding is open, so it counts as part of the "inside" region — the same
+  // trigger-plus-panel shape as ExpressionInput (fields.tsx). If the select sat outside the
+  // ref, clicking it — even just to reconsider, without actually changing the selection —
+  // would register as an outside pointerdown and dismiss the form, silently discarding
+  // whatever the user had typed (spec §4.2, finding #6 analog).
+  const wrapRef = useDismissable(adding, cancelAdding)
   return (
-    <>
+    <div ref={wrapRef}>
       <select
         value={adding ? '__new__' : value}
         onChange={(e) => {
           if (e.target.value === '__new__') setAdding(true)
           else {
-            setAdding(false)
+            cancelAdding()
             onPick(e.target.value)
           }
         }}
-        className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
+        className={controlClass()}
       >
         {value === '' && !adding && <option value="">— pick a stream —</option>}
         {names.map((n) => (
@@ -50,20 +66,23 @@ export function StreamIntoPicker(props: { value: string; onPick: (name: string) 
             value={name}
             placeholder="name"
             onChange={(e) => setName(e.target.value)}
-            className="w-20 rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
+            className={controlClass({ mono: true, width: 'w-20' })}
           />
           <input
             value={units}
             placeholder="units"
             onChange={(e) => setUnits(e.target.value)}
-            className="w-14 rounded border border-slate-300 px-1 py-0.5 text-xs"
+            className={controlClass({ width: 'w-14' })}
           />
-          <button onClick={create} className="rounded bg-slate-200 px-2 py-0.5 text-xs hover:bg-slate-300">
+          <button onClick={create} className={inlineButtonClass()}>
             Add
+          </button>
+          <button type="button" onClick={cancelAdding} className={inlineButtonClass({ subtle: true })}>
+            cancel
           </button>
         </div>
       )}
       {error && <p className="text-[10px] text-red-600">{error}</p>}
-    </>
+    </div>
   )
 }

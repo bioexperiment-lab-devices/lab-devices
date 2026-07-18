@@ -1,17 +1,30 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { SquareFunction } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useActiveTree, useDocStore } from '../stores/docStore'
 import { collectBindings } from './refs'
 import { buildExpressionHelp } from './exprHelp'
 import { DURATION_RE } from './params'
+import { controlClass, textAreaClass } from '../ui/controls'
+import { AutoGrowTextArea } from '../ui/AutoGrowTextArea'
+import { IconButton } from '../ui/IconButton'
+import { useDismissable } from '../ui/useDismissable'
 
-const inputClass =
-  'w-full rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs focus:border-blue-400 focus:outline-none'
-
-export function FieldRow(props: { label: string; required?: boolean; children: ReactNode }) {
+export function FieldRow(props: {
+  label: string
+  required?: boolean
+  /** Lets this row's field grow to fill the remaining space in a flex-column parent and
+   * scroll internally once it runs out, instead of the row just sizing to its content
+   * (Inspector's "Experiment"/"Group" panels — the description/params field grows while
+   * the trailing summary lines stay pinned to the bottom). `min-h-0` is load-bearing: without
+   * it a flex child refuses to shrink below its content, so the field pushes the pinned
+   * lines off the panel instead of scrolling. */
+  grow?: boolean
+  children: ReactNode
+}) {
   return (
-    <label className="block py-1 text-xs">
-      <span className="mb-0.5 block text-slate-500">
+    <label className={'text-xs ' + (props.grow ? 'flex min-h-0 flex-1 flex-col py-1' : 'block py-1')}>
+      <span className="mb-0.5 block text-caption">
         {props.label}
         {props.required && <span className="text-red-500"> *</span>}
       </span>
@@ -41,7 +54,7 @@ export function TextField(props: {
         if (e.key === 'Enter') commit()
         if (e.key === 'Escape') setDraft(props.value)
       }}
-      className={inputClass + (props.mono ? ' font-mono' : '')}
+      className={controlClass({ mono: props.mono })}
     />
   )
 }
@@ -68,10 +81,7 @@ export function TextAreaField(props: {
       onKeyDown={(e) => {
         if (e.key === 'Escape') setDraft(props.value)
       }}
-      className={
-        'w-full rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs focus:border-blue-400 focus:outline-none' +
-        (props.mono ? ' font-mono' : '')
-      }
+      className={textAreaClass({ mono: props.mono })}
     />
   )
 }
@@ -147,32 +157,35 @@ export function ExpressionInput(props: {
   const help = expression
     ? buildExpressionHelp(expression, Object.keys(streams), collectBindings(activeTree))
     : null
+  // The ref wraps BOTH the trigger and the panel: if the trigger sat outside it, clicking
+  // it while open would dismiss and immediately re-open (spec §4.2, finding #6).
+  const wrapRef = useDismissable(open, () => setOpen(false))
   return (
-    <div className="relative">
-      <div className="flex items-center gap-1">
-        <TextField
+    <div ref={wrapRef} className="relative">
+      <div className="flex items-start gap-1">
+        <AutoGrowTextArea
           mono
+          singleLine
+          maxLines={6}
           value={props.value}
           onCommit={props.onCommit}
           placeholder={props.placeholder ?? 'expression'}
         />
-        <button
-          type="button"
-          title="Expression help"
+        <IconButton
+          icon={SquareFunction}
+          label="Expression help"
           onClick={() => setOpen(!open)}
-          className="shrink-0 rounded border border-slate-300 px-1 text-xs text-slate-500 hover:bg-slate-200"
-        >
-          ƒ
-        </button>
+          className="border border-slate-300"
+        />
       </div>
       {open && help && (
-        <div className="absolute right-0 z-10 mt-1 w-72 rounded border border-slate-300 bg-white p-2 text-xs shadow-lg">
+        <div className="absolute right-0 z-20 mt-1 w-72 rounded border border-slate-300 bg-white p-2 text-xs shadow-lg">
           <p className="font-semibold text-slate-600">Streams</p>
-          <p className="mb-1 font-mono text-slate-500">
+          <p className="mb-1 font-mono text-caption">
             {help.streams.length > 0 ? help.streams.join(', ') : '— none declared —'}
           </p>
           <p className="font-semibold text-slate-600">Bindings</p>
-          <p className="mb-1 font-mono text-slate-500">
+          <p className="mb-1 font-mono text-caption">
             {help.bindings.length > 0 ? help.bindings.join(', ') : '— none —'}
           </p>
           <p className="font-semibold text-slate-600">Functions</p>
