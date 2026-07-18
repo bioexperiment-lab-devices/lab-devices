@@ -190,7 +190,7 @@ function BlockView({ node }: { node: BlockNode }) {
       }
     >
       <div {...listeners} {...attributes} className="flex cursor-grab items-center gap-1 px-2 py-1">
-        {isContainer && (
+        {isContainer ? (
           <IconButton
             icon={collapsed ? ChevronRight : ChevronDown}
             label={collapsed ? 'Expand' : 'Collapse'}
@@ -199,6 +199,8 @@ function BlockView({ node }: { node: BlockNode }) {
               toggleCollapsed(node.uid)
             }}
           />
+        ) : (
+          <span aria-hidden className="h-6 w-6 shrink-0" />
         )}
         <KindIcon kind={node.kind} />
         <span title={blockSummary(node)} className="truncate">{blockSummary(node)}</span>
@@ -288,7 +290,7 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
       {node.children.map((lane, i) => (
         <Fragment key={lane.uid}>
           <div className="min-w-48 flex-1 rounded border border-dashed border-slate-200 p-1">
-            <div className="flex items-center justify-between px-1 text-[10px] uppercase text-caption">
+            <div className="flex h-6 items-center justify-between px-1 text-[10px] uppercase text-caption">
               <span>lane {i + 1}</span>
               {isEmptyLane(lane) && (
                 <IconButton
@@ -317,9 +319,9 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
             index: node.children.length,
           })
         }}
-        className="m-1 shrink-0 self-center rounded border border-dashed border-slate-300 bg-white px-2 py-1 text-xs text-caption hover:text-slate-600"
+        className="m-1 flex shrink-0 items-center self-stretch rounded border border-dashed border-slate-300 bg-white px-2 text-xs text-caption hover:border-slate-400 hover:text-slate-600"
       >
-        <Plus size={12} aria-hidden className="mr-0.5 inline" />lane
+        <Plus size={12} aria-hidden className="mr-0.5" />lane
       </button>
     </div>
   )
@@ -334,23 +336,29 @@ function BranchLanes({ node }: { node: BranchNode }) {
     // (the design floor); the container scrolling is what contains the overflow.
     <div className="flex gap-2 overflow-x-auto scroll-x-shadow px-2 pb-2">
       <div className="min-w-48 flex-1">
-        <p className="text-[10px] uppercase text-caption">then</p>
+        <p className="flex h-6 items-center text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
       </div>
       <div className="min-w-48 flex-1">
         {node.else === null ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              patchBlock(node.uid, { else: [] })
-            }}
-            className="mt-4 rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-caption hover:text-slate-600"
-          >
-            <Plus size={12} aria-hidden className="mr-0.5 inline" />add else
-          </button>
+          <>
+            <p className="flex h-6 items-center text-[10px] uppercase text-caption">else</p>
+            <div className="flex flex-col">
+              <div className="my-0.5 h-2" />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  patchBlock(node.uid, { else: [] })
+                }}
+                className="flex w-full items-center justify-center rounded border border-dashed border-slate-300 py-1.5 text-xs text-caption hover:border-slate-400 hover:text-slate-700"
+              >
+                <Plus size={12} aria-hidden className="mr-0.5" />add else
+              </button>
+            </div>
+          </>
         ) : (
           <>
-            <p className="flex items-center justify-between text-[10px] uppercase text-caption">
+            <p className="flex h-6 items-center justify-between text-[10px] uppercase text-caption">
               <span>else</span>
               {node.else.length === 0 && (
                 <IconButton
