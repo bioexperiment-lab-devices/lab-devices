@@ -287,7 +287,9 @@ describe('lane auto-wrap on insert/move/duplicate', () => {
   })
   it('duplicateNode of a bare-block lane wraps the clone', () => {
     const p = newPaletteNode('parallel')
-    const cmd = newVerbNode('pump', 'dispense', { kind: 'command', params: [] } as VerbSpec)
+    const cmd = newVerbNode('pump', 'dispense', {
+      kind: 'command', params: [], result_field: null, retry_safe: false,
+    } as VerbSpec)
     if (p.kind !== 'parallel') throw new Error('expected parallel')
     const tree: BlockNode[] = [{ ...p, children: [cmd] }]
     const [out] = duplicateNode(tree, cmd.uid)
