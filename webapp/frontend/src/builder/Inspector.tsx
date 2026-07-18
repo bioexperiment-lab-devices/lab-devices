@@ -7,7 +7,8 @@ import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 import type { ParamSpec } from '../types/catalog'
 import type { ParamValue, RetryJson } from '../types/doc'
-import { gapAfterEligible } from './inspectorRules'
+import { failureFields, failureSummary, timingFields, timingSummary } from './inspectorRules'
+import { InspectorSection } from './InspectorSection'
 import { coerceParamInput, coerceValueInput, paramInputText } from './params'
 import { StreamIntoPicker } from './StreamIntoPicker'
 import {
@@ -151,20 +152,18 @@ function BlockForm({ node }: { node: BlockNode }) {
   const patchBlock = useDocStore((s) => s.patchBlock)
   const loc = findLocation(activeTree, node.uid)
   const parentKind = loc?.parent?.kind ?? null
-  // Gap-after eligibility (audit F5): see inspectorRules.ts for the engine-execution
-  // rationale — it is broader than "top level or serial", also covering loop/branch/
-  // for_each body children, which all run through the same shared runner.
-  const showGapAfter = gapAfterEligible(node.kind, parentKind)
-  // for_each may not carry start_offset at all (expand.py:26 _FOR_EACH_FORBIDDEN) —
-  // it is a splice, so there is no single runtime block for the key to attach to.
-  const showStartOffset = node.kind !== 'for_each' && parentKind === 'parallel'
+  // An empty list means the section does not render at all (design §3.3): `for_each` gets
+  // no tail whatsoever (expand.py:26 forbids all four keys on a splice) and `abort` gets no
+  // "On failure" (tolerating a safety stop is a contradiction, engine design 2026-07-16
+  // §5.1). Both absences state the engine's rule better than a disabled control would.
+  const timing = timingFields(node.kind, parentKind)
+  const failure = failureFields(node.kind)
   return (
     <div>
       <h2 className="mb-2 text-sm font-semibold text-slate-700">{KIND_TITLES[node.kind]}</h2>
-      <KindBody node={node} />
-      <h3 className="mt-3 border-t border-slate-200 pt-2 text-xs font-semibold uppercase text-caption">
-        Timing & label
-      </h3>
+      {/* Label is the one field that means the same thing for all fourteen kinds, so it
+          leads every form. The h2 keeps naming the kind, so nothing about kind legibility
+          regresses (design §3.1). */}
       <FieldRow label="Label">
         <TextField
           value={node.label ?? ''}
@@ -172,43 +171,51 @@ function BlockForm({ node }: { node: BlockNode }) {
           placeholder="optional display name"
         />
       </FieldRow>
-      {showGapAfter && (
-        <FieldRow label="Gap after">
-          <DurationField
-            value={node.gapAfter}
-            allowEmpty
-            onCommit={(v) => patchBlock(node.uid, { gapAfter: v })}
-          />
-        </FieldRow>
+      <KindBody node={node} />
+      {timing.length > 0 && (
+        <InspectorSection title="Timing" summary={timingSummary(node, parentKind)}>
+          {timing.includes('gapAfter') && (
+            <FieldRow label="Gap after">
+              <DurationField
+                value={node.gapAfter}
+                allowEmpty
+                onCommit={(v) => patchBlock(node.uid, { gapAfter: v })}
+              />
+            </FieldRow>
+          )}
+          {timing.includes('startOffset') && (
+            <FieldRow label="Start offset">
+              <DurationField
+                value={node.startOffset}
+                allowEmpty
+                onCommit={(v) => patchBlock(node.uid, { startOffset: v })}
+              />
+            </FieldRow>
+          )}
+        </InspectorSection>
       )}
-      {showStartOffset && (
-        <FieldRow label="Start offset">
-          <DurationField
-            value={node.startOffset}
-            allowEmpty
-            onCommit={(v) => patchBlock(node.uid, { startOffset: v })}
-          />
-        </FieldRow>
+      {failure.length > 0 && (
+        <InspectorSection title="On failure" summary={failureSummary(node)}>
+          {failure.includes('onError') && (
+            <FieldRow label="On error">
+              <select
+                value={node.onError ?? 'fail'}
+                onChange={(e) =>
+                  patchBlock(node.uid, { onError: e.target.value as 'fail' | 'continue' })
+                }
+                className={controlClass()}
+              >
+                <option value="fail">fail (stop the run)</option>
+                <option value="continue">continue (tolerate the failure)</option>
+              </select>
+            </FieldRow>
+          )}
+          {/* Narrowed by kind rather than by `failure.includes('retry')` so TypeScript can
+              prove the node is a Command/Measure. FAILURE_POLICY still decides whether the
+              SECTION renders; this decides whether the sub-form does. */}
+          {(node.kind === 'command' || node.kind === 'measure') && <RetrySection node={node} />}
+        </InspectorSection>
       )}
-      {/* abort forbids on_error: "continue" — tolerating a safety stop is a contradiction
-          (engine design 2026-07-16 §5.1), so the control is omitted rather than offered and
-          rejected. The related rule (an abort may have no tolerant ANCESTOR) is the backend
-          validator's; it surfaces as a diagnostic, not as a second frontend opinion.
-          for_each forbids on_error outright (expand.py:26) for the same splice reason as
-          gap_after/start_offset above — same suppression pattern, different block-level key. */}
-      {node.kind !== 'abort' && node.kind !== 'for_each' && (
-        <FieldRow label="On error">
-          <select
-            value={node.onError ?? 'fail'}
-            onChange={(e) => patchBlock(node.uid, { onError: e.target.value as 'fail' | 'continue' })}
-            className={controlClass()}
-          >
-            <option value="fail">fail (stop the run)</option>
-            <option value="continue">continue (tolerate the failure)</option>
-          </select>
-        </FieldRow>
-      )}
-      {(node.kind === 'command' || node.kind === 'measure') && <RetrySection node={node} />}
     </div>
   )
 }
