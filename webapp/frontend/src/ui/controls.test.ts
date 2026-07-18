@@ -59,6 +59,23 @@ describe('inline button width', () => {
   })
 })
 
+describe('inline button stretch', () => {
+  it('swaps the height token for self-stretch instead of emitting both', () => {
+    // `align-self: stretch` is ignored the moment a cross-size is set, so a call site that
+    // appended ' self-stretch' to the default class would silently keep the 24px box. The
+    // option must REPLACE the height, not add to it — that is the whole reason it exists
+    // in this module rather than as an override at Canvas's "+ lane" button.
+    const cls = inlineButtonClass({ subtle: true, stretch: true })
+    expect(cls).toContain('self-stretch')
+    expect(heights(cls)).toEqual([])
+  })
+
+  it('leaves every non-stretch caller on the height token', () => {
+    expect(inlineButtonClass({ subtle: true })).not.toContain('self-stretch')
+    expect(heights(inlineButtonClass({ subtle: true }))).toEqual([CONTROL_H])
+  })
+})
+
 describe('textarea class', () => {
   it('carries no h-* class — a textarea grows with its content, not a fixed token', () => {
     expect(heights(textAreaClass())).toEqual([])

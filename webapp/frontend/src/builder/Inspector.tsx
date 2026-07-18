@@ -583,7 +583,12 @@ function OperatorInputForm({ node }: { node: OperatorInputNode }) {
       )}
       {node.inputType === 'enum' && (
         <FieldRow label="Choices (one per line)" required>
-          <TextAreaField
+          {/* Auto-grows like GroupProperties' "Params (one per line)" — same field shape, so
+              the same behaviour. A fixed 3 rows turned an enum with 20 choices into a
+              scroller. Capped by AutoGrowTextArea's default 12 lines rather than
+              UNCAPPED_LINES: Params sits in a `grow` FieldRow whose `fillParent` bounds it
+              against the panel, and this row has no such bound to fall back on. */}
+          <AutoGrowTextArea
             mono
             value={(node.choices ?? []).join('\n')}
             onCommit={(v) =>

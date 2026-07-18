@@ -316,6 +316,12 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
   return (
     // No nested overflow here: the Canvas is the only horizontal scroller, so a wide lane
     // widens the canvas's content and scrolls THERE instead of being clipped inside this box.
+    //
+    // Lanes are `flex-initial` for the same reason the branch arms are (see BranchLanes): a
+    // grow factor makes an EMPTY lane claim an equal share of whatever space is left, which is
+    // finding #5b's "free space on one side, hidden content on the other" in a different
+    // container. Sizing to content also keeps the "+ lane" button next to the last lane rather
+    // than shoved to the far edge by the lanes' growth.
     <div className="flex items-stretch">
       <DropSlot
         at={{ parentUid: node.uid, slot: 'children', index: 0 }}
@@ -324,7 +330,7 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
       />
       {node.children.map((lane, i) => (
         <Fragment key={lane.uid}>
-          <div className="min-w-48 flex-auto rounded border border-dashed border-slate-200 p-1">
+          <div className="min-w-48 flex-initial rounded border border-dashed border-slate-200 p-1">
             <div className="flex h-6 items-center justify-between px-1 text-[10px] uppercase text-caption">
               <span>lane {i + 1}</span>
               {isEmptyLane(lane) && (
@@ -354,7 +360,11 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
             index: node.children.length,
           })
         }}
-        className="m-1 flex shrink-0 items-center self-stretch rounded border border-dashed border-slate-300 bg-white px-2 text-xs text-caption hover:border-slate-400 hover:text-slate-600"
+        // `stretch` instead of the 24px token: this button runs the full height of the lanes
+        // beside it, which is why it is the one sanctioned height exception (controls.ts).
+        // `m-1` is the button's existing inset from the lane row, and it is a margin — not a
+        // width or a colour — so nothing in the helper competes with it in the cascade.
+        className={inlineButtonClass({ subtle: true, stretch: true }) + ' m-1'}
       >
         <Plus size={12} aria-hidden className="mr-0.5" />lane
       </button>
@@ -370,27 +380,44 @@ function BranchLanes({ node }: { node: BranchNode }) {
     // horizontal scroller, so a wide arm widens the canvas content and scrolls there — reachable
     // rather than hidden. BlockView's `min-w-0` (F11's other half) stays and still does its job.
     //
-    // flex-auto, not flex-1: `flex: 1 1 0%` is a hard equal split that ignores content, which is
-    // why an empty ELSE arm claimed half the card while THEN's content was cramped (finding #5b).
-    // `flex: 1 1 auto` bases each arm on its own content and shares only the leftover space, so a
-    // light arm settles toward its min-w-48 floor and a heavy arm takes the slack.
+    // flex-initial (`flex: 0 1 auto`), per design §4.2 #5b — NOT flex-1 and NOT flex-auto:
+    //   • flex-1 (`1 1 0%`) is a hard equal split that ignores content — the original defect,
+    //     an empty ELSE arm claiming half the card while THEN's content was cramped.
+    //   • flex-auto (`1 1 auto`) still carries flex-grow:1 on BOTH arms, so leftover space is
+    //     *still* split 50/50 — only the starting point differs. Measured on a doc with one
+    //     card in THEN and `else: null`, canvas 1294px (1920px viewport): flex-auto gave
+    //     THEN 808.7px / ELSE 427.3px. The ELSE arm holds nothing but the "+ add else" button
+    //     (~80px of content) and took an equal 347.5px share of the slack — finding #5b,
+    //     reproduced. The committed fixtures cannot catch it: morbidostat and torture both
+    //     overflow, so slack is zero and grow never runs.
+    //   • flex-initial has no grow at all: each arm sits at its content width (floored by
+    //     min-w-48), shrinking only when the row is over-full. Leftover space stays leftover —
+    //     it belongs to the card, not to whichever arm happens to be empty. Same doc, same
+    //     canvas: THEN 461.2px (its content) / ELSE 192px (the min-w-48 floor).
     <div className="flex gap-2 px-2 pb-2">
-      <div className="min-w-48 flex-auto">
+      <div className="min-w-48 flex-initial">
         <p className="flex h-6 items-center text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
       </div>
-      <div className="min-w-48 flex-auto">
+      <div className="min-w-48 flex-initial">
         {node.else === null ? (
           <>
             <p className="flex h-6 items-center text-[10px] uppercase text-caption">else</p>
             <div className="flex flex-col">
+              {/* Mirrors the leading `DropSlot` of the THEN arm's BlockList — a vertical
+                  DropSlot renders `my-0.5 h-2` (DropSlot.tsx), and this arm has no BlockList
+                  to render one. Without it the two arms' first rows sit 12px out of line.
+                  If DropSlot's vertical size changes, change this to match. */}
               <div className="my-0.5 h-2" />
               <button
                 onClick={(e) => {
                   e.stopPropagation()
                   patchBlock(node.uid, { else: [] })
                 }}
-                className="flex w-full items-center justify-center rounded border border-dashed border-slate-300 py-1.5 text-xs text-caption hover:border-slate-400 hover:text-slate-700"
+                // Same control as the Inspector's "+ add else lane" (Inspector.tsx), and
+                // routed through the same helper so a change to the subtle variant reaches
+                // both. h-6 matches the old py-1.5 + text-xs box to the pixel.
+                className={inlineButtonClass({ subtle: true, width: 'w-full' })}
               >
                 <Plus size={12} aria-hidden className="mr-0.5" />add else
               </button>

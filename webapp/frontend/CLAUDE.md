@@ -22,6 +22,10 @@
   visibly crooked rows (docs/superpowers/specs/2026-07-18-experiment-studio-ui-improvements-design.md, cause C-A).
 - Textareas are exempt from the fixed height (they are multi-line by definition) but share
   the same border and padding, via `textAreaClass()`.
+- A button that must match the height of the row it sits in rather than a text control asks
+  for `inlineButtonClass({ stretch: true })` (Canvas's "+ lane"). The option *replaces* the
+  height class — do not append `self-stretch` yourself: `align-self` is ignored once a
+  cross-size is set, so the button would silently stay 24px.
 - **Pass `width` as an option; never concatenate one.** `controlClass({ width: 'w-28' })`,
   not `controlClass() + ' w-28'`. `w-full` and fixed widths are equal-specificity utilities
   in the same `@layer utilities` block, so the cascade is decided by declaration order in the

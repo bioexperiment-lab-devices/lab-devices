@@ -57,10 +57,20 @@ export function textAreaClass(opts: { mono?: boolean; fillParent?: boolean } = {
  * `width` has no default (unlike `controlClass`'s) — most inline buttons size to their
  * label, so omitting it emits no width class at all, exactly as before this option
  * existed. Pass it (e.g. `'w-full'` for a full-bleed button below a branch arm) instead of
- * concatenating a width string: same cascade hazard as `controlClass` — see its docstring. */
-export function inlineButtonClass(opts: { subtle?: boolean; width?: string } = {}): string {
+ * concatenating a width string: same cascade hazard as `controlClass` — see its docstring.
+ *
+ * `stretch` is the ONE sanctioned exception to the 24px token: a button that must match the
+ * height of the flex row it sits in rather than the height of a text control (Canvas's
+ * "+ lane", which runs the full height of the lanes beside it). It swaps `CONTROL_H` for
+ * `self-stretch` — the two cannot coexist, since `align-self: stretch` is ignored once a
+ * cross-size is set. It lives here, not as an appended override at the call site, so the
+ * height rule (see frontend/CLAUDE.md) still has exactly one home: a caller that needs a
+ * non-24px button asks for it by name, and there is no silent `h-6`/`self-stretch` clash. */
+export function inlineButtonClass(
+  opts: { subtle?: boolean; width?: string; stretch?: boolean } = {},
+): string {
   return (
-    `${CONTROL_H} ${opts.width ? opts.width + ' ' : ''}` +
+    `${opts.stretch ? 'self-stretch' : CONTROL_H} ${opts.width ? opts.width + ' ' : ''}` +
     'inline-flex shrink-0 items-center justify-center rounded border px-2 text-xs ' +
     'disabled:opacity-40 ' +
     (opts.subtle
