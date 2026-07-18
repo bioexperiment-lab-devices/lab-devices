@@ -172,16 +172,32 @@ for (const vp of VIEWPORTS) {
       // on: does the document, or the Canvas's single scroller, exceed the viewport?
       const metrics = await page.evaluate(() => {
         const doc = document.documentElement
-        const scroller = [...document.querySelectorAll('*')].find(
-          (e) => getComputedStyle(e).overflowX === 'auto' && e.scrollWidth > e.clientWidth + 1,
-        )
+        // Select the canvas BY IDENTITY, not by "first element that happens to scroll
+        // horizontally". A document-order scan reports the left palette instead whenever the
+        // palette also overflows — measured on the torture fixture, where it logged the
+        // palette's 590>255 while the canvas was really 4008>1294. Any element whose
+        // overflow-y is auto also computes overflow-x to auto (per CSS overflow coercion),
+        // so scrolling side panels match the naive predicate by construction.
+        const canvas = document.querySelector('.overflow-auto.bg-slate-100')
+        const overflowsX = (e) =>
+          e && getComputedStyle(e).overflowX === 'auto' && e.scrollWidth > e.clientWidth + 1
         return {
           viewportWidth: window.innerWidth,
           documentScrollWidth: doc.scrollWidth,
           pageOverflowsViewport: doc.scrollWidth > window.innerWidth + 1,
-          canvasScrollerOverflow: scroller
-            ? { scrollWidth: scroller.scrollWidth, clientWidth: scroller.clientWidth }
+          canvasScrollerOverflow: overflowsX(canvas)
+            ? { scrollWidth: canvas.scrollWidth, clientWidth: canvas.clientWidth }
             : null,
+          // Every horizontally-scrolling box, so a second scroller reappearing (the F11
+          // regression this work exists to prevent) is visible in the evidence rather than
+          // hidden behind whichever one sorted first.
+          horizontalScrollers: [...document.querySelectorAll('*')]
+            .filter(overflowsX)
+            .map((e) => ({
+              selector: String(e.className).trim().split(/\s+/).slice(0, 6).join('.'),
+              scrollWidth: e.scrollWidth,
+              clientWidth: e.clientWidth,
+            })),
         }
       })
       await page.screenshot({ path: path.join(outDir, `${id}.png`), fullPage: false })

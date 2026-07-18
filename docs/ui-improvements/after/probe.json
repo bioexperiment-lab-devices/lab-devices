@@ -1,0 +1,417 @@
+[
+  {
+    "state": "builder-morbidostat",
+    "viewport": "1024x720",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1024,
+      "documentScrollWidth": 1024,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 2025,
+        "clientWidth": 398
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 2025,
+          "clientWidth": 398
+        }
+      ]
+    }
+  },
+  {
+    "state": "branch-selected",
+    "viewport": "1024x720",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1024,
+      "documentScrollWidth": 1024,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 1702,
+        "clientWidth": 398
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 1702,
+          "clientWidth": 398
+        }
+      ]
+    }
+  },
+  {
+    "state": "inspector-operator-input",
+    "viewport": "1024x720",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1024,
+      "documentScrollWidth": 1024,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 2025,
+        "clientWidth": 398
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 2025,
+          "clientWidth": 398
+        }
+      ]
+    }
+  },
+  {
+    "state": "expression-popover",
+    "viewport": "1024x720",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1024,
+      "documentScrollWidth": 1024,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 1702,
+        "clientWidth": 398
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 1702,
+          "clientWidth": 398
+        }
+      ]
+    }
+  },
+  {
+    "state": "builder-torture",
+    "viewport": "1024x720",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1024,
+      "documentScrollWidth": 1024,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 3966,
+        "clientWidth": 398
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "w-64.shrink-0.space-y-2.overflow-y-auto.border-r.border-slate-200",
+          "scrollWidth": 590,
+          "clientWidth": 255
+        },
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 3966,
+          "clientWidth": 398
+        }
+      ]
+    }
+  },
+  {
+    "state": "scope-switcher-long-group",
+    "viewport": "1024x720",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1024,
+      "documentScrollWidth": 1024,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 855,
+        "clientWidth": 398
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "w-64.shrink-0.space-y-2.overflow-y-auto.border-r.border-slate-200",
+          "scrollWidth": 590,
+          "clientWidth": 255
+        },
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 855,
+          "clientWidth": 398
+        },
+        {
+          "selector": "flex.w-80.shrink-0.flex-col.overflow-y-auto.border-l",
+          "scrollWidth": 757,
+          "clientWidth": 319
+        }
+      ]
+    }
+  },
+  {
+    "state": "builder-morbidostat",
+    "viewport": "1440x900",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1440,
+      "documentScrollWidth": 1440,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 2025,
+        "clientWidth": 814
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 2025,
+          "clientWidth": 814
+        }
+      ]
+    }
+  },
+  {
+    "state": "branch-selected",
+    "viewport": "1440x900",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1440,
+      "documentScrollWidth": 1440,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 1702,
+        "clientWidth": 814
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 1702,
+          "clientWidth": 814
+        }
+      ]
+    }
+  },
+  {
+    "state": "inspector-operator-input",
+    "viewport": "1440x900",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1440,
+      "documentScrollWidth": 1440,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 2025,
+        "clientWidth": 814
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 2025,
+          "clientWidth": 814
+        }
+      ]
+    }
+  },
+  {
+    "state": "expression-popover",
+    "viewport": "1440x900",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1440,
+      "documentScrollWidth": 1440,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 1702,
+        "clientWidth": 814
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 1702,
+          "clientWidth": 814
+        }
+      ]
+    }
+  },
+  {
+    "state": "builder-torture",
+    "viewport": "1440x900",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1440,
+      "documentScrollWidth": 1440,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 3966,
+        "clientWidth": 814
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "w-64.shrink-0.space-y-2.overflow-y-auto.border-r.border-slate-200",
+          "scrollWidth": 590,
+          "clientWidth": 255
+        },
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 3966,
+          "clientWidth": 814
+        }
+      ]
+    }
+  },
+  {
+    "state": "scope-switcher-long-group",
+    "viewport": "1440x900",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1440,
+      "documentScrollWidth": 1440,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 855,
+        "clientWidth": 814
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "w-64.shrink-0.space-y-2.overflow-y-auto.border-r.border-slate-200",
+          "scrollWidth": 590,
+          "clientWidth": 255
+        },
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 855,
+          "clientWidth": 814
+        },
+        {
+          "selector": "flex.w-80.shrink-0.flex-col.overflow-y-auto.border-l",
+          "scrollWidth": 757,
+          "clientWidth": 319
+        }
+      ]
+    }
+  },
+  {
+    "state": "builder-morbidostat",
+    "viewport": "1920x1080",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1920,
+      "documentScrollWidth": 1920,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 2025,
+        "clientWidth": 1294
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 2025,
+          "clientWidth": 1294
+        }
+      ]
+    }
+  },
+  {
+    "state": "branch-selected",
+    "viewport": "1920x1080",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1920,
+      "documentScrollWidth": 1920,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 1702,
+        "clientWidth": 1294
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 1702,
+          "clientWidth": 1294
+        }
+      ]
+    }
+  },
+  {
+    "state": "inspector-operator-input",
+    "viewport": "1920x1080",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1920,
+      "documentScrollWidth": 1920,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 2025,
+        "clientWidth": 1294
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 2025,
+          "clientWidth": 1294
+        }
+      ]
+    }
+  },
+  {
+    "state": "expression-popover",
+    "viewport": "1920x1080",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1920,
+      "documentScrollWidth": 1920,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 1702,
+        "clientWidth": 1294
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 1702,
+          "clientWidth": 1294
+        }
+      ]
+    }
+  },
+  {
+    "state": "builder-torture",
+    "viewport": "1920x1080",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1920,
+      "documentScrollWidth": 1920,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": {
+        "scrollWidth": 3966,
+        "clientWidth": 1294
+      },
+      "horizontalScrollers": [
+        {
+          "selector": "w-64.shrink-0.space-y-2.overflow-y-auto.border-r.border-slate-200",
+          "scrollWidth": 590,
+          "clientWidth": 255
+        },
+        {
+          "selector": "h-full.overflow-auto.bg-slate-100.p-4",
+          "scrollWidth": 3966,
+          "clientWidth": 1294
+        }
+      ]
+    }
+  },
+  {
+    "state": "scope-switcher-long-group",
+    "viewport": "1920x1080",
+    "violations": [],
+    "metrics": {
+      "viewportWidth": 1920,
+      "documentScrollWidth": 1920,
+      "pageOverflowsViewport": false,
+      "canvasScrollerOverflow": null,
+      "horizontalScrollers": [
+        {
+          "selector": "w-64.shrink-0.space-y-2.overflow-y-auto.border-r.border-slate-200",
+          "scrollWidth": 590,
+          "clientWidth": 255
+        },
+        {
+          "selector": "flex.w-80.shrink-0.flex-col.overflow-y-auto.border-l",
+          "scrollWidth": 757,
+          "clientWidth": 319
+        }
+      ]
+    }
+  }
+]
