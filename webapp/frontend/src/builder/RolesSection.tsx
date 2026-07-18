@@ -19,14 +19,21 @@ export function RolesSection() {
   const catalog = useCatalogStore((s) => s.catalog)
   const roles = useDocStore((s) => s.roles)
   const groups = roleGroups(roles, catalog)
-  if (groups.length === 0) {
-    return <p className="px-1 text-xs text-hint">no device types in the catalog yet</p>
-  }
   return (
     <div className="space-y-2">
-      {groups.map((g) => (
-        <RoleTypeBlock key={g.type} group={g} catalog={catalog} />
-      ))}
+      {/* The Roles section is the only place in the Builder where hardware is conceptually
+          adjacent — device types name real equipment and verb chips name real operations — so
+          it is the only place a reader can reasonably wonder which lab they are looking at.
+          The answer is none: these come from the engine's static catalog (GET /api/catalog),
+          and the binding to physical devices happens in the Run tab's preflight. */}
+      <p className="px-1 text-xs text-hint">
+        Roles are symbolic — you bind them to real devices when you start a run.
+      </p>
+      {groups.length === 0 ? (
+        <p className="px-1 text-xs text-hint">no device types in the catalog yet</p>
+      ) : (
+        groups.map((g) => <RoleTypeBlock key={g.type} group={g} catalog={catalog} />)
+      )}
     </div>
   )
 }
