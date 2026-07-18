@@ -3,38 +3,13 @@ import { useDraggable } from '@dnd-kit/core'
 import { ChevronDown, ChevronRight, Pencil, X } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
-import type { ControlKind, RepeatKind, StructureKind } from './tree'
+import { BLOCK_SECTIONS, type BlockChip } from './paletteSections'
 import type { DragPayload } from './dnd'
 import { RolesPanel } from './RolesPanel'
 import { StreamsPanel } from './StreamsPanel'
 import { KindIcon } from '../ui/icons'
 import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
-
-const STRUCTURE: Array<{ kind: StructureKind; title: string }> = [
-  { kind: 'serial', title: 'Serial' },
-  { kind: 'parallel', title: 'Parallel' },
-  { kind: 'loop', title: 'Loop' },
-  { kind: 'branch', title: 'Branch' },
-  { kind: 'wait', title: 'Wait' },
-  { kind: 'operator_input', title: 'Operator input' },
-]
-
-const CONTROL: Array<{ kind: ControlKind; title: string }> = [
-  { kind: 'compute', title: 'Compute' },
-  { kind: 'record', title: 'Record' },
-  { kind: 'alarm', title: 'Alarm' },
-  { kind: 'abort', title: 'Abort' },
-]
-
-// for_each's ∀ (see KindIcon, ../ui/icons) cannot be confused with loop's Repeat icon (design
-// 2026-07-16 §5.1); both chips drop through the SAME 'palette-structure' payload source as
-// STRUCTURE/CONTROL above (PaletteKind already widened to include RepeatKind — tree.ts:13), so
-// no second drag path.
-const REPEAT: Array<{ kind: RepeatKind; title: string }> = [
-  { kind: 'for_each', title: 'For each' },
-  { kind: 'group_ref', title: 'Group ref' },
-]
 
 function Chip(props: { id: string; payload: DragPayload; className?: string; children: ReactNode }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -70,6 +45,28 @@ function Section(props: { title: string; defaultOpen?: boolean; children: ReactN
       </button>
       {open && <div className="px-1">{props.children}</div>}
     </section>
+  )
+}
+
+/** All four block sections differ only by title and contents, so they render through one
+ * helper. Four near-identical JSX blocks is what let Structure/Control/Repeat drift apart
+ * independently in the first place (design 2026-07-18 §5). */
+function BlockSection(props: { title: string; items: readonly BlockChip[] }) {
+  return (
+    <Section title={props.title}>
+      <div className="flex flex-wrap gap-1">
+        {props.items.map((item) => (
+          <Chip
+            key={item.kind}
+            id={`palette-block-${item.kind}`}
+            payload={{ source: 'palette-block', kind: item.kind }}
+          >
+            <KindIcon kind={item.kind} className="mr-1" />
+            {item.title}
+          </Chip>
+        ))}
+      </div>
+    </Section>
   )
 }
 
@@ -184,48 +181,9 @@ export function Palette() {
 
   return (
     <aside className="w-64 shrink-0 space-y-2 overflow-y-auto border-r border-slate-200 bg-slate-50 p-2">
-      <Section title="Structure">
-        <div className="flex flex-wrap gap-1">
-          {STRUCTURE.map((s) => (
-            <Chip
-              key={s.kind}
-              id={`palette-structure-${s.kind}`}
-              payload={{ source: 'palette-block', kind: s.kind }}
-            >
-              <KindIcon kind={s.kind} className="mr-1" />
-              {s.title}
-            </Chip>
-          ))}
-        </div>
-      </Section>
-      <Section title="Control">
-        <div className="flex flex-wrap gap-1">
-          {CONTROL.map((c) => (
-            <Chip
-              key={c.kind}
-              id={`palette-control-${c.kind}`}
-              payload={{ source: 'palette-block', kind: c.kind }}
-            >
-              <KindIcon kind={c.kind} className="mr-1" />
-              {c.title}
-            </Chip>
-          ))}
-        </div>
-      </Section>
-      <Section title="Repeat">
-        <div className="flex flex-wrap gap-1">
-          {REPEAT.map((r) => (
-            <Chip
-              key={r.kind}
-              id={`palette-repeat-${r.kind}`}
-              payload={{ source: 'palette-block', kind: r.kind }}
-            >
-              <KindIcon kind={r.kind} className="mr-1" />
-              {r.title}
-            </Chip>
-          ))}
-        </div>
-      </Section>
+      {BLOCK_SECTIONS.map((s) => (
+        <BlockSection key={s.title} title={s.title} items={s.items} />
+      ))}
       <Section title="Roles">
         {catalogError && <p className="text-xs text-red-600">catalog unavailable: {catalogError}</p>}
         {Object.entries(roles).map(([role, def]) => {

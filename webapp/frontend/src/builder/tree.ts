@@ -5,12 +5,20 @@ import type { ParamValue, RetryJson } from '../types/doc'
 import type { VerbSpec } from '../types/catalog'
 
 export type InputType = 'int' | 'float' | 'bool' | 'enum'
-export type StructureKind = 'serial' | 'parallel' | 'loop' | 'branch' | 'wait' | 'operator_input'
-/** Leaf blocks that act on run state rather than on a device (Increments 6 and 8). None
- * takes retry — retry is command/measure only (design 2026-07-14 §2.1). */
-export type ControlKind = 'compute' | 'record' | 'abort' | 'alarm'
-export type RepeatKind = 'for_each' | 'group_ref'
-export type PaletteKind = StructureKind | ControlKind | RepeatKind
+/** Blocks that hold a body and decide what runs, in what order, and how many times. This is
+ * exactly the set with child slots (`childSlots` below), so the palette's Flow section and the
+ * drop affordance coincide (design 2026-07-18 §3). */
+export type FlowKind = 'serial' | 'parallel' | 'branch' | 'loop' | 'for_each'
+/** Leaf blocks that write run state rather than acting on a device (Increment 6). */
+export type DataKind = 'compute' | 'record'
+/** Leaf blocks that hold the run until the clock or the operator releases it. */
+export type PauseKind = 'wait' | 'operator_input'
+/** Leaf blocks that change the run's fate (Increment 8): alarm flags and continues, abort stops. */
+export type SafetyKind = 'alarm' | 'abort'
+/** Every kind `newPaletteNode` can construct. None of Data/Pause/Safety takes `retry` — retry is
+ * command/measure only (design 2026-07-14 §2.1). `group_ref` is in the union but has no section
+ * of its own: it is dragged from the Groups panel (design 2026-07-18 §6). */
+export type PaletteKind = FlowKind | DataKind | PauseKind | SafetyKind | 'group_ref'
 
 interface NodeBase {
   uid: string
