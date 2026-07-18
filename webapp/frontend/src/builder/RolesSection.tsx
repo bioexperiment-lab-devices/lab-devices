@@ -41,18 +41,19 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
   const [error, setError] = useState<string | null>(null)
   const cancelled = useRef(false)
   const selected = effectiveSelection(group.roles, picked)
+  const isFocusedHere = focusedRole !== null && group.roles.includes(focusedRole)
 
-  // A Problems-row click names a role (docStore.focusedRole). When it is one of ours,
-  // make it the active badge — so the highlight and the verb chips agree on which role is
-  // in view — and scroll it into view, the same jump treatment blocks get from the panel.
+  // A Problems-row click names a role (docStore.focusedRole). When it is one of ours, make
+  // it the active badge and scroll to it — but only on the focus TRANSITION: focusedRole is
+  // sticky (nothing resets it), and group.roles is a fresh array each render, so depending
+  // on the array would re-fire this on every role edit, reverting manual badge picks.
   useEffect(() => {
-    if (focusedRole !== null && group.roles.includes(focusedRole)) {
-      setPicked(focusedRole)
-      document
-        .getElementById(`role-${focusedRole}`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
-  }, [focusedRole, group.roles])
+    if (focusedRole === null || !isFocusedHere) return
+    setPicked(focusedRole)
+    document
+      .getElementById(`role-${focusedRole}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [focusedRole, isFocusedHere])
 
   const startRename = () => {
     if (!selected) return
@@ -74,7 +75,7 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
   const verbs = group.known ? (catalog?.device_types[group.type] ?? {}) : null
   return (
     <div className="rounded border border-slate-200 bg-white p-1.5">
-      <p className="mb-1 text-xs font-semibold text-slate-600">
+      <p className="mb-1 text-xs font-semibold text-caption">
         {group.type}
         {!group.known && <span className="ml-1 font-normal text-amber-600">— unknown device type</span>}
       </p>
