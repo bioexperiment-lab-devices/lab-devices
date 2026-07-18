@@ -140,7 +140,10 @@ const states = [
     name: 'scope-switcher-long-group',
     description:
       'a group whose name is far longer than any fixture ships — the ScopeSwitcher <select> ' +
-      'sizes itself to its longest option, so this is what would widen the canvas if anything does',
+      'sizes itself to its longest option, so this is what would widen the canvas if anything does. ' +
+      'Also opens the Palette\'s Groups section so the declared group\'s draggable-chip row ' +
+      '(Palette.tsx GroupsPanel) actually mounts — otherwise R4 (sibling-height-mismatch) has ' +
+      'nothing to measure on those rows, since the section renders `defaultOpen={false}`.',
     setup: async (page) => {
       await gotoBuilder(page)
       await importDoc(page, FIXTURES.torture)
@@ -149,6 +152,8 @@ const states = [
       await row.getByPlaceholder('group name').fill('group_' + 'g'.repeat(80))
       await row.getByRole('button', { name: 'Add', exact: true }).click()
       await page.waitForTimeout(400)
+      await page.getByRole('button', { name: 'Groups', exact: true }).click()
+      await page.waitForTimeout(200)
     },
   },
 ]

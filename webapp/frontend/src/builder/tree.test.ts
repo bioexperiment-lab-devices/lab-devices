@@ -8,6 +8,7 @@ import {
   findNode,
   insertNode,
   moveNode,
+  newGroupRefNode,
   newPaletteNode,
   newVerbNode,
   removeNode,
@@ -21,6 +22,7 @@ import {
   type ParallelNode,
   type LoopNode,
   type ForEachNode,
+  type GroupRefNode,
 } from './tree'
 import type { VerbSpec } from '../types/catalog'
 
@@ -298,5 +300,25 @@ describe('lane auto-wrap on insert/move/duplicate', () => {
     expect(par.children).toHaveLength(2)
     expect(par.children[0].uid).toBe(cmd.uid) // original untouched
     expect(par.children[1].kind).toBe('serial') // clone wrapped
+  })
+})
+
+describe('newGroupRefNode', () => {
+  it('builds a group_ref carrying the given name and no args', () => {
+    const node = newGroupRefNode('dilute') as GroupRefNode
+    expect(node.kind).toBe('group_ref')
+    expect(node.name).toBe('dilute')
+    expect(node.args).toEqual({})
+  })
+
+  it('gives each call a distinct uid', () => {
+    expect(newGroupRefNode('dilute').uid).not.toBe(newGroupRefNode('dilute').uid)
+  })
+
+  it('starts with the NodeBase defaults every block shares', () => {
+    const node = newGroupRefNode('dilute')
+    expect(node.label).toBeNull()
+    expect(node.gapAfter).toBeNull()
+    expect(node.startOffset).toBeNull()
   })
 })

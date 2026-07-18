@@ -1,38 +1,13 @@
 import { useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, X } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
-import type { ControlKind, RepeatKind, StructureKind } from './tree'
+import { BLOCK_SECTIONS, type BlockChip } from './paletteSections'
 import { Chip } from './Chip'
 import { RolesSection } from './RolesSection'
 import { StreamsPanel } from './StreamsPanel'
 import { KindIcon } from '../ui/icons'
 import { IconButton } from '../ui/IconButton'
-
-const STRUCTURE: Array<{ kind: StructureKind; title: string }> = [
-  { kind: 'serial', title: 'Serial' },
-  { kind: 'parallel', title: 'Parallel' },
-  { kind: 'loop', title: 'Loop' },
-  { kind: 'branch', title: 'Branch' },
-  { kind: 'wait', title: 'Wait' },
-  { kind: 'operator_input', title: 'Operator input' },
-]
-
-const CONTROL: Array<{ kind: ControlKind; title: string }> = [
-  { kind: 'compute', title: 'Compute' },
-  { kind: 'record', title: 'Record' },
-  { kind: 'alarm', title: 'Alarm' },
-  { kind: 'abort', title: 'Abort' },
-]
-
-// for_each's ∀ (see KindIcon, ../ui/icons) cannot be confused with loop's Repeat icon (design
-// 2026-07-16 §5.1); both chips drop through the SAME 'palette-structure' payload source as
-// STRUCTURE/CONTROL above (PaletteKind already widened to include RepeatKind — tree.ts:13), so
-// no second drag path.
-const REPEAT: Array<{ kind: RepeatKind; title: string }> = [
-  { kind: 'for_each', title: 'For each' },
-  { kind: 'group_ref', title: 'Group ref' },
-]
 
 function Section(props: { title: string; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(props.defaultOpen ?? true)
@@ -50,12 +25,38 @@ function Section(props: { title: string; defaultOpen?: boolean; children: ReactN
   )
 }
 
-/** Lists declared groups for management (design §5.2's second editing scope): the scope
- * switcher (Canvas.tsx) is where a group's BODY is switched to and edited; this panel is
- * where it's found, jumped to, and removed once nothing cites it — the same "list, jump,
- * delete-with-a-refusal-reason" shape the roles UI already gives roles (RolesSection). No rename control here:
- * unlike roles/streams, nothing in this task calls for one, and `renameGroup` already exists
- * on the store for a future UI to wire up without a frontend change here. */
+/** All four block sections differ only by title and contents, so they render through one
+ * helper. Four near-identical JSX blocks is what let Structure/Control/Repeat drift apart
+ * independently in the first place (design 2026-07-18 §5). */
+function BlockSection(props: { title: string; items: readonly BlockChip[] }) {
+  return (
+    <Section title={props.title}>
+      <div className="flex flex-wrap gap-1">
+        {props.items.map((item) => (
+          <Chip
+            key={item.kind}
+            id={`palette-block-${item.kind}`}
+            payload={{ source: 'palette-block', kind: item.kind }}
+          >
+            <KindIcon kind={item.kind} className="mr-1" />
+            {item.title}
+          </Chip>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
+/** Lists declared groups for management (design §5.2's second editing scope). Each row's
+ * primary interaction is now dragging its chip onto the canvas to insert a `group_ref` call
+ * for that group, the same drag-from-palette pattern as the Flow/Data/Pause/Safety/Roles
+ * sections above. The pencil `IconButton` beside the chip is the scope switcher: it jumps
+ * (Canvas.tsx) to that group's BODY for editing and turns blue (`active`) while that group's
+ * scope is the one currently being edited. The trailing `X` still removes a group once nothing
+ * cites it, refusing with a reason otherwise — the same "jump, delete-with-a-refusal-reason"
+ * shape the roles UI (RolesSection) already gives roles. No rename control here: unlike roles/streams, nothing
+ * in this task calls for one, and `renameGroup` already exists on the store for a future UI to
+ * wire up without a frontend change here. */
 function GroupsPanel() {
   const groups = useDocStore((s) => s.groups)
   const scope = useDocStore((s) => s.scope)
@@ -71,33 +72,38 @@ function GroupsPanel() {
     )
   }
   return (
-    <ul className="space-y-1">
-      {entries.map(([name, group]) => (
-        <li key={name} className="flex items-center gap-1 text-sm">
-          <button
-            title="Edit this group's body"
-            onClick={() => setScope(name)}
-            className={
-              'rounded px-1 font-mono text-xs hover:bg-slate-200 ' +
-              (scope === name ? 'bg-blue-100 text-blue-700' : '')
-            }
-          >
-            {name}
-          </button>
-          <span className="text-xs text-caption">
-            ({group.params.join(', ')})
-          </span>
-          <IconButton
-            icon={X}
-            label="Delete group"
-            destructive
-            className="ml-auto"
-            onClick={() => setError(removeGroup(name))}
-          />
-        </li>
-      ))}
-      {error && <li className="text-xs text-red-600">{error}</li>}
-    </ul>
+    <>
+      <ul className="space-y-1">
+        {entries.map(([name, group]) => (
+          <li key={name} className="flex items-center gap-1 text-sm">
+            <Chip
+              id={`palette-group-${name}`}
+              payload={{ source: 'palette-group', name }}
+              className="h-6"
+            >
+              <KindIcon kind="group_ref" className="mr-1" />
+              <span className="font-mono">{name}</span>
+              <span className="ml-1 text-caption">({group.params.join(', ')})</span>
+            </Chip>
+            <IconButton
+              icon={Pencil}
+              label="Edit this group's body"
+              active={scope === name}
+              onClick={() => setScope(name)}
+            />
+            <IconButton
+              icon={X}
+              label="Delete group"
+              destructive
+              className="ml-auto"
+              onClick={() => setError(removeGroup(name))}
+            />
+          </li>
+        ))}
+        {error && <li className="text-xs text-red-600">{error}</li>}
+      </ul>
+      <p className="px-1 pt-1 text-xs text-hint">Drag a group onto the canvas to call it.</p>
+    </>
   )
 }
 
@@ -106,48 +112,9 @@ export function Palette() {
 
   return (
     <aside className="w-64 shrink-0 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
-      <Section title="Structure">
-        <div className="flex flex-wrap gap-1">
-          {STRUCTURE.map((s) => (
-            <Chip
-              key={s.kind}
-              id={`palette-structure-${s.kind}`}
-              payload={{ source: 'palette-structure', kind: s.kind }}
-            >
-              <KindIcon kind={s.kind} className="mr-1" />
-              {s.title}
-            </Chip>
-          ))}
-        </div>
-      </Section>
-      <Section title="Control">
-        <div className="flex flex-wrap gap-1">
-          {CONTROL.map((c) => (
-            <Chip
-              key={c.kind}
-              id={`palette-control-${c.kind}`}
-              payload={{ source: 'palette-structure', kind: c.kind }}
-            >
-              <KindIcon kind={c.kind} className="mr-1" />
-              {c.title}
-            </Chip>
-          ))}
-        </div>
-      </Section>
-      <Section title="Repeat">
-        <div className="flex flex-wrap gap-1">
-          {REPEAT.map((r) => (
-            <Chip
-              key={r.kind}
-              id={`palette-repeat-${r.kind}`}
-              payload={{ source: 'palette-structure', kind: r.kind }}
-            >
-              <KindIcon kind={r.kind} className="mr-1" />
-              {r.title}
-            </Chip>
-          ))}
-        </div>
-      </Section>
+      {BLOCK_SECTIONS.map((s) => (
+        <BlockSection key={s.title} title={s.title} items={s.items} />
+      ))}
       <Section title="Roles">
         {catalogError && <p className="text-xs text-red-600">catalog unavailable: {catalogError}</p>}
         <RolesSection />

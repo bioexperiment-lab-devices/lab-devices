@@ -30,6 +30,22 @@ describe('control height token', () => {
     expect(heights(controlClass({ invalid: true }))).toEqual([CONTROL_H])
   })
 
+  it('emits an active icon button\'s resting color as blue instead of slate', () => {
+    // text-slate-500 and text-blue-700 are equal-specificity Tailwind utilities in the
+    // same @layer utilities block, so declaration order in the compiled stylesheet — not
+    // class-string order — decides the winner. `active` must SELECT which color class is
+    // emitted rather than appending a second one, or the blue silently loses the cascade.
+    const cls = iconButtonClass(false, true)
+    expect(cls).toContain('text-blue-700')
+    expect(cls).not.toContain('text-slate-500')
+  })
+
+  it('leaves an inactive icon button on the resting slate color', () => {
+    const cls = iconButtonClass(false, false)
+    expect(cls).toContain('text-slate-500')
+    expect(cls).not.toContain('text-blue-700')
+  })
+
   it('defaults to w-full when no width is given', () => {
     expect(controlClass()).toContain('w-full')
   })

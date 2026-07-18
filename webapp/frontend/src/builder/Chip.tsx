@@ -5,7 +5,12 @@ import type { DragPayload } from './dnd'
 /** Draggable palette chip (structure kinds and role verbs). Unchanged from its former
  * Palette-local self; it lives alone so Palette and RolesSection can both import it
  * without a component-level cycle. */
-export function Chip(props: { id: string; payload: DragPayload; children: ReactNode }) {
+export function Chip(props: {
+  id: string
+  payload: DragPayload
+  className?: string
+  children: ReactNode
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: props.id,
     data: props.payload,
@@ -17,7 +22,8 @@ export function Chip(props: { id: string; payload: DragPayload; children: ReactN
       {...attributes}
       className={
         'flex cursor-grab select-none items-center rounded border border-slate-300 bg-white px-2 py-1 text-xs shadow-sm ' +
-        (isDragging ? 'opacity-40' : 'hover:border-slate-400')
+        (isDragging ? 'opacity-40' : 'hover:border-slate-400') +
+        (props.className ? ' ' + props.className : '')
       }
     >
       {props.children}
