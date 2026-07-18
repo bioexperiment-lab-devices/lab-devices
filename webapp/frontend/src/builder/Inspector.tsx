@@ -413,7 +413,7 @@ function ParamFields({ node, specs }: { node: CommandNode | MeasureNode; specs: 
   return (
     <div>
       <h3 className="mt-2 text-xs font-semibold uppercase text-caption">Params</h3>
-      {specs.length === 0 && <p className="text-xs text-slate-400">no params</p>}
+      {specs.length === 0 && <p className="text-xs text-hint">no params</p>}
       {specs.map((spec) => (
         <FieldRow key={spec.name} label={`${spec.name} (${spec.type})`} required={spec.required}>
           <ParamInput
@@ -722,7 +722,7 @@ function ConditionForm({ node }: { node: AbortNode | AlarmNode }) {
           placeholder={node.kind === 'abort' ? 'why the run must stop' : 'what to flag'}
         />
       </FieldRow>
-      <p className="mt-1 text-xs text-slate-400">
+      <p className="mt-1 text-xs text-caption">
         {node.kind === 'abort'
           ? 'True stops the run: devices are swept safe and the run ends "aborted".'
           : 'True flags the run and continues. Fires every time it holds — latch it with a compute if you want it once.'}
