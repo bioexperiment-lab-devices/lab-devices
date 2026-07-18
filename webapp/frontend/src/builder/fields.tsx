@@ -1,10 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { SquareFunction } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useActiveTree, useDocStore } from '../stores/docStore'
 import { collectBindings } from './refs'
 import { buildExpressionHelp } from './exprHelp'
 import { DURATION_RE } from './params'
 import { controlClass, textAreaClass } from '../ui/controls'
+import { AutoGrowTextArea } from '../ui/AutoGrowTextArea'
+import { IconButton } from '../ui/IconButton'
+import { useDismissable } from '../ui/useDismissable'
 
 export function FieldRow(props: { label: string; required?: boolean; children: ReactNode }) {
   return (
@@ -142,32 +146,35 @@ export function ExpressionInput(props: {
   const help = expression
     ? buildExpressionHelp(expression, Object.keys(streams), collectBindings(activeTree))
     : null
+  // The ref wraps BOTH the trigger and the panel: if the trigger sat outside it, clicking
+  // it while open would dismiss and immediately re-open (spec §4.2, finding #6).
+  const wrapRef = useDismissable(open, () => setOpen(false))
   return (
-    <div className="relative">
-      <div className="flex items-center gap-1">
-        <TextField
+    <div ref={wrapRef} className="relative">
+      <div className="flex items-start gap-1">
+        <AutoGrowTextArea
           mono
+          singleLine
+          maxLines={6}
           value={props.value}
           onCommit={props.onCommit}
           placeholder={props.placeholder ?? 'expression'}
         />
-        <button
-          type="button"
-          title="Expression help"
+        <IconButton
+          icon={SquareFunction}
+          label="Expression help"
           onClick={() => setOpen(!open)}
-          className="shrink-0 rounded border border-slate-300 px-1 text-xs text-slate-500 hover:bg-slate-200"
-        >
-          ƒ
-        </button>
+          className="border border-slate-300"
+        />
       </div>
       {open && help && (
-        <div className="absolute right-0 z-10 mt-1 w-72 rounded border border-slate-300 bg-white p-2 text-xs shadow-lg">
+        <div className="absolute right-0 z-20 mt-1 w-72 rounded border border-slate-300 bg-white p-2 text-xs shadow-lg">
           <p className="font-semibold text-slate-600">Streams</p>
-          <p className="mb-1 font-mono text-slate-500">
+          <p className="mb-1 font-mono text-caption">
             {help.streams.length > 0 ? help.streams.join(', ') : '— none declared —'}
           </p>
           <p className="font-semibold text-slate-600">Bindings</p>
-          <p className="mb-1 font-mono text-slate-500">
+          <p className="mb-1 font-mono text-caption">
             {help.bindings.length > 0 ? help.bindings.join(', ') : '— none —'}
           </p>
           <p className="font-semibold text-slate-600">Functions</p>
