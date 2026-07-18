@@ -43,7 +43,7 @@ describe('palette block sections', () => {
   })
 
   // Subsumed mechanically by 'assigns every kind to its expected section' below, but kept as
-  // its own named test: loop and for_each were the specific pair split across Control and
+  // its own named test: loop and for_each were the specific pair split across Structure and
   // Repeat whose drift motivated this whole re-cut into Flow/Data/Pause/Safety. A test that
   // names that defect is worth more than the duplication costs.
   it('groups loop and for_each together', () => {

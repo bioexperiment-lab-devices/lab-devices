@@ -21,21 +21,17 @@ import { Toolbar } from './Toolbar'
 import { ProblemsPanel } from './ProblemsPanel'
 import { useValidation } from './useValidation'
 import { KindIcon } from '../ui/icons'
+import { BLOCK_SECTIONS } from './paletteSections'
 
-const BLOCK_TITLES: Record<string, string> = {
-  serial: 'Serial',
-  parallel: 'Parallel',
-  loop: 'Loop',
-  branch: 'Branch',
-  wait: 'Wait',
-  operator_input: 'Operator input',
-  compute: 'Compute',
-  record: 'Record',
-  abort: 'Abort',
-  alarm: 'Alarm',
-  for_each: 'For each',
-  group_ref: 'Group ref',
-}
+// Derived from BLOCK_SECTIONS (the palette's own data, paletteSections.ts) rather than
+// hand-maintained, so the drag overlay can never disagree with the palette: renaming a chip's
+// title there updates this map for free instead of leaving a second, silently stale registry.
+// `group_ref` has no chip in BLOCK_SECTIONS (it drives per-group chips instead — design
+// 2026-07-18 §6/§7), so it never appears here; `dragOverlayInfo`'s `palette-group` arm handles
+// that case separately.
+const BLOCK_TITLES: Record<string, string> = Object.fromEntries(
+  BLOCK_SECTIONS.flatMap((s) => s.items.map((i) => [i.kind, i.title])),
+)
 
 /** Label + kind for the drag overlay (spec §3: the overlay is a consumer of the
  * kind-icon map, same as canvas cards and palette chips). `kind` is null only when
