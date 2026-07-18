@@ -90,6 +90,9 @@ describe('timingSummary', () => {
     // gapAfter survives in the doc when a block is moved into a parallel lane, but the
     // section has no control for it there — advertising it would point at nothing.
     expect(timingSummary(node({ kind: 'wait', gapAfter: '30s' }), 'parallel')).toBeNull()
+    // Mirror case: startOffset is eligible only under a parallel, so a value left on a
+    // block that has since moved to top level must not be advertised either.
+    expect(timingSummary(node({ kind: 'wait', startOffset: '5min' }), null)).toBeNull()
   })
 })
 
