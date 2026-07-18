@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.7.0...v0.8.0) (2026-07-18)
+
+
+### Features
+
+* **studio:** UI-audit fixes — icons, contrast, targets, dialogs (W10) ([#35](https://github.com/bioexperiment-lab-devices/lab-devices/issues/35)) ([3f32ab1](https://github.com/bioexperiment-lab-devices/lab-devices/commit/3f32ab1dce3fee0ad812eb5ad9009f3157e0fe68))
+
+
+### Documentation
+
+* UI audit of Experiment Studio 0.7.0 (fixtures + report) ([#33](https://github.com/bioexperiment-lab-devices/lab-devices/issues/33)) ([4a5e1e3](https://github.com/bioexperiment-lab-devices/lab-devices/commit/4a5e1e39e6a849111e2643e00c6ac9df1b9493c5))
+
 ## [0.7.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.6.0...v0.7.0) (2026-07-17)
 
 
