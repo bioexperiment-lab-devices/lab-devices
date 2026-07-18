@@ -50,7 +50,7 @@ export function Canvas() {
 
   return (
     <DiagContext.Provider value={byUid}>
-      <div className="relative min-w-0 flex-1">
+      <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-slate-200">
         <div
           ref={scrollRef}
           className="h-full overflow-auto bg-slate-100 p-4"

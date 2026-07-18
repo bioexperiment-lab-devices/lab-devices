@@ -105,7 +105,7 @@ export function Palette() {
   const catalogError = useCatalogStore((s) => s.error)
 
   return (
-    <aside className="w-64 shrink-0 space-y-2 overflow-y-auto border-r border-slate-200 bg-slate-50 p-2">
+    <aside className="w-64 shrink-0 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
       <Section title="Structure">
         <div className="flex flex-wrap gap-1">
           {STRUCTURE.map((s) => (

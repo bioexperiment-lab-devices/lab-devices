@@ -68,7 +68,7 @@ export function Inspector() {
   const activeTree = useActiveTree()
   const node = selectedUid ? findNode(activeTree, selectedUid) : null
   return (
-    <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-slate-200 bg-slate-50 p-3">
+    <aside className="flex w-80 shrink-0 flex-col overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
       {node ? (
         <BlockForm key={node.uid} node={node} />
       ) : scope === null ? (
