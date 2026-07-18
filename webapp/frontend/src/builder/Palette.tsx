@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useDraggable } from '@dnd-kit/core'
-import { ChevronDown, ChevronRight, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Pencil, X } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
 import type { ControlKind, RepeatKind, StructureKind } from './tree'
@@ -36,7 +36,7 @@ const REPEAT: Array<{ kind: RepeatKind; title: string }> = [
   { kind: 'group_ref', title: 'Group ref' },
 ]
 
-function Chip(props: { id: string; payload: DragPayload; children: ReactNode }) {
+function Chip(props: { id: string; payload: DragPayload; className?: string; children: ReactNode }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: props.id,
     data: props.payload,
@@ -48,7 +48,8 @@ function Chip(props: { id: string; payload: DragPayload; children: ReactNode }) 
       {...attributes}
       className={
         'flex cursor-grab select-none items-center rounded border border-slate-300 bg-white px-2 py-1 text-xs shadow-sm ' +
-        (isDragging ? 'opacity-40' : 'hover:border-slate-400')
+        (isDragging ? 'opacity-40' : 'hover:border-slate-400') +
+        (props.className ? ' ' + props.className : '')
       }
     >
       {props.children}
@@ -137,33 +138,38 @@ function GroupsPanel() {
     )
   }
   return (
-    <ul className="space-y-1">
-      {entries.map(([name, group]) => (
-        <li key={name} className="flex items-center gap-1 text-sm">
-          <button
-            title="Edit this group's body"
-            onClick={() => setScope(name)}
-            className={
-              'rounded px-1 font-mono text-xs hover:bg-slate-200 ' +
-              (scope === name ? 'bg-blue-100 text-blue-700' : '')
-            }
-          >
-            {name}
-          </button>
-          <span className="text-xs text-caption">
-            ({group.params.join(', ')})
-          </span>
-          <IconButton
-            icon={X}
-            label="Delete group"
-            destructive
-            className="ml-auto"
-            onClick={() => setError(removeGroup(name))}
-          />
-        </li>
-      ))}
-      {error && <li className="text-xs text-red-600">{error}</li>}
-    </ul>
+    <>
+      <ul className="space-y-1">
+        {entries.map(([name, group]) => (
+          <li key={name} className="flex items-center gap-1 text-sm">
+            <Chip
+              id={`palette-group-${name}`}
+              payload={{ source: 'palette-group', name }}
+              className="h-6"
+            >
+              <KindIcon kind="group_ref" className="mr-1" />
+              <span className="font-mono">{name}</span>
+              <span className="ml-1 text-caption">({group.params.join(', ')})</span>
+            </Chip>
+            <IconButton
+              icon={Pencil}
+              label="Edit this group's body"
+              className={scope === name ? 'text-blue-700' : ''}
+              onClick={() => setScope(name)}
+            />
+            <IconButton
+              icon={X}
+              label="Delete group"
+              destructive
+              className="ml-auto"
+              onClick={() => setError(removeGroup(name))}
+            />
+          </li>
+        ))}
+        {error && <li className="text-xs text-red-600">{error}</li>}
+      </ul>
+      <p className="px-1 pt-1 text-xs text-hint">Drag a group onto the canvas to call it.</p>
+    </>
   )
 }
 
