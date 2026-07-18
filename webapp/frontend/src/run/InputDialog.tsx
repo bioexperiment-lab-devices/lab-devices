@@ -67,9 +67,9 @@ export function InputDialog() {
   const [forName, setForName] = useState<string | null>(null)
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
-    if (pending !== null && !hidden) {
-      ref.current?.showModal()
-      ;(ref.current?.querySelector('form input, form select') as HTMLElement | null)?.focus()
+    if (pending !== null && !hidden && ref.current && !ref.current.open) {
+      ref.current.showModal()
+      ;(ref.current.querySelector('form input, form select') as HTMLElement | null)?.focus()
     }
   }, [pending, hidden])
 
@@ -110,6 +110,7 @@ export function InputDialog() {
     <dialog
       ref={ref}
       onCancel={(e) => e.preventDefault()}
+      onClose={() => setHidden(true)}
       className="m-auto w-96 rounded-lg bg-white p-4 shadow-xl backdrop:bg-black/30"
     >
       <div className="mb-2 flex items-start justify-between">

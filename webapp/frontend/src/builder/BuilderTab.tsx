@@ -12,7 +12,7 @@ import {
 import { activeList, redo, undo, useDocStore } from '../stores/docStore'
 import { useCatalogStore } from '../stores/catalogStore'
 import { parseSlotDroppableId, type DragPayload } from './dnd'
-import { findNode, newPaletteNode, newVerbNode } from './tree'
+import { findNode, newPaletteNode, newVerbNode, type BlockNode } from './tree'
 import { blockSummary } from './summary'
 import { Palette } from './Palette'
 import { Canvas } from './Canvas'
@@ -20,6 +20,7 @@ import { Inspector } from './Inspector'
 import { Toolbar } from './Toolbar'
 import { ProblemsPanel } from './ProblemsPanel'
 import { useValidation } from './useValidation'
+import { KindIcon } from '../ui/icons'
 
 const STRUCTURE_TITLES: Record<string, string> = {
   serial: 'Serial',
@@ -36,18 +37,26 @@ const STRUCTURE_TITLES: Record<string, string> = {
   group_ref: 'Group ref',
 }
 
-function dragLabel(payload: DragPayload): string {
-  if (payload.source === 'palette-structure') return STRUCTURE_TITLES[payload.kind] ?? payload.kind
-  if (payload.source === 'palette-verb') return `${payload.role} · ${payload.verb}`
+/** Label + kind for the drag overlay (spec §3: the overlay is a consumer of the
+ * kind-icon map, same as canvas cards and palette chips). `kind` is null only when
+ * a canvas drag's uid can't be resolved (shouldn't happen, but the overlay degrades
+ * to text-only rather than crash). */
+function dragOverlayInfo(payload: DragPayload): { label: string; kind: BlockNode['kind'] | null } {
+  if (payload.source === 'palette-structure') {
+    return { label: STRUCTURE_TITLES[payload.kind] ?? payload.kind, kind: payload.kind }
+  }
+  if (payload.source === 'palette-verb') {
+    return { label: `${payload.role} · ${payload.verb}`, kind: payload.verbKind }
+  }
   // A canvas drag can originate from a group's body, not just the main tree (design §5.2's
   // scope switcher) — look the dragged uid up in whichever list `scope` currently names, or
   // the overlay silently falls back to the generic 'block' label for every in-group drag.
   // Reads via `activeList` (docStore.ts) rather than re-deriving the ternary here — this is a
-  // plain function call, not the `useDocStore` hook, because `dragLabel` runs inside a plain
-  // render helper (not a hook-eligible component) against `useDocStore.getState()`.
+  // plain function call, not the `useDocStore` hook, because this runs inside a plain render
+  // helper (not a hook-eligible component) against `useDocStore.getState()`.
   const activeTree = activeList(useDocStore.getState())
   const node = findNode(activeTree, payload.uid)
-  return node ? blockSummary(node) : 'block'
+  return { label: node ? blockSummary(node) : 'block', kind: node?.kind ?? null }
 }
 
 export function BuilderTab() {
@@ -133,11 +142,15 @@ export function BuilderTab() {
           <Inspector />
         </div>
         <DragOverlay>
-          {dragPayload && (
-            <div className="rounded border border-slate-300 bg-white px-2 py-1 text-xs shadow-lg">
-              {dragLabel(dragPayload)}
-            </div>
-          )}
+          {dragPayload && (() => {
+            const { label, kind } = dragOverlayInfo(dragPayload)
+            return (
+              <div className="flex items-center gap-1.5 rounded border border-slate-300 bg-white px-2 py-1 text-xs shadow-lg">
+                {kind && <KindIcon kind={kind} />}
+                {label}
+              </div>
+            )
+          })()}
         </DragOverlay>
       </DndContext>
       <ProblemsPanel />

@@ -73,7 +73,7 @@ export function DevicesTab() {
                   <span className="flex items-center gap-1">
                     <span className="min-w-0 truncate">{lab.name}</span>
                     {!lab.online && (
-                      <span className="shrink-0 rounded bg-slate-200 px-1 text-[10px] uppercase text-slate-600">
+                      <span className="shrink-0 rounded bg-slate-200 px-1 text-[10px] uppercase text-caption">
                         offline
                       </span>
                     )}

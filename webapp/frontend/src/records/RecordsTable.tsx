@@ -128,7 +128,7 @@ export function RecordsTable() {
                     href={recordDownloadUrl(row.id)}
                     title="Download zip"
                     aria-label="Download zip"
-                    className={iconButtonClass() + 'mr-1'}
+                    className={iconButtonClass()}
                   >
                     <Download size={14} aria-hidden />
                   </a>

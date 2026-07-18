@@ -45,7 +45,7 @@ export function Canvas() {
       >
         <ScopeSwitcher />
         {activeTree.length === 0 && (
-          <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-hint">
+          <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-caption">
             Drag blocks from the palette to start building.
           </p>
         )}
@@ -332,7 +332,7 @@ function BranchLanes({ node }: { node: BranchNode }) {
     // their min-w-48 floor — now scrolls inside the branch card instead of painting its
     // content past the card edge over a sibling's action icons. The arms keep min-w-48 flex-1
     // (the design floor); the container scrolling is what contains the overflow.
-    <div className="flex gap-2 overflow-x-auto px-2 pb-2">
+    <div className="flex gap-2 overflow-x-auto scroll-x-shadow px-2 pb-2">
       <div className="min-w-48 flex-1">
         <p className="text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
