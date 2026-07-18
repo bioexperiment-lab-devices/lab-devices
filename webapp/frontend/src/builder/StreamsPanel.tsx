@@ -78,7 +78,7 @@ export function StreamsPanel() {
                     setEditing(null)
                   }
                 }}
-                className={controlClass({ mono: true }) + ' w-24'}
+                className={controlClass({ mono: true, width: 'w-24' })}
               />
             ) : (
               <button
@@ -111,7 +111,7 @@ export function StreamsPanel() {
               value={s.units ?? ''}
               placeholder="units"
               onChange={(e) => setStreamUnits(name, e.target.value || null)}
-              className={controlClass() + ' w-14'}
+              className={controlClass({ width: 'w-14' })}
             />
             <IconButton
               icon={X}
@@ -130,14 +130,14 @@ export function StreamsPanel() {
           placeholder="stream name"
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
-          className={controlClass({ mono: true }) + ' w-24'}
+          className={controlClass({ mono: true, width: 'w-24' })}
         />
         <input
           value={newUnits}
           placeholder="units"
           onChange={(e) => setNewUnits(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
-          className={controlClass() + ' w-14'}
+          className={controlClass({ width: 'w-14' })}
         />
         <button onClick={add} className={inlineButtonClass()}>
           Add

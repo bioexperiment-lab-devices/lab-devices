@@ -51,13 +51,13 @@ export function StreamIntoPicker(props: { value: string; onPick: (name: string) 
             value={name}
             placeholder="name"
             onChange={(e) => setName(e.target.value)}
-            className={controlClass({ mono: true }) + ' w-20'}
+            className={controlClass({ mono: true, width: 'w-20' })}
           />
           <input
             value={units}
             placeholder="units"
             onChange={(e) => setUnits(e.target.value)}
-            className={controlClass() + ' w-14'}
+            className={controlClass({ width: 'w-14' })}
           />
           <button onClick={create} className={inlineButtonClass()}>
             Add

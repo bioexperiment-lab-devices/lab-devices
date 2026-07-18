@@ -93,7 +93,7 @@ function AddRoleForm() {
           placeholder="role name"
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
-          className={controlClass({ mono: true }) + ' w-24'}
+          className={controlClass({ mono: true, width: 'w-24' })}
         />
         <select
           value={type}

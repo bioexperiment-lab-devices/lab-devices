@@ -107,7 +107,7 @@ function ScopeSwitcher() {
       <select
         value={scope ?? ''}
         onChange={(e) => setScope(e.target.value === '' ? null : e.target.value)}
-        className={controlClass() + ' w-auto'}
+        className={controlClass({ width: 'w-auto' })}
       >
         <option value="">Main workflow</option>
         {groupNames.map((g) => (
@@ -132,7 +132,7 @@ function ScopeSwitcher() {
                 setError(null)
               }
             }}
-            className={controlClass({ mono: true }) + ' w-28'}
+            className={controlClass({ mono: true, width: 'w-28' })}
           />
           <button onClick={create} className={inlineButtonClass()}>
             Add

@@ -676,7 +676,7 @@ function BranchForm({ node }: { node: BranchNode }) {
       {node.else === null ? (
         <button
           onClick={() => patchBlock(node.uid, { else: [] })}
-          className={inlineButtonClass({ subtle: true }) + ' w-full'}
+          className={inlineButtonClass({ subtle: true, width: 'w-full' })}
         >
           <Plus size={12} aria-hidden className="mr-0.5" />add else lane
         </button>
@@ -685,7 +685,7 @@ function BranchForm({ node }: { node: BranchNode }) {
           disabled={node.else.length > 0}
           title={node.else.length > 0 ? 'Empty the else lane first' : undefined}
           onClick={() => patchBlock(node.uid, { else: null })}
-          className={inlineButtonClass() + ' w-full enabled:hover:text-red-600'}
+          className={inlineButtonClass({ width: 'w-full' }) + ' enabled:hover:text-red-600'}
         >
           remove else lane
         </button>

@@ -29,6 +29,34 @@ describe('control height token', () => {
     expect(controlClass({ invalid: true })).toContain('border-red-400')
     expect(heights(controlClass({ invalid: true }))).toEqual([CONTROL_H])
   })
+
+  it('defaults to w-full when no width is given', () => {
+    expect(controlClass()).toContain('w-full')
+  })
+
+  it('emits a supplied width instead of w-full — never both', () => {
+    // w-full and a narrower width are equal-specificity Tailwind utilities in the same
+    // @layer utilities block; whichever is declared later in the compiled stylesheet wins
+    // regardless of class-string order (w-full sorts last), so a call site that appended
+    // ' w-28' after controlClass() always rendered full-width. The width option must
+    // select the class rather than append one, or this regresses silently.
+    const cls = controlClass({ mono: true, width: 'w-28' })
+    expect(cls).toContain('w-28')
+    expect(cls).not.toContain('w-full')
+  })
+})
+
+describe('inline button width', () => {
+  it('defaults to no width class at all', () => {
+    const cls = inlineButtonClass()
+    expect(cls).not.toMatch(/\bw-\w/)
+  })
+
+  it('emits a supplied width and never falls back to w-full alongside it', () => {
+    const cls = inlineButtonClass({ width: 'w-full' })
+    expect(cls).toContain('w-full')
+    expect(cls.match(/\bw-full\b/g)?.length).toBe(1)
+  })
 })
 
 describe('textarea class', () => {

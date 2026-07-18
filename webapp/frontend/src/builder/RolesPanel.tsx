@@ -66,7 +66,7 @@ export function RolesPanel() {
                     setEditing(null)
                   }
                 }}
-                className={controlClass({ mono: true }) + ' w-28'}
+                className={controlClass({ mono: true, width: 'w-28' })}
               />
             ) : (
               <button

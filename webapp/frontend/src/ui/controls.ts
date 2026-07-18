@@ -26,9 +26,20 @@ function controlSurfaceClass(opts: { mono?: boolean; invalid?: boolean } = {}): 
   ).trim()
 }
 
-/** Text inputs, textareas' single-line siblings, and selects. */
-export function controlClass(opts: { mono?: boolean; invalid?: boolean } = {}): string {
-  return `${CONTROL_H} w-full ${controlSurfaceClass(opts)}`.trim()
+/** Text inputs, textareas' single-line siblings, and selects.
+ *
+ * `width` picks the control's width class and defaults to `w-full`. It exists because
+ * `w-full` and a narrower width (e.g. `w-28`) are equal-specificity Tailwind utilities in
+ * the SAME `@layer utilities` block — whichever is declared later in the compiled
+ * stylesheet wins the cascade, regardless of class-string order. `w-full` sorts after every
+ * fixed width there, so `controlClass(...) + ' w-28'` silently rendered full-width no matter
+ * what came after it in the string. Passing `width` here selects the class instead of
+ * appending one, so there is only ever one width class in the output and no cascade fight
+ * to lose (see docs' 2026-07-18 control-token sweep, finding C-width). */
+export function controlClass(
+  opts: { mono?: boolean; invalid?: boolean; width?: string } = {},
+): string {
+  return `${CONTROL_H} ${opts.width ?? 'w-full'} ${controlSurfaceClass(opts)}`.trim()
 }
 
 /** Textareas. Shares `controlSurfaceClass` with `controlClass` but deliberately carries no
@@ -42,10 +53,15 @@ export function textAreaClass(opts: { mono?: boolean; fillParent?: boolean } = {
 }
 
 /** Inline buttons that sit in a row with inputs or other buttons.
- * `subtle` is the dashed "add another" affordance; it keeps the same height. */
-export function inlineButtonClass(opts: { subtle?: boolean } = {}): string {
+ * `subtle` is the dashed "add another" affordance; it keeps the same height.
+ * `width` has no default (unlike `controlClass`'s) — most inline buttons size to their
+ * label, so omitting it emits no width class at all, exactly as before this option
+ * existed. Pass it (e.g. `'w-full'` for a full-bleed button below a branch arm) instead of
+ * concatenating a width string: same cascade hazard as `controlClass` — see its docstring. */
+export function inlineButtonClass(opts: { subtle?: boolean; width?: string } = {}): string {
   return (
-    `${CONTROL_H} inline-flex shrink-0 items-center justify-center rounded border px-2 text-xs ` +
+    `${CONTROL_H} ${opts.width ? opts.width + ' ' : ''}` +
+    'inline-flex shrink-0 items-center justify-center rounded border px-2 text-xs ' +
     'disabled:opacity-40 ' +
     (opts.subtle
       ? 'border-dashed border-slate-300 text-caption hover:border-slate-400 hover:text-slate-700'
