@@ -32,6 +32,21 @@
   .wraprow { display: flex; flex-wrap: wrap; gap: 4px; width: 108px; }
   .wraprow .a, .wraprow .b { height: 24px; width: 50px; box-sizing: border-box; }
   .wraprow .c, .wraprow .d { height: 30px; width: 50px; box-sizing: border-box; }
+
+  /* R5 — contrast. Colours are written in oklch() exactly as Tailwind 4 compiles them, so
+     these plants exercise the real emitted form and not a convenient rgb() stand-in.
+     Ratios below are measured, not estimated (see the probe's R5 comment). */
+  .slate-600 { color: oklch(0.446 0.043 257.281); }  /* text-caption */
+  .slate-500 { color: oklch(0.554 0.046 257.417); }  /* text-hint    */
+  .zebra     { background-color: oklch(0.968 0.007 247.896); }  /* bg-slate-100 */
+  .slate-300-bg { background-color: oklch(0.869 0.022 252.894); }
+  .brand     { background-color: oklch(0.546 0.245 262.881); color: #fff; }  /* bg-blue-600 */
+  /* Mirrors src/index.css `bg-hatch`: low-coverage slate-200 stripes on a white ground. */
+  .hatch {
+    background-image: repeating-linear-gradient(
+      45deg, transparent 0 5px, oklch(0.929 0.013 255.508) 5px 6px);
+  }
+  .big { font-size: 24px; }
 </style>
 
 <!-- PLANT R1 -->
@@ -79,3 +94,39 @@
      reachable. Observed for real on the Inspector's Label field with a long morbidostat
      label; without the guard every long-valued field in the app is a standing R1 hit. -->
 <input style="width:40px" value="a value far longer than this box can possibly show" />
+
+<!-- PLANT R5a: text-hint (slate-500) on the depth zebra's bg-slate-100 = 4.35:1, under the
+     4.5 floor. This is the real defect CLAUDE.md already documents in prose ("on the tinted
+     canvas use text-caption — text-hint measures under 4.5:1 there") with no rule watching it.
+     The text sits in a TRANSPARENT span inside the tinted div on purpose: that is how the
+     whole app is built (tints live on containers, labels are bare spans), and it makes this
+     plant double as the ancestor-walk test. A rule that read only the element's own
+     background-color would score this against white, get 4.76:1, and PASS it — so if the walk
+     ever breaks, this plant goes silent rather than merely changing its number. -->
+<div class="zebra"><span class="slate-500">hint text on the tinted canvas</span></div>
+
+<!-- PLANT R5b: text-hint over the hatch. Base is white (4.76:1, passes); the slate-200 stripe
+     is 3.86:1 and fails. Only fires if background-image colour stops are considered at all, so
+     this is the test for the striped-surface decision — scoring the base alone silently passes. -->
+<div class="hatch"><span class="slate-500">hint text over the hatch</span></div>
+
+<!-- TRAP R5 (THE OKLCH INVERSION): white on bg-blue-600 is 8.28:1 and must NOT fire. A naive
+     rgb()-only parser fails to read either oklch colour and falls back to scoring them as
+     white/black, which is how the earlier scratchpad probe produced confident ratio-1.00
+     "white on white" violations on precisely this shape — the brand buttons — while missing
+     the faint slate text above. If this trap ever fires, the parser has regressed to string
+     matching and the results are INVERTED, not merely noisy. -->
+<div class="brand">Start run</div>
+
+<!-- TRAP R5: text-caption (slate-600) over the same hatch = 6.15:1 at full assumed stripe
+     coverage; must NOT fire. Guards the conservative worst-case-stripe choice from being so
+     strict that the sanctioned text colour on a sanctioned surface goes permanently red. -->
+<div class="hatch"><span class="slate-600">caption text over the hatch</span></div>
+
+<!-- TRAP R5: large text (24px) at 3.20:1 — under the 4.5 normal floor but over the 3.0 large
+     floor, so it must NOT fire. The only case here that distinguishes the two thresholds; if
+     the large-text branch is dropped, this fires. -->
+<div class="slate-300-bg"><span class="slate-500 big">large heading</span></div>
+
+<!-- TRAP R5: text-caption on white = 7.58:1, the ordinary passing case. -->
+<div class="slate-600">ordinary caption text</div>

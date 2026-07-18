@@ -30,7 +30,13 @@ export function TabShell(props: {
                   : 'border-transparent text-slate-600 hover:border-slate-300 hover:text-slate-900')
               }
             >
-              <span className="mr-1.5 font-mono text-xs opacity-60">{i + 1}</span>
+              {/* text-hint, not opacity-60: the numeral is a keyboard hint, so it must stay
+                  quieter than the tab label — but `opacity-60` fades slate-600 to a measured
+                  2.88:1 (probe R5), below the 4.5:1 AA floor. slate-500 at full alpha keeps
+                  the same "quieter than the label" hierarchy against both the active
+                  (slate-900) and inactive (slate-600) label and clears AA on this white
+                  header. Do not reintroduce opacity here — see CLAUDE.md "Text colors". */}
+              <span className="mr-1.5 font-mono text-xs text-hint">{i + 1}</span>
               {tab}
             </button>
           ))}

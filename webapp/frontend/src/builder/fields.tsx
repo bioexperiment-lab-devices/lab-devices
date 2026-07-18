@@ -26,7 +26,9 @@ export function FieldRow(props: {
     <label className={'text-xs ' + (props.grow ? 'flex min-h-0 flex-1 flex-col py-1' : 'block py-1')}>
       <span className="mb-0.5 block text-caption">
         {props.label}
-        {props.required && <span className="text-red-500"> *</span>}
+        {/* red-600 is this app's standard error red (Toolbar, ProblemsPanel, diagnostics);
+            red-500 measured 3.64:1 (probe R5) and is below AA on meaning-carrying text. */}
+        {props.required && <span className="text-red-600"> *</span>}
       </span>
       {props.children}
     </label>
@@ -135,7 +137,7 @@ export function DurationField(props: {
           else props.onCommit(trimmed)
         }}
       />
-      {invalid && <p className="mt-0.5 text-[10px] text-amber-600">expected &lt;number&gt;ms|s|min|h</p>}
+      {invalid && <p className="mt-0.5 text-[10px] text-amber-700">expected &lt;number&gt;ms|s|min|h</p>}
     </div>
   )
 }

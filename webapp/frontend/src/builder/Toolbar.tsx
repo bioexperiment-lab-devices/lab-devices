@@ -163,7 +163,9 @@ export function Toolbar() {
       <div className="w-64">
         <TextField value={name} onCommit={setName} placeholder="experiment name" />
       </div>
-      {dirty && <span title="Unsaved changes" className="text-amber-600">●</span>}
+      {/* amber-700, not amber-600: the dot is the only rendering of "unsaved", so it is
+          meaning-carrying text and owes AA. amber-600 measured 3.20:1 (probe R5). */}
+      {dirty && <span title="Unsaved changes" className="text-amber-700">●</span>}
       <ValidationChip />
       {error && (
         <span title={error} className="truncate text-xs text-red-600">

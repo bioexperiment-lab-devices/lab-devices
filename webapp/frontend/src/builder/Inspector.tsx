@@ -416,7 +416,7 @@ function ActionForm({ node }: { node: CommandNode | MeasureNode }) {
       {spec ? (
         <ParamFields node={node} specs={spec.params} />
       ) : (
-        <p className="text-xs text-amber-600">verb not in catalog — params not editable</p>
+        <p className="text-xs text-amber-700">verb not in catalog — params not editable</p>
       )}
       {/* Result destination last: configure the action, then say where its value goes.
           It used to sit above the params, splitting a verb from its own arguments. */}
@@ -839,7 +839,7 @@ function ForEachForm({ node }: { node: ForEachNode }) {
       <FieldRow label="Items (JSON array)" required>
         <TextAreaField mono rows={4} value={itemsText} onCommit={commitItems} />
       </FieldRow>
-      {itemsError && <p className="text-[10px] text-amber-600">{itemsError}</p>}
+      {itemsError && <p className="text-[10px] text-amber-700">{itemsError}</p>}
       <p className="mt-2 text-xs text-caption">
         {node.body.length} block{node.body.length === 1 ? '' : 's'} in the body — drag onto the
         canvas to edit; each copy is spliced into the list for_each sits in.

@@ -18,9 +18,14 @@ const rules = [...new Set(found.map((v) => v.rule))].sort()
 // nested one level below row.children inside a plain grouping div, invisible to a
 // direct-children-only scan). This is a deliberate, documented count, not a loosened
 // assertion — the "exactly N" check below still fails on any drift.
+// text-contrast carries two plants: R5a (faint text on the depth zebra, reached only by
+// walking up to a tinted ancestor) and R5b (the same text over the hatch, reached only by
+// considering background-image colour stops). They fail for different reasons, so one cannot
+// stand in for the other.
 const expectedCounts = {
   'clipped-overflow': 1,
   'sibling-height-mismatch': 3,
+  'text-contrast': 2,
   'tiny-target': 1,
   'truncate-without-title': 1,
 }
