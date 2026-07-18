@@ -413,12 +413,14 @@ function ActionForm({ node }: { node: CommandNode | MeasureNode }) {
           ))}
         </select>
       </FieldRow>
-      {node.kind === 'measure' && <IntoPicker node={node} />}
       {spec ? (
         <ParamFields node={node} specs={spec.params} />
       ) : (
         <p className="text-xs text-amber-600">verb not in catalog — params not editable</p>
       )}
+      {/* Result destination last: configure the action, then say where its value goes.
+          It used to sit above the params, splitting a verb from its own arguments. */}
+      {node.kind === 'measure' && <IntoPicker node={node} />}
     </div>
   )
 }
@@ -567,13 +569,6 @@ function OperatorInputForm({ node }: { node: OperatorInputNode }) {
           <option value="enum">enum</option>
         </select>
       </FieldRow>
-      <FieldRow label="Prompt">
-        <AutoGrowTextArea
-          value={node.prompt ?? ''}
-          onCommit={(v) => patchBlock(node.uid, { prompt: v || null })}
-          placeholder="shown to the operator"
-        />
-      </FieldRow>
       {numeric && (
         <>
           <FieldRow label="Min">
@@ -613,6 +608,15 @@ function OperatorInputForm({ node }: { node: OperatorInputNode }) {
           />
         </FieldRow>
       )}
+      {/* Last: the type and its constraints define what the operator may enter, so they
+          belong together; the prompt is the operator-facing prose describing the result. */}
+      <FieldRow label="Prompt">
+        <AutoGrowTextArea
+          value={node.prompt ?? ''}
+          onCommit={(v) => patchBlock(node.uid, { prompt: v || null })}
+          placeholder="shown to the operator"
+        />
+      </FieldRow>
     </div>
   )
 }
