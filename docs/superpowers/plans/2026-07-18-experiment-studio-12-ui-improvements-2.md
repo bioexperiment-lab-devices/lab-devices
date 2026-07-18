@@ -18,7 +18,7 @@ Copied from `webapp/frontend/CLAUDE.md` and the spec — every task implicitly i
 - **vitest runs in node env:** pure functions only. No component rendering, no jsdom, no @testing-library. DOM truth comes from the probe harness (`npm run capture`).
 - **Tab accessible names** must remain exactly `1 Devices`, `2 Builder`, `3 Run`, `4 Records` (mono digit span + label) — the capture harness and preprod recipes select on `/^2\s*Builder$/`.
 - **Byte round-trip:** `docToTree`/`treeToDoc` (`convert.ts`) must NOT be touched — open+save stays a byte no-op.
-- **Gates** (run from repo root unless noted): frontend `cd webapp/frontend && npm run lint && npm run typecheck && npm test -- --run && npm run build`; backend `cd webapp/backend && .venv/bin/python -m pytest -q && .venv/bin/python -m mypy && .venv/bin/python -m ruff check .` (mypy takes NO path arg). Two known oxlint fast-refresh warnings are expected, exit 0.
+- **Gates** (run from repo root unless noted): frontend `cd webapp/frontend && npm run lint && npm run typecheck && npm test -- --run && npm run build`; backend `cd webapp/backend && .venv/bin/python -m pytest -q && .venv/bin/python -m mypy && .venv/bin/python -m ruff check .` (mypy takes NO path arg). Five known pre-existing oxlint fast-refresh warnings are expected — IconButton, StreamChart, ScrollX, TabShell, icons — exit 0.
 - **Commits:** conventional-commit subjects. Every commit message ends with:
 
   ```

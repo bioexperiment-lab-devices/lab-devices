@@ -119,4 +119,8 @@ describe('badgeClass', () => {
     expect(badgeClass({ active: true })).toContain('bg-blue-100')
     expect(badgeClass()).not.toContain('bg-blue-100')
   })
+  it('bounds the badge to its row so an inner span can ellipsize a long name', () => {
+    expect(badgeClass()).toContain('max-w-full')
+    expect(badgeClass({ active: true })).toContain('max-w-full')
+  })
 })

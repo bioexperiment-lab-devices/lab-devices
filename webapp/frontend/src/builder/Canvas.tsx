@@ -27,7 +27,7 @@ export function Canvas() {
 
   // `scrollToUid` (docStore.ts) is set by a Problems row click on a block diagnostic
   // (ProblemsPanel.tsx). Reading it here and scrolling in a reactive effect — the same shape
-  // as RolesPanel's `focusedRole` effect — rather than querying the DOM synchronously inside
+  // as RolesSection's `focusedRole` effect — rather than querying the DOM synchronously inside
   // that click handler is what makes this immune to the cross-scope race (2026-07-16 review,
   // Finding 2): when the click also calls `setScope`, `activeTree` above is what re-renders
   // this component for the new scope, and this effect only runs after that render commits, so

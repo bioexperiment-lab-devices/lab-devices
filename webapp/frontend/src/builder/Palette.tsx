@@ -53,7 +53,7 @@ function Section(props: { title: string; defaultOpen?: boolean; children: ReactN
 /** Lists declared groups for management (design §5.2's second editing scope): the scope
  * switcher (Canvas.tsx) is where a group's BODY is switched to and edited; this panel is
  * where it's found, jumped to, and removed once nothing cites it — the same "list, jump,
- * delete-with-a-refusal-reason" shape RolesPanel already gives roles. No rename control here:
+ * delete-with-a-refusal-reason" shape the roles UI already gives roles (RolesSection). No rename control here:
  * unlike roles/streams, nothing in this task calls for one, and `renameGroup` already exists
  * on the store for a future UI to wire up without a frontend change here. */
 function GroupsPanel() {

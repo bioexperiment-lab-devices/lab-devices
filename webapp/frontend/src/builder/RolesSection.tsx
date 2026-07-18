@@ -122,11 +122,10 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
                 }}
                 className={
                   badgeClass({ active: name === selected }) +
-                  (focusedRole === name ? ' ring-2 ring-amber-400' : '') +
-                  ' max-w-full truncate'
+                  (focusedRole === name ? ' ring-2 ring-amber-400' : '')
                 }
               >
-                {name}
+                <span className="min-w-0 truncate">{name}</span>
               </button>
             ),
           )}
