@@ -8,6 +8,7 @@ import {
   findNode,
   insertNode,
   moveNode,
+  newGroupRefNode,
   newPaletteNode,
   newVerbNode,
   removeNode,
@@ -20,6 +21,7 @@ import {
   type ParallelNode,
   type LoopNode,
   type ForEachNode,
+  type GroupRefNode,
 } from './tree'
 
 const wait = (uid: string): BlockNode => ({
@@ -216,5 +218,25 @@ describe('tree ops', () => {
     expect(node.kind).toBe('group_ref')
     expect(node).toMatchObject({ name: '', args: {} })
     expect(childSlots(node)).toEqual([])
+  })
+})
+
+describe('newGroupRefNode', () => {
+  it('builds a group_ref carrying the given name and no args', () => {
+    const node = newGroupRefNode('dilute') as GroupRefNode
+    expect(node.kind).toBe('group_ref')
+    expect(node.name).toBe('dilute')
+    expect(node.args).toEqual({})
+  })
+
+  it('gives each call a distinct uid', () => {
+    expect(newGroupRefNode('dilute').uid).not.toBe(newGroupRefNode('dilute').uid)
+  })
+
+  it('starts with the NodeBase defaults every block shares', () => {
+    const node = newGroupRefNode('dilute')
+    expect(node.label).toBeNull()
+    expect(node.gapAfter).toBeNull()
+    expect(node.startOffset).toBeNull()
   })
 })

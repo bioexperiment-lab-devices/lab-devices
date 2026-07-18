@@ -12,7 +12,7 @@ import {
 import { activeList, redo, undo, useDocStore } from '../stores/docStore'
 import { useCatalogStore } from '../stores/catalogStore'
 import { parseSlotDroppableId, type DragPayload } from './dnd'
-import { findNode, newPaletteNode, newVerbNode, type BlockNode } from './tree'
+import { findNode, newGroupRefNode, newPaletteNode, newVerbNode, type BlockNode } from './tree'
 import { blockSummary } from './summary'
 import { Palette } from './Palette'
 import { Canvas } from './Canvas'
@@ -21,29 +21,30 @@ import { Toolbar } from './Toolbar'
 import { ProblemsPanel } from './ProblemsPanel'
 import { useValidation } from './useValidation'
 import { KindIcon } from '../ui/icons'
+import { BLOCK_SECTIONS } from './paletteSections'
 
-const STRUCTURE_TITLES: Record<string, string> = {
-  serial: 'Serial',
-  parallel: 'Parallel',
-  loop: 'Loop',
-  branch: 'Branch',
-  wait: 'Wait',
-  operator_input: 'Operator input',
-  compute: 'Compute',
-  record: 'Record',
-  abort: 'Abort',
-  alarm: 'Alarm',
-  for_each: 'For each',
-  group_ref: 'Group ref',
-}
+// Derived from BLOCK_SECTIONS (the palette's own data, paletteSections.ts) rather than
+// hand-maintained, so the drag overlay can never disagree with the palette: renaming a chip's
+// title there updates this map for free instead of leaving a second, silently stale registry.
+// `group_ref` has no chip in BLOCK_SECTIONS (it drives per-group chips instead — design
+// 2026-07-18 §6/§7), so it never appears here; `dragOverlayInfo`'s `palette-group` arm handles
+// that case separately.
+const BLOCK_TITLES: Record<string, string> = Object.fromEntries(
+  BLOCK_SECTIONS.flatMap((s) => s.items.map((i) => [i.kind, i.title])),
+)
 
 /** Label + kind for the drag overlay (spec §3: the overlay is a consumer of the
  * kind-icon map, same as canvas cards and palette chips). `kind` is null only when
  * a canvas drag's uid can't be resolved (shouldn't happen, but the overlay degrades
  * to text-only rather than crash). */
 function dragOverlayInfo(payload: DragPayload): { label: string; kind: BlockNode['kind'] | null } {
-  if (payload.source === 'palette-structure') {
-    return { label: STRUCTURE_TITLES[payload.kind] ?? payload.kind, kind: payload.kind }
+  if (payload.source === 'palette-block') {
+    return { label: BLOCK_TITLES[payload.kind] ?? payload.kind, kind: payload.kind }
+  }
+  // A dragged group shows its own name rather than the generic "Group ref" — the whole point
+  // of per-group chips (design 2026-07-18 §6) is that the author picked a specific group.
+  if (payload.source === 'palette-group') {
+    return { label: payload.name, kind: 'group_ref' }
   }
   if (payload.source === 'palette-verb') {
     return { label: `${payload.role} · ${payload.verb}`, kind: payload.verbKind }
@@ -117,8 +118,12 @@ export function BuilderTab() {
       s.moveBlock(payload.uid, at)
       return
     }
-    if (payload.source === 'palette-structure') {
+    if (payload.source === 'palette-block') {
       s.insertBlock(newPaletteNode(payload.kind), at)
+      return
+    }
+    if (payload.source === 'palette-group') {
+      s.insertBlock(newGroupRefNode(payload.name), at)
       return
     }
     const roleType = s.roles[payload.role]?.type
