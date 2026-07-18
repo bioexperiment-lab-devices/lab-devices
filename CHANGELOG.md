@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.8.1...v0.9.0) (2026-07-18)
+
+
+### Features
+
+* **studio:** re-cut the element library into Flow/Data/Pause/Safety ([#38](https://github.com/bioexperiment-lab-devices/lab-devices/issues/38)) ([5b58db8](https://github.com/bioexperiment-lab-devices/lab-devices/commit/5b58db8f4d075734ceebe1f76b1ab22e4a181a1c))
+* **studio:** UI improvements round 2 — panel boxes, tabbed header, typed roles, empty lanes ([#40](https://github.com/bioexperiment-lab-devices/lab-devices/issues/40)) ([7d17f6b](https://github.com/bioexperiment-lab-devices/lab-devices/commit/7d17f6bcfc0f5d99c4298c6dd62bf41b62b31012))
+
 ## [0.8.1](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.8.0...v0.8.1) (2026-07-18)
 
 
