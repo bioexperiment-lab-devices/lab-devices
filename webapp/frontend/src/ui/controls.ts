@@ -92,3 +92,23 @@ export function badgeClass(opts: { active?: boolean } = {}): string {
     (opts.active ? 'bg-blue-100 text-blue-700' : 'text-slate-700 hover:bg-slate-200')
   ).trim()
 }
+
+/** The Inspector's collapsible tail-section header (design 2026-07-18 §3.3).
+ *
+ * Borderless and left-aligned, so it reads as a section heading rather than a push button —
+ * which is what distinguishes it from the body's plain `PARAMS`/`ARGS` sub-labels, whose
+ * ambiguity with the old `h3` headers is part of what this increment removes.
+ *
+ * It exists as its own helper rather than as options bolted onto `inlineButtonClass` because
+ * that one bakes `justify-center` and a border: appending `justify-start` would lose the
+ * cascade silently (equal specificity, same `@layer utilities`, compiled order decides). One
+ * helper, one alignment class, no fight to lose.
+ *
+ * Carries CONTROL_H: the header shares a column with 24px inputs and selects, and the probe's
+ * sibling-height-mismatch rule holds that column to ≤1px. */
+export function sectionHeaderClass(): string {
+  return (
+    `${CONTROL_H} flex w-full items-center justify-start gap-1 rounded px-1 ` +
+    'text-xs font-semibold uppercase text-caption hover:bg-slate-100'
+  ).trim()
+}
