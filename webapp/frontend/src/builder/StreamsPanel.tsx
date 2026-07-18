@@ -1,6 +1,9 @@
 import { useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { useDocStore } from '../stores/docStore'
 import { streamSources } from './refs'
+import { filterStreamNames } from './streamFilter'
+import { IconButton } from '../ui/IconButton'
 
 /** Streams are name + units only (settled decision S5) — per-stream persistence is carried
  * opaquely through convert.ts but has no UI, and the backend forces disk persistence on
@@ -19,6 +22,7 @@ export function StreamsPanel() {
   const cancelled = useRef(false)
   const [newName, setNewName] = useState('')
   const [newUnits, setNewUnits] = useState('')
+  const [query, setQuery] = useState('')
 
   const commitRename = (from: string) => {
     const err = draft && draft !== from ? renameStream(from, draft) : null
@@ -36,10 +40,23 @@ export function StreamsPanel() {
     }
   }
 
+  const matches = filterStreamNames(Object.keys(streams), query)
+
   return (
     <div className="space-y-1">
+      <input
+        value={query}
+        placeholder="filter streams…"
+        onChange={(e) => setQuery(e.target.value)}
+        className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+      />
       <ul className="space-y-1">
-        {Object.entries(streams).map(([name, s]) => (
+        {query.trim() !== '' && matches.length === 0 && (
+          <li className="text-xs text-hint">no streams match</li>
+        )}
+        {matches.map((name) => {
+          const s = streams[name]
+          return (
           <li key={name} className="flex items-center gap-1 text-sm">
             {editing === name ? (
               <input
@@ -82,7 +99,10 @@ export function StreamsPanel() {
                   ? 'No block writes this stream'
                   : `Written by a ${sources[name]} block`
               }
-              className="shrink-0 rounded bg-slate-200 px-1 text-xs text-slate-500"
+              className={
+                'shrink-0 rounded px-1 text-xs ' +
+                (sources[name] === undefined ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600')
+              }
             >
               {sources[name] ?? 'unused'}
             </span>
@@ -92,15 +112,16 @@ export function StreamsPanel() {
               onChange={(e) => setStreamUnits(name, e.target.value || null)}
               className="w-14 rounded border border-slate-200 px-1 py-0.5 text-xs"
             />
-            <button
-              title="Delete stream"
+            <IconButton
+              icon={X}
+              label="Delete stream"
+              destructive
+              className="ml-auto"
               onClick={() => setError(removeStream(name))}
-              className="ml-auto rounded px-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600"
-            >
-              ✕
-            </button>
+            />
           </li>
-        ))}
+          )
+        })}
       </ul>
       <div className="flex items-center gap-1">
         <input

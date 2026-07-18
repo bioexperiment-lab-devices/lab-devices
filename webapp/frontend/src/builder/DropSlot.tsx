@@ -22,7 +22,7 @@ export function DropSlot(props: { at: SlotRef; horizontal: boolean; hint: boolea
           'm-1 flex-1 rounded border border-dashed px-2 py-3 text-center text-xs ' +
           (highlight
             ? 'border-blue-400 bg-blue-50 text-blue-500'
-            : 'border-slate-200 text-slate-300')
+            : 'border-slate-300 text-caption')
         }
       >
         drop here

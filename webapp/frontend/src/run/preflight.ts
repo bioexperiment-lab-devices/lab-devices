@@ -50,3 +50,9 @@ export function mergePrefill(
   if (devices === null || Object.keys(chosen).length > 0) return chosen
   return prefillMapping(roles, devices, saved)
 }
+
+/** How many roles still lack a device — shown beside the green check so "workflow
+ * valid" can't read as "ready to start" while Start stays disabled (audit F22). */
+export function unmappedCount(rows: MappingRow[]): number {
+  return rows.filter((r) => r.selected === null).length
+}

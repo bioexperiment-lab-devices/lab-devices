@@ -5,8 +5,15 @@ import { useDocStore } from '../stores/docStore'
 import { useLabsStore } from '../stores/labsStore'
 import { useNavStore } from '../stores/navStore'
 import { useRunStore } from '../stores/runStore'
+import { Check } from 'lucide-react'
 import type { Diagnostic, ExperimentDocJson, ExperimentSummary } from '../types/doc'
-import { buildMappingRows, mappingComplete, mergePrefill, prefillMapping } from './preflight'
+import {
+  buildMappingRows,
+  mappingComplete,
+  mergePrefill,
+  prefillMapping,
+  unmappedCount,
+} from './preflight'
 
 export function PreflightPanel() {
   const lab = useLabsStore((s) => s.selected)
@@ -96,6 +103,7 @@ export function PreflightPanel() {
   }
 
   const rows = doc !== null ? buildMappingRows(doc.roles, devices, chosen) : []
+  const unmapped = unmappedCount(rows)
   const clean = diagnostics !== null && diagnostics.length === 0
   const canStart = clean && mappingComplete(rows) && !startBusy && selectedId !== null
   const problems = [...(diagnostics ?? []), ...(startDiagnostics ?? [])]
@@ -145,12 +153,12 @@ export function PreflightPanel() {
       {devicesError && <p className="text-xs text-red-600">{devicesError}</p>}
       {doc !== null && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-slate-500">Role mapping</p>
-          {rows.length === 0 && <p className="text-xs text-slate-400">this experiment defines no roles</p>}
+          <p className="text-xs font-semibold text-caption">Role mapping</p>
+          {rows.length === 0 && <p className="text-xs text-hint">this experiment defines no roles</p>}
           {rows.map((row) => (
             <label key={row.role} className="flex items-center gap-2 text-xs">
               <span className="w-32 truncate font-mono">{row.role}</span>
-              <span className="w-24 text-slate-400">{row.type}</span>
+              <span className="w-24 text-caption">{row.type}</span>
               <select
                 value={row.selected ?? ''}
                 onChange={(e) =>
@@ -170,15 +178,27 @@ export function PreflightPanel() {
         </div>
       )}
       <div className="text-xs">
-        {validating && <span className="text-slate-400">validating…</span>}
-        {clean && !validating && <span className="text-emerald-700">✓ workflow valid</span>}
+        {validating && <span className="text-hint">validating…</span>}
+        {clean && !validating && (
+          <>
+            <span className="inline-flex items-center gap-1 text-emerald-700">
+              <Check size={14} aria-hidden /> workflow valid
+            </span>
+            {unmapped > 0 && (
+              <p className="mt-1 text-amber-700">
+                {unmapped} role{unmapped === 1 ? '' : 's'} unmapped — Start
+                stays disabled until every role has a device.
+              </p>
+            )}
+          </>
+        )}
       </div>
       {problems.length > 0 && (
         <ul className="max-h-40 space-y-0.5 overflow-y-auto rounded border border-red-100 bg-red-50 p-2 text-xs">
           {problems.map((d, i) => (
             <li key={i}>
               <span className="mr-1 rounded bg-white px-1 font-mono text-[10px]">{d.category}</span>
-              <span className="mr-1 font-mono text-[10px] text-slate-400">{d.path}</span>
+              <span className="mr-1 font-mono text-[10px] text-caption">{d.path}</span>
               {d.message}
             </li>
           ))}

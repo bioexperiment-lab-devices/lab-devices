@@ -1,11 +1,14 @@
 import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
+import { ChevronDown, ChevronRight, Copy, Plus, X } from 'lucide-react'
 import { useActiveTree, useDocStore } from '../stores/docStore'
 import { diagnosticsByUid, type MappedDiagnostic } from './paths'
 import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
 import { blockSummary } from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
+import { IconButton } from '../ui/IconButton'
+import { KindIcon } from '../ui/icons'
 
 const DiagContext = createContext<Map<string, MappedDiagnostic[]>>(new Map())
 
@@ -42,7 +45,7 @@ export function Canvas() {
       >
         <ScopeSwitcher />
         {activeTree.length === 0 && (
-          <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-slate-400">
+          <p className="mb-2 rounded border border-dashed border-slate-300 p-8 text-center text-sm text-caption">
             Drag blocks from the palette to start building.
           </p>
         )}
@@ -82,7 +85,7 @@ function ScopeSwitcher() {
       onClick={(e) => e.stopPropagation()}
       className="mb-2 flex flex-wrap items-center gap-2 text-xs"
     >
-      <span className="font-semibold text-slate-500">Editing:</span>
+      <span className="font-semibold text-caption">Editing:</span>
       <select
         value={scope ?? ''}
         onChange={(e) => setScope(e.target.value === '' ? null : e.target.value)}
@@ -122,7 +125,7 @@ function ScopeSwitcher() {
               setName('')
               setError(null)
             }}
-            className="text-slate-400 hover:text-slate-600"
+            className="text-caption hover:text-slate-800"
           >
             cancel
           </button>
@@ -130,9 +133,9 @@ function ScopeSwitcher() {
       ) : (
         <button
           onClick={() => setAdding(true)}
-          className="rounded border border-dashed border-slate-300 px-2 py-0.5 text-slate-500 hover:text-slate-700"
+          className="rounded border border-dashed border-slate-300 px-2 py-0.5 text-caption hover:text-slate-700"
         >
-          + New group…
+          <Plus size={12} aria-hidden className="mr-0.5 inline" />New group…
         </button>
       )}
       {error && <span className="text-red-600">{error}</span>}
@@ -178,59 +181,61 @@ function BlockView({ node }: { node: BlockNode }) {
         select(node.uid)
       }}
       className={
-        'rounded border bg-white text-sm shadow-sm ' +
+        // min-w-0: a card that sits in a flex lane/branch-arm must be able to shrink to its
+        // container instead of forcing it wide (flex min-width:auto is the classic culprit
+        // behind a card painting past its box — audit F11). See BranchLanes' overflow clip.
+        'min-w-0 rounded border bg-white text-sm shadow-sm ' +
         (selected ? 'border-blue-500 ring-1 ring-blue-300 ' : 'border-slate-300 ') +
         (isDragging ? 'opacity-40' : '')
       }
     >
       <div {...listeners} {...attributes} className="flex cursor-grab items-center gap-1 px-2 py-1">
         {isContainer && (
-          <button
+          <IconButton
+            icon={collapsed ? ChevronRight : ChevronDown}
+            label={collapsed ? 'Expand' : 'Collapse'}
             onClick={(e) => {
               e.stopPropagation()
               toggleCollapsed(node.uid)
             }}
-            className="text-xs text-slate-400 hover:text-slate-700"
-          >
-            {collapsed ? '▸' : '▾'}
-          </button>
+          />
         )}
-        <span className="truncate">{blockSummary(node)}</span>
-        {node.label && <span className="truncate text-xs italic text-slate-400">“{node.label}”</span>}
+        <KindIcon kind={node.kind} />
+        <span title={blockSummary(node)} className="truncate">{blockSummary(node)}</span>
+        {node.label && (
+          <span title={node.label} className="truncate text-xs italic text-caption">“{node.label}”</span>
+        )}
         <span className="ml-auto flex items-center gap-1">
           {diags.length > 0 && (
             <span
               title={diags.map((d) => d.message).join('\n')}
-              className="rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white"
+              className="rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white"
             >
               {diags.length}
             </span>
           )}
-          <button
-            title="Duplicate"
+          <IconButton
+            icon={Copy}
+            label="Duplicate"
             onClick={(e) => {
               e.stopPropagation()
               duplicateBlock(node.uid)
             }}
-            className="text-xs text-slate-300 hover:text-slate-600"
-          >
-            ⧉
-          </button>
-          <button
-            title="Delete"
+          />
+          <IconButton
+            icon={X}
+            label="Delete"
+            destructive
             onClick={(e) => {
               e.stopPropagation()
               removeBlock(node.uid)
             }}
-            className="text-xs text-slate-300 hover:text-red-600"
-          >
-            ✕
-          </button>
+          />
         </span>
       </div>
       {!collapsed && isContainer && <ContainerBody node={node} />}
       {collapsed && isContainer && (
-        <p className="px-2 pb-1 text-xs text-slate-400">…collapsed…</p>
+        <p className="px-2 pb-1 text-xs text-hint">…collapsed…</p>
       )}
     </div>
   )
@@ -274,7 +279,7 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
   const insertBlock = useDocStore((s) => s.insertBlock)
   const isEmptyLane = (lane: BlockNode) => lane.kind === 'serial' && lane.children.length === 0
   return (
-    <div className="flex items-stretch overflow-x-auto">
+    <div className="flex items-stretch overflow-x-auto scroll-x-shadow">
       <DropSlot
         at={{ parentUid: node.uid, slot: 'children', index: 0 }}
         horizontal
@@ -283,19 +288,18 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
       {node.children.map((lane, i) => (
         <Fragment key={lane.uid}>
           <div className="min-w-48 flex-1 rounded border border-dashed border-slate-200 p-1">
-            <div className="flex items-center justify-between px-1 text-[10px] uppercase text-slate-400">
+            <div className="flex items-center justify-between px-1 text-[10px] uppercase text-caption">
               <span>lane {i + 1}</span>
               {isEmptyLane(lane) && (
-                <button
-                  title="Remove lane"
+                <IconButton
+                  icon={X}
+                  label="Remove lane"
+                  destructive
                   onClick={(e) => {
                     e.stopPropagation()
                     removeBlock(lane.uid)
                   }}
-                  className="hover:text-red-600"
-                >
-                  ✕
-                </button>
+                />
               )}
             </div>
             <BlockView node={lane} />
@@ -313,9 +317,9 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
             index: node.children.length,
           })
         }}
-        className="m-1 shrink-0 self-center rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-slate-400 hover:text-slate-600"
+        className="m-1 shrink-0 self-center rounded border border-dashed border-slate-300 bg-white px-2 py-1 text-xs text-caption hover:text-slate-600"
       >
-        + lane
+        <Plus size={12} aria-hidden className="mr-0.5 inline" />lane
       </button>
     </div>
   )
@@ -324,9 +328,13 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
 function BranchLanes({ node }: { node: BranchNode }) {
   const patchBlock = useDocStore((s) => s.patchBlock)
   return (
-    <div className="flex gap-2 px-2 pb-2">
+    // overflow-x-auto (audit F11): a too-wide arm — e.g. a nested parallel whose lanes hold
+    // their min-w-48 floor — now scrolls inside the branch card instead of painting its
+    // content past the card edge over a sibling's action icons. The arms keep min-w-48 flex-1
+    // (the design floor); the container scrolling is what contains the overflow.
+    <div className="flex gap-2 overflow-x-auto scroll-x-shadow px-2 pb-2">
       <div className="min-w-48 flex-1">
-        <p className="text-[10px] uppercase text-slate-400">then</p>
+        <p className="text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
       </div>
       <div className="min-w-48 flex-1">
@@ -336,25 +344,24 @@ function BranchLanes({ node }: { node: BranchNode }) {
               e.stopPropagation()
               patchBlock(node.uid, { else: [] })
             }}
-            className="mt-4 rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-slate-400 hover:text-slate-600"
+            className="mt-4 rounded border border-dashed border-slate-300 px-2 py-1 text-xs text-caption hover:text-slate-600"
           >
-            + add else
+            <Plus size={12} aria-hidden className="mr-0.5 inline" />add else
           </button>
         ) : (
           <>
-            <p className="flex items-center justify-between text-[10px] uppercase text-slate-400">
+            <p className="flex items-center justify-between text-[10px] uppercase text-caption">
               <span>else</span>
               {node.else.length === 0 && (
-                <button
-                  title="Remove else"
+                <IconButton
+                  icon={X}
+                  label="Remove else"
+                  destructive
                   onClick={(e) => {
                     e.stopPropagation()
                     patchBlock(node.uid, { else: null })
                   }}
-                  className="hover:text-red-600"
-                >
-                  ✕
-                </button>
+                />
               )}
             </p>
             <BlockList parentUid={node.uid} slot="else" items={node.else} />

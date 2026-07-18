@@ -61,7 +61,7 @@ export function RunView() {
       <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{experiment?.name ?? 'experiment'}</p>
-          <p className="text-xs text-slate-400">lab: {lab}</p>
+          <p className="text-xs text-caption">lab: {lab}</p>
         </div>
         <StatusChip status={feed.status} />
         <Elapsed />

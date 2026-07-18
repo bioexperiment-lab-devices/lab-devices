@@ -180,7 +180,7 @@ export function ExpressionInput(props: {
             {help.functions.map((f) => (
               <li key={f.name} className="flex justify-between gap-2">
                 <span className="font-mono">{f.name}</span>
-                <span className="font-mono text-slate-400">{f.example}</span>
+                <span className="font-mono text-hint">{f.example}</span>
               </li>
             ))}
           </ul>
@@ -189,7 +189,7 @@ export function ExpressionInput(props: {
             {help.windowForms.map((w) => (
               <li key={w.label} className="flex justify-between gap-2">
                 <span>{w.label}</span>
-                <span className="font-mono text-slate-400">{w.example}</span>
+                <span className="font-mono text-hint">{w.example}</span>
               </li>
             ))}
           </ul>

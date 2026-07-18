@@ -1,1 +1,26 @@
 @import 'tailwindcss';
+
+/* Meaning-carrying secondary text (audit finding 1): captions, section headers,
+   timestamps, lane/branch labels. slate-600 clears 4.5:1 on white, slate-50 and
+   slate-100 backgrounds; the old slate-400 measured 2.4-2.6:1. */
+@utility text-caption {
+  color: var(--color-slate-600);
+}
+
+/* Incidental text only (placeholders, empty-state hints). slate-500 — verify against
+   the probe wherever the background is tinted; prefer text-caption when in doubt. */
+@utility text-hint {
+  color: var(--color-slate-500);
+}
+
+/* Pure-CSS horizontal scroll shadow (Lea Verou technique) for overflowing lane
+   strips: edge shadows appear only when content extends past that edge. */
+@utility scroll-x-shadow {
+  background:
+    linear-gradient(to right, white 30%, rgb(255 255 255 / 0)) left / 40px 100%,
+    linear-gradient(to left, white 30%, rgb(255 255 255 / 0)) right / 40px 100%,
+    linear-gradient(to right, rgb(0 0 0 / 0.14), rgb(0 0 0 / 0)) left / 14px 100%,
+    linear-gradient(to left, rgb(0 0 0 / 0.14), rgb(0 0 0 / 0)) right / 14px 100%;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}

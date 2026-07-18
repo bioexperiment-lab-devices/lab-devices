@@ -28,6 +28,12 @@ export function formatDuration(startedIso: string, endedIso: string | null): str
   return formatElapsed((end - start) / 1000)
 }
 
+/** uPlot renders ~20 sub-second ticks on a young run's 0-2s domain; formatElapsed
+ * floors them all to '0s'/'1s' (audit F17). Blank the repeats, keep the first. */
+export function dedupeConsecutive(labels: string[]): string[] {
+  return labels.map((l, i) => (i > 0 && labels[i - 1] === l ? '' : l))
+}
+
 export const STATUS_STYLES: Record<string, string> = {
   running: 'bg-blue-100 text-blue-700',
   paused: 'bg-slate-200 text-slate-600',

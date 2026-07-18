@@ -1,9 +1,13 @@
+import { SquareFunction, X } from 'lucide-react'
 import { useState } from 'react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useActiveTree, useDocStore } from '../stores/docStore'
+import { IconButton } from '../ui/IconButton'
 import type { ParamSpec } from '../types/catalog'
 import type { ParamValue, RetryJson } from '../types/doc'
+import { gapAfterEligible } from './inspectorRules'
 import { coerceParamInput, coerceValueInput, paramInputText } from './params'
+import { StreamIntoPicker } from './StreamIntoPicker'
 import {
   DurationField,
   ExpressionInput,
@@ -94,8 +98,8 @@ function GroupProperties({ name }: { name: string }) {
           }
         />
       </FieldRow>
-      <p className="mt-2 text-xs text-slate-400">{group?.body.length ?? 0} top-level blocks.</p>
-      <p className="mt-4 text-xs text-slate-400">Select a block to edit its parameters.</p>
+      <p className="mt-2 text-xs text-caption">{group?.body.length ?? 0} top-level blocks.</p>
+      <p className="mt-4 text-xs text-caption">Select a block to edit its parameters.</p>
     </div>
   )
 }
@@ -112,11 +116,11 @@ function DocProperties() {
       <FieldRow label="Description">
         <TextAreaField value={description ?? ''} onCommit={(v) => setDescription(v || null)} />
       </FieldRow>
-      <p className="mt-2 text-xs text-slate-400">
+      <p className="mt-2 text-xs text-caption">
         {Object.keys(roles).length} roles · {Object.keys(streams).length} streams ·{' '}
         {tree.length} top-level blocks
       </p>
-      <p className="mt-4 text-xs text-slate-400">Select a block to edit its parameters.</p>
+      <p className="mt-4 text-xs text-caption">Select a block to edit its parameters.</p>
     </div>
   )
 }
@@ -126,15 +130,18 @@ function BlockForm({ node }: { node: BlockNode }) {
   const patchBlock = useDocStore((s) => s.patchBlock)
   const loc = findLocation(activeTree, node.uid)
   const parentKind = loc?.parent?.kind ?? null
-  // for_each may not carry gap_after/start_offset at all (expand.py:26 _FOR_EACH_FORBIDDEN) —
-  // it is a splice, so there is no single runtime block for either key to attach to.
-  const showGapAfter = node.kind !== 'for_each' && (parentKind === null || parentKind === 'serial')
+  // Gap-after eligibility (audit F5): see inspectorRules.ts for the engine-execution
+  // rationale — it is broader than "top level or serial", also covering loop/branch/
+  // for_each body children, which all run through the same shared runner.
+  const showGapAfter = gapAfterEligible(node.kind, parentKind)
+  // for_each may not carry start_offset at all (expand.py:26 _FOR_EACH_FORBIDDEN) —
+  // it is a splice, so there is no single runtime block for the key to attach to.
   const showStartOffset = node.kind !== 'for_each' && parentKind === 'parallel'
   return (
     <div>
       <h2 className="mb-2 text-sm font-semibold text-slate-700">{KIND_TITLES[node.kind]}</h2>
       <KindBody node={node} />
-      <h3 className="mt-3 border-t border-slate-200 pt-2 text-xs font-semibold uppercase text-slate-400">
+      <h3 className="mt-3 border-t border-slate-200 pt-2 text-xs font-semibold uppercase text-caption">
         Timing & label
       </h3>
       <FieldRow label="Label">
@@ -266,7 +273,7 @@ function RetrySection({ node }: { node: CommandNode | MeasureNode }) {
             </div>
           )}
           {locked ? (
-            <p className="rounded border border-dashed border-slate-300 bg-slate-100 p-1.5 text-[11px] text-slate-400">
+            <p className="rounded border border-dashed border-slate-300 bg-slate-100 p-1.5 text-[11px] text-hint">
               attempts/backoff are hidden until "allow repeat" is checked above
             </p>
           ) : retry !== undefined ? (
@@ -318,9 +325,9 @@ function KindBody({ node }: { node: BlockNode }) {
     case 'group_ref':
       return <GroupRefForm node={node} />
     case 'serial':
-      return <p className="text-xs text-slate-400">{node.children.length} children — drag blocks on the canvas.</p>
+      return <p className="text-xs text-caption">{node.children.length} children — drag blocks on the canvas.</p>
     case 'parallel':
-      return <p className="text-xs text-slate-400">{node.children.length} lanes — manage lanes on the canvas.</p>
+      return <p className="text-xs text-caption">{node.children.length} lanes — manage lanes on the canvas.</p>
   }
 }
 
@@ -385,65 +392,10 @@ function ActionForm({ node }: { node: CommandNode | MeasureNode }) {
 }
 
 function IntoPicker({ node }: { node: MeasureNode }) {
-  const streams = useDocStore((s) => s.streams)
-  const addStream = useDocStore((s) => s.addStream)
   const patchBlock = useDocStore((s) => s.patchBlock)
-  const [adding, setAdding] = useState(false)
-  const [name, setName] = useState('')
-  const [units, setUnits] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const names = Object.keys(streams)
-  const create = () => {
-    const err = addStream(name, units || null)
-    setError(err)
-    if (!err) {
-      patchBlock(node.uid, { into: name })
-      setAdding(false)
-      setName('')
-      setUnits('')
-    }
-  }
   return (
     <FieldRow label="Into stream" required>
-      <select
-        value={adding ? '__new__' : node.into}
-        onChange={(e) => {
-          if (e.target.value === '__new__') setAdding(true)
-          else {
-            setAdding(false)
-            patchBlock(node.uid, { into: e.target.value })
-          }
-        }}
-        className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
-      >
-        {node.into === '' && !adding && <option value="">— pick a stream —</option>}
-        {names.map((n) => (
-          <option key={n} value={n}>
-            {n}
-          </option>
-        ))}
-        <option value="__new__">+ new stream…</option>
-      </select>
-      {adding && (
-        <div className="mt-1 flex items-center gap-1">
-          <input
-            value={name}
-            placeholder="name"
-            onChange={(e) => setName(e.target.value)}
-            className="w-20 rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
-          />
-          <input
-            value={units}
-            placeholder="units"
-            onChange={(e) => setUnits(e.target.value)}
-            className="w-14 rounded border border-slate-300 px-1 py-0.5 text-xs"
-          />
-          <button onClick={create} className="rounded bg-slate-200 px-2 py-0.5 text-xs hover:bg-slate-300">
-            Add
-          </button>
-        </div>
-      )}
-      {error && <p className="text-[10px] text-red-600">{error}</p>}
+      <StreamIntoPicker value={node.into} onPick={(name) => patchBlock(node.uid, { into: name })} />
     </FieldRow>
   )
 }
@@ -460,8 +412,8 @@ function ParamFields({ node, specs }: { node: CommandNode | MeasureNode; specs: 
   const unknown = Object.keys(node.params).filter((k) => !known.has(k))
   return (
     <div>
-      <h3 className="mt-2 text-xs font-semibold uppercase text-slate-400">Params</h3>
-      {specs.length === 0 && <p className="text-xs text-slate-400">no params</p>}
+      <h3 className="mt-2 text-xs font-semibold uppercase text-caption">Params</h3>
+      {specs.length === 0 && <p className="text-xs text-hint">no params</p>}
       {specs.map((spec) => (
         <FieldRow key={spec.name} label={`${spec.name} (${spec.type})`} required={spec.required}>
           <ParamInput
@@ -477,13 +429,12 @@ function ParamFields({ node, specs }: { node: CommandNode | MeasureNode; specs: 
             <span className="flex-1 truncate font-mono text-xs text-amber-700">
               {paramInputText(node.params[name])}
             </span>
-            <button
-              title="Remove unknown param"
+            <IconButton
+              icon={X}
+              label="Remove unknown param"
+              destructive
               onClick={() => setParam(name, undefined)}
-              className="text-xs text-slate-400 hover:text-red-600"
-            >
-              ✕
-            </button>
+            />
           </div>
         </FieldRow>
       ))}
@@ -523,14 +474,12 @@ function ParamInput(props: {
           <option value="true">true</option>
           <option value="false">false</option>
         </select>
-        <button
-          type="button"
-          title="Use an expression"
+        <IconButton
+          icon={SquareFunction}
+          label="Use an expression"
           onClick={() => setExprMode(true)}
-          className="shrink-0 rounded border border-slate-300 px-1 text-xs text-slate-500 hover:bg-slate-200"
-        >
-          ƒ
-        </button>
+          className="border border-slate-300"
+        />
       </div>
     )
   }
@@ -729,8 +678,6 @@ function BranchForm({ node }: { node: BranchNode }) {
  * only meet at save time. */
 function ValueForm({ node }: { node: ComputeNode | RecordNode }) {
   const patchBlock = useDocStore((s) => s.patchBlock)
-  const streams = useDocStore((s) => s.streams)
-  const streamNames = Object.keys(streams)
   return (
     <div>
       {node.kind === 'compute' ? (
@@ -743,24 +690,8 @@ function ValueForm({ node }: { node: ComputeNode | RecordNode }) {
           />
         </FieldRow>
       ) : (
-        <FieldRow label="Into (stream)" required>
-          <select
-            value={node.into}
-            onChange={(e) => patchBlock(node.uid, { into: e.target.value })}
-            className="w-full rounded border border-slate-300 px-1 py-0.5 font-mono text-xs"
-          >
-            <option value="">stream…</option>
-            {streamNames.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          {streamNames.length === 0 && (
-            <p className="mt-1 text-xs text-amber-600">
-              No streams declared — add one in the Streams panel.
-            </p>
-          )}
+        <FieldRow label="Into stream" required>
+          <StreamIntoPicker value={node.into} onPick={(v) => patchBlock(node.uid, { into: v })} />
         </FieldRow>
       )}
       <FieldRow label="Value" required>
@@ -791,7 +722,7 @@ function ConditionForm({ node }: { node: AbortNode | AlarmNode }) {
           placeholder={node.kind === 'abort' ? 'why the run must stop' : 'what to flag'}
         />
       </FieldRow>
-      <p className="mt-1 text-xs text-slate-400">
+      <p className="mt-1 text-xs text-caption">
         {node.kind === 'abort'
           ? 'True stops the run: devices are swept safe and the run ends "aborted".'
           : 'True flags the run and continues. Fires every time it holds — latch it with a compute if you want it once.'}
@@ -868,7 +799,7 @@ function ForEachForm({ node }: { node: ForEachNode }) {
         <TextAreaField mono rows={4} value={itemsText} onCommit={commitItems} />
       </FieldRow>
       {itemsError && <p className="text-[10px] text-amber-600">{itemsError}</p>}
-      <p className="mt-2 text-xs text-slate-400">
+      <p className="mt-2 text-xs text-caption">
         {node.body.length} block{node.body.length === 1 ? '' : 's'} in the body — drag onto the
         canvas to edit; each copy is spliced into the list for_each sits in.
       </p>
@@ -913,12 +844,12 @@ function GroupRefForm({ node }: { node: GroupRefNode }) {
         </select>
       </FieldRow>
       {params.length === 0 ? (
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-caption">
           {node.name === '' ? 'pick a group above' : 'this group takes no params'}
         </p>
       ) : (
         <>
-          <h3 className="mt-2 text-xs font-semibold uppercase text-slate-400">Args</h3>
+          <h3 className="mt-2 text-xs font-semibold uppercase text-caption">Args</h3>
           {params.map((p) => (
             <FieldRow key={p} label={p} required>
               <ExpressionInput
