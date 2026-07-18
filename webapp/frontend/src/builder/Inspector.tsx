@@ -38,6 +38,13 @@ import {
   type WaitNode,
 } from './tree'
 
+/** Sentinel maxLines value for fields paired with fillParent. When set, the
+ * autoGrowHeight line-cap branch is intentionally unreachable — the parent's
+ * max-h-full height constraint is the true bound, not the line count. Prevents
+ * future maintainers from "helpfully" shrinking this value and reintroducing
+ * dead panel space. */
+const UNCAPPED_LINES = 200
+
 const KIND_TITLES: Record<BlockNode['kind'], string> = {
   command: 'Command',
   measure: 'Measure',
@@ -88,7 +95,7 @@ function GroupProperties({ name }: { name: string }) {
       <FieldRow label="Params (one per line)" grow>
         <AutoGrowTextArea
           fillParent
-          maxLines={200}
+          maxLines={UNCAPPED_LINES}
           mono
           value={params.join('\n')}
           onCommit={(v) =>
@@ -122,7 +129,7 @@ function DocProperties() {
       <FieldRow label="Description" grow>
         <AutoGrowTextArea
           fillParent
-          maxLines={200}
+          maxLines={UNCAPPED_LINES}
           value={description ?? ''}
           onCommit={(v) => setDescription(v || null)}
           placeholder="what this experiment does"
