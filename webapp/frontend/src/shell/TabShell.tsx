@@ -1,7 +1,5 @@
 import type { ReactNode } from 'react'
-
-export const TABS = ['Devices', 'Builder', 'Run', 'Records'] as const
-export type Tab = (typeof TABS)[number]
+import { TABS, type Tab } from './tabs'
 
 export function TabShell(props: {
   active: Tab

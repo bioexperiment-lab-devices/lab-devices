@@ -38,7 +38,7 @@ const VIEWPORTS = [
 /** Click the Builder tab and wait for the toolbar to exist. */
 async function gotoBuilder(page) {
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded' })
-  await page.getByRole('button', { name: /^2\s*Builder$/ }).click()
+  await page.getByRole('button', { name: /^1\s*Builder$/ }).click()
   await page.getByRole('button', { name: 'Load', exact: true }).waitFor()
 }
 
