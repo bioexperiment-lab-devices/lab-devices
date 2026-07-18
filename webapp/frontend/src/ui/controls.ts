@@ -12,13 +12,32 @@
  */
 export const CONTROL_H = 'h-6'
 
-/** Text inputs, textareas' single-line siblings, and selects. */
-export function controlClass(opts: { mono?: boolean; invalid?: boolean } = {}): string {
+/** Border, background, horizontal padding, text size, and focus ring shared by every
+ * text-entry control — the part of the visual contract that does NOT depend on height.
+ * `controlClass` (fixed-height inputs/selects) and `textAreaClass` (height-free textareas)
+ * both derive from this so the border/focus-ring never drifts between the two families.
+ * Not exported: callers want a control class, not this fragment on its own. */
+function controlSurfaceClass(opts: { mono?: boolean; invalid?: boolean } = {}): string {
   return (
-    `${CONTROL_H} w-full rounded border bg-white px-1.5 text-xs ` +
+    'rounded border bg-white px-1.5 text-xs ' +
     'focus:border-blue-400 focus:outline-none ' +
     (opts.invalid ? 'border-red-400 ' : 'border-slate-300 ') +
     (opts.mono ? 'font-mono' : '')
+  ).trim()
+}
+
+/** Text inputs, textareas' single-line siblings, and selects. */
+export function controlClass(opts: { mono?: boolean; invalid?: boolean } = {}): string {
+  return `${CONTROL_H} w-full ${controlSurfaceClass(opts)}`.trim()
+}
+
+/** Textareas. Shares `controlSurfaceClass` with `controlClass` but deliberately carries no
+ * `h-*` class: a textarea's height is driven by its content (see `autoGrow.ts`), never by
+ * the fixed single-line token. `py-0.5` replaces the vertical space `CONTROL_H` would have
+ * fixed. `fillParent` adds `max-h-full` so a flex parent can bound the growth instead. */
+export function textAreaClass(opts: { mono?: boolean; fillParent?: boolean } = {}): string {
+  return (
+    `w-full py-0.5 ${controlSurfaceClass(opts)} ` + (opts.fillParent ? 'max-h-full' : '')
   ).trim()
 }
 

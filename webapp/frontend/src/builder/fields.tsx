@@ -4,7 +4,7 @@ import { useActiveTree, useDocStore } from '../stores/docStore'
 import { collectBindings } from './refs'
 import { buildExpressionHelp } from './exprHelp'
 import { DURATION_RE } from './params'
-import { controlClass } from '../ui/controls'
+import { controlClass, textAreaClass } from '../ui/controls'
 
 export function FieldRow(props: { label: string; required?: boolean; children: ReactNode }) {
   return (
@@ -66,11 +66,7 @@ export function TextAreaField(props: {
       onKeyDown={(e) => {
         if (e.key === 'Escape') setDraft(props.value)
       }}
-      className={
-        'w-full rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs ' +
-        'focus:border-blue-400 focus:outline-none ' +
-        (props.mono ? 'font-mono' : '')
-      }
+      className={textAreaClass({ mono: props.mono })}
     />
   )
 }
