@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Pencil, Plus, X } from 'lucide-react'
+import { Palette as PaletteIcon, Pencil, Plus, X } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
+import { useRoleColorStore } from '../stores/roleColorStore'
 import type { Catalog } from '../types/catalog'
 import { effectiveSelection, roleGroups, type RoleTypeGroup } from './roleGroups'
+import { ROLE_SWATCH_CLASSES, roleColorKey } from './roleColors'
 import { Chip } from './Chip'
 import { KindIcon } from '../ui/icons'
 import { badgeClass, controlClass, inlineButtonClass } from '../ui/controls'
@@ -138,6 +140,7 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
             ),
           )}
           <span className="ml-auto flex items-center">
+            {selected && <RoleColorPicker name={selected} type={group.type} />}
             <IconButton icon={Pencil} label="Rename selected role" onClick={startRename} />
             <IconButton
               icon={X}
@@ -169,6 +172,54 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
         </div>
       )}
       <AddRoleForm type={group.type} onAdded={setPicked} />
+    </div>
+  )
+}
+
+/** Colour control for the selected role: a popover of the eight ramp swatches plus a
+ * "no colour" choice. Uses `useDismissable` for outside-click/Esc, the same as every other
+ * popover here — a popover that cannot be dismissed was finding #6 of the W11 round. */
+function RoleColorPicker({ name, type }: { name: string; type: string }) {
+  const [open, setOpen] = useState(false)
+  const ref = useDismissable(open, () => setOpen(false))
+  const setColor = useRoleColorStore((s) => s.setColor)
+  const clearColor = useRoleColorStore((s) => s.clearColor)
+  const key = roleColorKey(name, type)
+  return (
+    <div ref={ref} className="relative inline-flex">
+      <IconButton
+        icon={PaletteIcon}
+        label={`Colour for ${name}`}
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+      />
+      {open && (
+        <div className="absolute right-0 top-6 z-10 flex w-max flex-wrap gap-1 rounded border border-slate-300 bg-white p-1 shadow-lg">
+          {ROLE_SWATCH_CLASSES.map((cls) => (
+            <button
+              key={cls}
+              title={cls}
+              aria-label={cls}
+              onClick={() => {
+                setColor(key, cls)
+                setOpen(false)
+              }}
+              className={`h-4 w-4 rounded-sm ${cls}`}
+            />
+          ))}
+          <button
+            onClick={() => {
+              clearColor(key)
+              setOpen(false)
+            }}
+            className={inlineButtonClass({ subtle: true })}
+          >
+            no colour
+          </button>
+        </div>
+      )}
     </div>
   )
 }
