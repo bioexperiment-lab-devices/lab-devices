@@ -11,6 +11,7 @@ import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 import { KindIcon } from '../ui/icons'
 import { ScrollFades, useScrollEdges } from '../ui/ScrollX'
+import { useDismissable } from '../ui/useDismissable'
 
 const DiagContext = createContext<Map<string, MappedDiagnostic[]>>(new Map())
 
@@ -97,6 +98,16 @@ function ScopeSwitcher() {
       setName('')
     }
   }
+  const cancelAdding = () => {
+    setAdding(false)
+    setName('')
+    setError(null)
+  }
+  // The "+ New group…" trigger unmounts entirely once `adding` is true (the ternary below
+  // swaps it out for this input row), so it can never be clicked while the ref is live —
+  // unlike StreamIntoPicker's <select>, there is no coexisting trigger that also needs to
+  // count as "inside". Wrapping just the input/Add/cancel row is the correct boundary here.
+  const addingRef = useDismissable(adding, cancelAdding)
 
   return (
     <div
@@ -118,7 +129,7 @@ function ScopeSwitcher() {
         ))}
       </select>
       {adding ? (
-        <div className="flex items-center gap-1">
+        <div ref={addingRef} className="flex items-center gap-1">
           <input
             autoFocus
             value={name}
@@ -126,25 +137,14 @@ function ScopeSwitcher() {
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') create()
-              if (e.key === 'Escape') {
-                setAdding(false)
-                setName('')
-                setError(null)
-              }
+              if (e.key === 'Escape') cancelAdding()
             }}
             className={controlClass({ mono: true, width: 'w-28' })}
           />
           <button onClick={create} className={inlineButtonClass()}>
             Add
           </button>
-          <button
-            onClick={() => {
-              setAdding(false)
-              setName('')
-              setError(null)
-            }}
-            className={inlineButtonClass({ subtle: true })}
-          >
+          <button onClick={cancelAdding} className={inlineButtonClass({ subtle: true })}>
             cancel
           </button>
         </div>
