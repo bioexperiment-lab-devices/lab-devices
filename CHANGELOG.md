@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.8.0...v0.8.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **studio:** W11 UI improvements ([#36](https://github.com/bioexperiment-lab-devices/lab-devices/issues/36)) ([b53725e](https://github.com/bioexperiment-lab-devices/lab-devices/commit/b53725e026481dd411260ad136b329e257534072))
+
 ## [0.8.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.7.0...v0.8.0) (2026-07-18)
 
 
