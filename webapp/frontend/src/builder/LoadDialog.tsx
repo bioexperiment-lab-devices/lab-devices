@@ -1,11 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Download, X } from 'lucide-react'
 import { deleteExperiment, getExperiment, listExperiments } from '../api/studio'
 import type { ExperimentSummary } from '../types/doc'
 import { loadDoc, selectDirty, useDocStore } from '../stores/docStore'
+import { IconButton } from '../ui/IconButton'
 import { DocConvertError, docToTree } from './convert'
 import { exportFilename, serializeDoc, triggerDownload } from './files'
 
 export function LoadDialog(props: { onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    ref.current?.showModal()
+  }, [])
   const [items, setItems] = useState<ExperimentSummary[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -67,57 +73,64 @@ export function LoadDialog(props: { onClose: () => void }) {
   )
 
   return (
-    <div
-      className="fixed inset-0 z-20 flex items-center justify-center bg-black/30"
-      onClick={props.onClose}
+    <dialog
+      ref={ref}
+      onClose={props.onClose}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) props.onClose()
+      }}
+      className="m-auto w-[28rem] rounded-lg p-0 shadow-xl backdrop:bg-black/30"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="max-h-[70vh] w-[28rem] overflow-y-auto rounded-lg bg-white p-4 shadow-xl"
-      >
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Load experiment</h2>
-          <button onClick={props.onClose} className="text-slate-400 hover:text-slate-700">✕</button>
+      <div className="flex max-h-[70vh] flex-col">
+        <div className="shrink-0 p-4 pb-2">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Load experiment</h2>
+            <IconButton icon={X} label="Close" onClick={props.onClose} />
+          </div>
+          <input
+            autoFocus
+            value={search}
+            placeholder="search…"
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+          />
         </div>
-        <input
-          autoFocus
-          value={search}
-          placeholder="search…"
-          onChange={(e) => setSearch(e.target.value)}
-          className="mb-2 w-full rounded border border-slate-300 px-2 py-1 text-sm"
-        />
-        {error && <p className="mb-2 text-xs text-red-600">{error}</p>}
-        {items === null && !error && <p className="text-xs text-slate-400">loading…</p>}
-        {items !== null && shown.length === 0 && (
-          <p className="text-xs text-slate-400">no experiments{search ? ' match' : ' saved yet'}</p>
-        )}
-        <ul className="divide-y divide-slate-100">
-          {shown.map((item) => (
-            <li key={item.id} className="flex items-center gap-2 py-1.5">
-              <button onClick={() => void open(item.id)} className="min-w-0 flex-1 text-left">
-                <p className="truncate text-sm">{item.name}</p>
-                <p className="truncate text-xs text-slate-400">
-                  {item.description ?? 'no description'} · updated {item.updated_at.slice(0, 16)}
-                </p>
-              </button>
-              <button
-                title="Export experiment as JSON"
-                onClick={() => void exportItem(item)}
-                className="text-xs text-slate-300 hover:text-sky-600"
-              >
-                ⭳
-              </button>
-              <button
-                title="Delete experiment"
-                onClick={() => void remove(item)}
-                className="text-xs text-slate-300 hover:text-red-600"
-              >
-                ✕
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+          {error && <p className="mb-2 text-xs text-red-600">{error}</p>}
+          {items === null && !error && <p className="text-xs text-hint">loading…</p>}
+          {items !== null && shown.length === 0 && (
+            <p className="text-xs text-hint">no experiments{search ? ' match' : ' saved yet'}</p>
+          )}
+          <ul className="divide-y divide-slate-100">
+            {shown.map((item) => (
+              <li key={item.id} className="flex items-center gap-2 py-1.5">
+                <button
+                  onClick={() => void open(item.id)}
+                  className="min-w-0 flex-1 rounded px-1 text-left hover:bg-slate-100"
+                >
+                  <p className="truncate text-sm" title={item.name}>
+                    {item.name}
+                  </p>
+                  <p className="truncate text-xs text-caption" title={item.description ?? 'no description'}>
+                    {item.description ?? 'no description'} · updated {item.updated_at.slice(0, 16)}
+                  </p>
+                </button>
+                <IconButton
+                  icon={Download}
+                  label="Export experiment as JSON"
+                  onClick={() => void exportItem(item)}
+                />
+                <IconButton
+                  icon={X}
+                  label="Delete experiment"
+                  destructive
+                  onClick={() => void remove(item)}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
-    </div>
+    </dialog>
   )
 }

@@ -1,8 +1,10 @@
 /** Modal for a pending OperatorInput (§9.4). Not dismissable by Escape/backdrop — the
  * run is parked on it — but it can be hidden behind the banner button and reopened. A
  * server 422 (invalid_value) keeps it open: the request stays pending (§7.4). */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Keyboard, Minus } from 'lucide-react'
 import { useRunStore } from '../stores/runStore'
+import { IconButton } from '../ui/IconButton'
 import type { PendingInput } from '../types/runs'
 import { validateInputValue } from './inputValue'
 
@@ -51,7 +53,7 @@ function Widget(props: {
         inputMode={input.type === 'int' ? 'numeric' : 'decimal'}
         className="w-full rounded border border-slate-300 px-2 py-1 font-mono text-sm"
       />
-      {hint && <p className="mt-0.5 text-[10px] text-slate-400">{hint}</p>}
+      {hint && <p className="mt-0.5 text-[10px] text-hint">{hint}</p>}
     </div>
   )
 }
@@ -64,6 +66,10 @@ export function InputDialog() {
   const [hidden, setHidden] = useState(false)
   const [busy, setBusy] = useState(false)
   const [forName, setForName] = useState<string | null>(null)
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    if (pending !== null && !hidden) ref.current?.showModal()
+  }, [pending, hidden])
 
   if (pending === null) return null
   if (forName !== pending.name) {
@@ -80,7 +86,8 @@ export function InputDialog() {
         onClick={() => setHidden(false)}
         className="w-full rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-left text-sm text-amber-800"
       >
-        ⌨ Operator input required: '{pending.name}' — click to answer
+        <Keyboard size={14} aria-hidden className="mr-1 inline" />
+        Operator input required: '{pending.name}' — click to answer
       </button>
     )
   }
@@ -98,33 +105,38 @@ export function InputDialog() {
   }
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30">
-      <div className="w-96 rounded-lg bg-white p-4 shadow-xl">
-        <div className="mb-2 flex items-start justify-between">
-          <h2 className="text-sm font-semibold">Operator input: {pending.name}</h2>
-          <button onClick={() => setHidden(true)} title="Hide (the run stays paused on this input)"
-            className="text-slate-400 hover:text-slate-700">—</button>
-        </div>
-        {pending.prompt && <p className="mb-2 text-sm text-slate-600">{pending.prompt}</p>}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            void submit()
-          }}
-        >
-          <Widget input={pending} raw={raw} setRaw={setRaw} />
-          {(localError ?? serverError) && (
-            <p className="mt-1 text-xs text-red-600">{localError ?? serverError}</p>
-          )}
-          <button
-            type="submit"
-            disabled={busy}
-            className="mt-3 w-full rounded bg-blue-600 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40"
-          >
-            Submit
-          </button>
-        </form>
+    <dialog
+      ref={ref}
+      onCancel={(e) => e.preventDefault()}
+      className="m-auto w-96 rounded-lg p-4 shadow-xl backdrop:bg-black/30"
+    >
+      <div className="mb-2 flex items-start justify-between">
+        <h2 className="text-sm font-semibold">Operator input: {pending.name}</h2>
+        <IconButton
+          icon={Minus}
+          label="Hide (the run stays paused on this input)"
+          onClick={() => setHidden(true)}
+        />
       </div>
-    </div>
+      {pending.prompt && <p className="mb-2 text-sm text-slate-600">{pending.prompt}</p>}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          void submit()
+        }}
+      >
+        <Widget input={pending} raw={raw} setRaw={setRaw} />
+        {(localError ?? serverError) && (
+          <p className="mt-1 text-xs text-red-600">{localError ?? serverError}</p>
+        )}
+        <button
+          type="submit"
+          disabled={busy}
+          className="mt-3 w-full rounded bg-blue-600 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-40"
+        >
+          Submit
+        </button>
+      </form>
+    </dialog>
   )
 }
