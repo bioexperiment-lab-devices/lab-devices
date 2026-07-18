@@ -27,46 +27,99 @@ export function faultMarker(node: BlockNode): string {
   return parts.length > 0 ? ` ${parts.join(' ')}` : ''
 }
 
-export function blockSummary(node: BlockNode): string {
+/** A run of summary text tagged by what it is, so the canvas can give the three facts on a
+ * card different weights instead of rendering `pump1 · dispense (volume=5)` as one
+ * undifferentiated slate run (design §3.4).
+ *
+ * `subject` is the actor (a device role, or the target of a compute/record); `verb` is what
+ * happens; `detail` is everything else including separators; `marker` is the fault-tolerance
+ * suffix. Separators live in `detail` segments so the join reproduces the legacy string
+ * byte-for-byte — `blockSummary` is that join, so there is exactly one source of truth. */
+export type SummarySegment = {
+  text: string
+  role: 'subject' | 'verb' | 'detail' | 'marker'
+}
+
+const seg = (text: string, role: SummarySegment['role']): SummarySegment => ({ text, role })
+
+/** Segments whose concatenation IS `blockSummary(node)`. Pinned by test. */
+export function blockSummaryParts(node: BlockNode): SummarySegment[] {
   const marker = faultMarker(node)
-  switch (node.kind) {
-    case 'command': {
-      const params = formatParams(node.params)
-      return `${node.device} · ${node.verb}${params ? ` (${params})` : ''}${marker}`
-    }
-    case 'measure':
-      return `${node.device} · ${node.verb} → ${node.into || '?'}${marker}`
-    case 'wait':
-      return `wait ${node.duration}${marker}`
-    case 'operator_input':
-      return `input ${node.name} (${node.inputType})${marker}`
-    case 'serial':
-      return `Serial · ${node.children.length}${marker}`
-    case 'parallel':
-      return `Parallel · ${node.children.length} lanes${marker}`
-    case 'loop':
-      return (
-        (node.mode === 'count' ? `Loop ×${node.count}` : `Loop until ${node.until || '…'}`) + marker
-      )
-    case 'branch':
-      return `If ${node.condition || '…'}${marker}`
-    case 'compute':
-      return `${node.into || '?'} = ${String(node.value) || '…'}${marker}`
-    case 'record':
-      return `${node.into || '?'} ← ${String(node.value) || '…'}${marker}`
-    case 'abort':
-      return `Abort if ${node.condition || '…'}${marker}`
-    case 'alarm':
-      return `Alarm if ${node.condition || '…'}${marker}`
-    case 'for_each':
-      return (
-        (node.var !== null
-          ? `For each ${node.var} in [${node.items.join(', ')}]`
-          : `For each of ${node.items.length} items`) + marker
-      )
-    case 'group_ref': {
-      const args = formatParams(node.args)
-      return `${node.name || '?'}${args ? `(${args})` : ''}${marker}`
+  const tail: SummarySegment[] = marker ? [seg(marker, 'marker')] : []
+  const parts = (): SummarySegment[] => {
+    switch (node.kind) {
+      case 'command': {
+        const params = formatParams(node.params)
+        return [
+          seg(node.device, 'subject'),
+          seg(' · ', 'detail'),
+          seg(node.verb, 'verb'),
+          ...(params ? [seg(` (${params})`, 'detail')] : []),
+        ]
+      }
+      case 'measure':
+        return [
+          seg(node.device, 'subject'),
+          seg(' · ', 'detail'),
+          seg(node.verb, 'verb'),
+          seg(` → ${node.into || '?'}`, 'detail'),
+        ]
+      case 'wait':
+        return [seg('wait', 'verb'), seg(` ${node.duration}`, 'detail')]
+      case 'operator_input':
+        return [
+          seg('input', 'verb'),
+          seg(' ', 'detail'),
+          seg(node.name, 'subject'),
+          seg(` (${node.inputType})`, 'detail'),
+        ]
+      case 'serial':
+        return [seg('Serial', 'verb'), seg(` · ${node.children.length}`, 'detail')]
+      case 'parallel':
+        return [seg('Parallel', 'verb'), seg(` · ${node.children.length} lanes`, 'detail')]
+      case 'loop':
+        return node.mode === 'count'
+          ? [seg('Loop', 'verb'), seg(` ×${node.count}`, 'detail')]
+          : [seg('Loop until', 'verb'), seg(` ${node.until || '…'}`, 'detail')]
+      case 'branch':
+        return [seg('If', 'verb'), seg(` ${node.condition || '…'}`, 'detail')]
+      case 'compute':
+        return [
+          seg(node.into || '?', 'subject'),
+          seg(` = ${String(node.value) || '…'}`, 'detail'),
+        ]
+      case 'record':
+        return [
+          seg(node.into || '?', 'subject'),
+          seg(` ← ${String(node.value) || '…'}`, 'detail'),
+        ]
+      case 'abort':
+        return [seg('Abort if', 'verb'), seg(` ${node.condition || '…'}`, 'detail')]
+      case 'alarm':
+        return [seg('Alarm if', 'verb'), seg(` ${node.condition || '…'}`, 'detail')]
+      case 'for_each':
+        return node.var !== null
+          ? [
+              seg('For each', 'verb'),
+              seg(' ', 'detail'),
+              seg(node.var, 'subject'),
+              seg(` in [${node.items.join(', ')}]`, 'detail'),
+            ]
+          : [seg('For each', 'verb'), seg(` of ${node.items.length} items`, 'detail')]
+      case 'group_ref': {
+        const args = formatParams(node.args)
+        return [
+          seg(node.name || '?', 'subject'),
+          ...(args ? [seg(`(${args})`, 'detail')] : []),
+        ]
+      }
     }
   }
+  return [...parts(), ...tail]
+}
+
+export function blockSummary(node: BlockNode): string {
+  return blockSummaryParts(node)
+    .map((s) => s.text)
+    .join('')
 }

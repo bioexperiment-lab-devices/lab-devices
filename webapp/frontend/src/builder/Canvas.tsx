@@ -5,7 +5,7 @@ import { useActiveTree, useDocStore } from '../stores/docStore'
 import { diagnosticsByUid, type MappedDiagnostic } from './paths'
 import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
-import { blockSummary, faultMarker } from './summary'
+import { blockSummary, blockSummaryParts, faultMarker } from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
 import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
@@ -254,7 +254,22 @@ function BlockView({ node }: { node: BlockNode }) {
             canvas's single scroller. 20rem covers a `device · verb (k=v, k=v)` summary
             (routinely 35-50 chars) in full at this text-sm size while still capping a
             pathologically long device/verb/param-value string. */}
-        <span title={blockSummary(node)} className="max-w-80 truncate">{blockSummary(node)}</span>
+        <span title={blockSummary(node)} className="max-w-80 truncate">
+          {blockSummaryParts(node).map((s, i) => (
+            <span
+              key={i}
+              className={
+                s.role === 'subject'
+                  ? 'font-medium text-slate-900'
+                  : s.role === 'verb'
+                    ? 'text-slate-700'
+                    : 'text-caption'
+              }
+            >
+              {s.text}
+            </span>
+          ))}
+        </span>
         {node.label && (
           // max-w-40 (10rem): the label is a short user-typed nickname rendered at text-xs —
           // 10rem comfortably fits an ordinary one or two-word label while still capping an

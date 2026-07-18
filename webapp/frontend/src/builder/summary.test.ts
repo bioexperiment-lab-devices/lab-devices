@@ -1,8 +1,32 @@
 import { describe, expect, it } from 'vitest'
-import { blockSummary, formatParams } from './summary'
+import { blockSummary, blockSummaryParts, formatParams } from './summary'
+import { newPaletteNode } from './tree'
 import type { BlockNode } from './tree'
 
 const base = { label: null, gapAfter: null, startOffset: null }
+
+/** One fixture per BlockNode kind (14 total), for tests that must cover every kind rather than
+ * pick a handful. `command` uses device `pump1` / verb `dispense` — pinned by the
+ * blockSummaryParts subject/verb split test below. The 11 palette kinds that `newPaletteNode`
+ * can build come from there; `command`, `measure` and `group_ref` are hand-written because
+ * `newPaletteNode` either can't build them (command/measure need a device+verb from the
+ * catalog) or would leave them empty in a way that's awkward to assert on (a blank group_ref). */
+const ALL_KIND_FIXTURES: BlockNode[] = [
+  { uid: 'x', kind: 'command', device: 'pump1', verb: 'dispense', params: { volume_ml: 5 }, ...base },
+  { uid: 'x', kind: 'measure', device: 'od_meter', verb: 'measure', into: 'od', params: {}, ...base },
+  { uid: 'x', kind: 'group_ref', name: 'service', args: { tube: 1 }, ...base },
+  newPaletteNode('serial'),
+  newPaletteNode('parallel'),
+  newPaletteNode('branch'),
+  newPaletteNode('loop'),
+  newPaletteNode('for_each'),
+  newPaletteNode('compute'),
+  newPaletteNode('record'),
+  newPaletteNode('wait'),
+  newPaletteNode('operator_input'),
+  newPaletteNode('alarm'),
+  newPaletteNode('abort'),
+]
 
 describe('formatParams', () => {
   it('shows up to two params and an ellipsis beyond', () => {
@@ -105,5 +129,35 @@ describe('blockSummary', () => {
       'service(tube=1)',
     )
     expect(blockSummary({ uid: 'u', kind: 'group_ref', name: 'wash', args: {}, ...base })).toBe('wash')
+  })
+})
+
+describe('blockSummaryParts', () => {
+  // blockSummary feeds the `title` attribute, the drag overlay and WorkflowSnapshot. If the
+  // join ever drifts from the string those three silently disagree with the card.
+  it('joins to exactly the legacy summary for every kind', () => {
+    for (const node of ALL_KIND_FIXTURES) {
+      expect(blockSummaryParts(node).map((s) => s.text).join('')).toBe(blockSummary(node))
+    }
+  })
+
+  it('splits a command into role, verb and params', () => {
+    const node = ALL_KIND_FIXTURES.find((n) => n.kind === 'command')!
+    const parts = blockSummaryParts(node)
+    expect(parts.filter((p) => p.role === 'subject').map((p) => p.text)).toEqual(['pump1'])
+    expect(parts.filter((p) => p.role === 'verb').map((p) => p.text)).toEqual(['dispense'])
+  })
+
+  it('marks the fault marker as its own segment', () => {
+    const node = { ...ALL_KIND_FIXTURES.find((n) => n.kind === 'command')!,
+                   onError: 'continue' as const }
+    const marker = blockSummaryParts(node).filter((p) => p.role === 'marker')
+    expect(marker).toHaveLength(1)
+    expect(marker[0].text).toContain('⤳')
+  })
+
+  it('emits no marker segment when neither retry nor on_error is set', () => {
+    const node = ALL_KIND_FIXTURES.find((n) => n.kind === 'wait')!
+    expect(blockSummaryParts(node).filter((p) => p.role === 'marker')).toHaveLength(0)
   })
 })
