@@ -114,7 +114,6 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
               <button
                 key={name}
                 id={`role-${name}`}
-                title={name}
                 onClick={() => {
                   setPicked(name)
                   setEditing(false)
@@ -125,7 +124,16 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
                   (focusedRole === name ? ' ring-2 ring-amber-400' : '')
                 }
               >
-                <span className="min-w-0 truncate">{name}</span>
+                {/* title lives on the truncating span itself, not the button — the ellipsis is
+                    this span's (badgeClass makes the button an items-center flex row, which
+                    cannot ellipsize), so the hover text must ride the element that clips. Same
+                    pattern as the device-type heading above and every Canvas summary span; the
+                    probe's truncate-without-title rule checks the ellipsizing element's own
+                    title, and an inner span added for the ellipsis without moving the title here
+                    is exactly what it caught. */}
+                <span className="min-w-0 truncate" title={name}>
+                  {name}
+                </span>
               </button>
             ),
           )}

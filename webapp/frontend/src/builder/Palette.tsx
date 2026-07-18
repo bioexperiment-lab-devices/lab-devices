@@ -76,14 +76,22 @@ function GroupsPanel() {
       <ul className="space-y-1">
         {entries.map(([name, group]) => (
           <li key={name} className="flex items-center gap-1 text-sm">
+            {/* min-w-0 on the chip + truncate on the name span: a long group name must
+                ellipsize inside the 256px palette (with its full text in `title`), the same
+                way role badges and the device-type heading do — without this the chip sizes to
+                the untruncated name and makes the palette a horizontal scroller (the metric
+                the scope-switcher-long-group capture state exercises now that it opens this
+                panel). The icon and the params suffix stay shrink-0 so the name is what gives. */}
             <Chip
               id={`palette-group-${name}`}
               payload={{ source: 'palette-group', name }}
-              className="h-6"
+              className="h-6 min-w-0"
             >
-              <KindIcon kind="group_ref" className="mr-1" />
-              <span className="font-mono">{name}</span>
-              <span className="ml-1 text-caption">({group.params.join(', ')})</span>
+              <KindIcon kind="group_ref" className="mr-1 shrink-0" />
+              <span className="min-w-0 truncate font-mono" title={name}>
+                {name}
+              </span>
+              <span className="ml-1 shrink-0 text-caption">({group.params.join(', ')})</span>
             </Chip>
             <IconButton
               icon={Pencil}
