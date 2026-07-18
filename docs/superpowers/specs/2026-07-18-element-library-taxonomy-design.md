@@ -110,7 +110,12 @@ The retained note on `DataKind`/`SafetyKind` must preserve the fact currently ca
 
 ## 5. Palette changes (`Palette.tsx`)
 
-The three chip arrays become four, typed by the new kinds:
+The three chip arrays become four, typed by the new kinds, and move out of `Palette.tsx` into a
+new pure module `src/builder/paletteSections.ts`. The extraction is what makes §9's partition
+test possible: `vitest` runs in a node environment with no rendering, so a test cannot import
+`Palette.tsx` (React, dnd-kit, and the zustand stores come with it) — but it can import plain
+data. The four arrays are exported individually and as an ordered `BLOCK_SECTIONS` list that
+`Palette` maps over.
 
 ```ts
 const FLOW: Array<{ kind: FlowKind; title: string }> = [
@@ -151,9 +156,10 @@ Click and drag coexist on that chip without a separate handle because the `Point
 already configured with `activationConstraint: { distance: 4 }` (`BuilderTab.tsx:71`) — a
 press that never travels 4px is delivered as a click, not a drag.
 
-The empty state changes from "No groups yet — add one from the scope switcher above the canvas."
-to also say that a listed group can be dragged onto the canvas to call it; otherwise the
-affordance is undiscoverable now that no `Group ref` chip advertises it.
+A hint line — "Drag a group onto the canvas to call it." — sits under the populated list, because
+the affordance is otherwise undiscoverable once no `Group ref` chip advertises it. It goes under
+the *list*, not in the empty state: with no groups declared there is nothing to drag, so the same
+sentence there would be noise. The empty state keeps its current copy.
 
 **`renameGroup` stays unwired.** It already exists on the store with no UI, and nothing in this
 change calls for one.
@@ -204,9 +210,10 @@ so the palette's sections cannot be asserted directly. Coverage is therefore:
   `newPaletteNode` handles. `tsc` enforces this: `newPaletteNode`'s `switch` is exhaustive over
   `PaletteKind` with no `default`, so a dropped member fails the build and an added one fails the
   return-type check.
-- **Unit** — a test asserting the four chip arrays partition `PaletteKind` minus `group_ref`,
-  with no kind appearing twice and none missing. This is the regression guard for the actual
-  defect being fixed: a kind silently landing in the wrong section, or in none.
+- **Unit** — `paletteSections.test.ts` asserts the four chip arrays partition `PaletteKind` minus
+  `group_ref`: no kind appearing twice, none missing, and `group_ref` in no section. This is the
+  regression guard for the actual defect being fixed — a kind silently landing in the wrong
+  section, in two sections, or in none.
 - **Existing** — `tree.test.ts` and `convert.test.ts` must pass unchanged; if either needs
   editing, the change has leaked past presentation and the design is wrong.
 - **Probe** — `npm run capture` against a real doc, per `webapp/frontend/CLAUDE.md`, since the
