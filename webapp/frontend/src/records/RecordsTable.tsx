@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react'
+import { Download, Pencil, X } from 'lucide-react'
 import { recordDownloadUrl } from '../api/records'
 import { useRecordsStore } from '../stores/recordsStore'
 import type { RecordRow } from '../types/records'
+import { IconButton, iconButtonClass } from '../ui/IconButton'
 import { STATUS_STYLES, formatDuration, formatWhen } from './format'
 
 export function StatusChip(props: { status: string }) {
@@ -53,21 +55,23 @@ function NameCell(props: { row: RecordRow }) {
   }
   return (
     <div className="flex items-center gap-1">
-      <button onClick={() => open(props.row.id)} className="truncate text-left text-sm hover:underline">
+      <button
+        onClick={() => open(props.row.id)}
+        title={props.row.name}
+        className="truncate text-left text-sm hover:underline"
+      >
         {props.row.name}
       </button>
-      <button
-        title="Rename record"
+      <IconButton
+        icon={Pencil}
+        label="Rename record"
         onClick={() => {
           setDraft(props.row.name)
           setEditing(true)
           setError(null)
           cancelled.current = false
         }}
-        className="text-xs text-slate-300 hover:text-slate-600"
-      >
-        ✎
-      </button>
+      />
     </div>
   )
 }
@@ -90,7 +94,7 @@ export function RecordsTable() {
       </div>
     )
   }
-  if (items === null) return <p className="p-6 text-sm text-slate-400">loading records…</p>
+  if (items === null) return <p className="p-6 text-sm text-hint">loading records…</p>
   if (items.length === 0) {
     return <p className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No records yet — run an experiment first.</p>
   }
@@ -99,7 +103,7 @@ export function RecordsTable() {
       {rowError && <p className="px-3 pt-2 text-xs text-red-600">{rowError}</p>}
       <table className="w-full text-left text-sm">
         <thead>
-          <tr className="border-b border-slate-200 text-xs text-slate-500">
+          <tr className="border-b border-slate-200 text-xs text-caption">
             <th className="px-3 py-2">Name</th>
             <th className="px-3 py-2">Experiment</th>
             <th className="px-3 py-2">Lab</th>
@@ -119,29 +123,31 @@ export function RecordsTable() {
               <td className="px-3 py-1.5 text-slate-500">{formatWhen(row.started_at)}</td>
               <td className="px-3 py-1.5 text-slate-500">{formatDuration(row.started_at, row.ended_at)}</td>
               <td className="px-3 py-1.5 text-right">
-                <a
-                  href={recordDownloadUrl(row.id)}
-                  title="Download zip"
-                  className="mr-2 text-xs text-slate-400 hover:text-slate-700"
-                >
-                  ⬇
-                </a>
-                <button
-                  title="Delete record"
-                  onClick={() => {
-                    if (!window.confirm(`Delete record '${row.name}' and its artifacts?`)) return
-                    void remove(row.id).then(setRowError)
-                  }}
-                  className="text-xs text-slate-300 hover:text-red-600"
-                >
-                  ✕
-                </button>
+                <span className="inline-flex items-center justify-end gap-1">
+                  <a
+                    href={recordDownloadUrl(row.id)}
+                    title="Download zip"
+                    aria-label="Download zip"
+                    className={iconButtonClass() + 'mr-1'}
+                  >
+                    <Download size={14} aria-hidden />
+                  </a>
+                  <IconButton
+                    icon={X}
+                    label="Delete record"
+                    destructive
+                    onClick={() => {
+                      if (!window.confirm(`Delete record '${row.name}' and its artifacts?`)) return
+                      void remove(row.id).then(setRowError)
+                    }}
+                  />
+                </span>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {loading && <p className="px-3 py-1 text-xs text-slate-400">refreshing…</p>}
+      {loading && <p className="px-3 py-1 text-xs text-hint">refreshing…</p>}
     </div>
   )
 }

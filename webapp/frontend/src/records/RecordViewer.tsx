@@ -1,6 +1,7 @@
 /** Record viewer (§9.5): chart from /streams, log from /events, report summary, and the
  * workflow snapshot rendered read-only. Every fetch failure renders inline with retry. */
 import { useCallback, useEffect, useState } from 'react'
+import { ArrowLeft } from 'lucide-react'
 import { getRecord, recordDownloadUrl, recordEvents, recordStreams } from '../api/records'
 import { useRecordsStore } from '../stores/recordsStore'
 import type { RecordEvent } from '../types/runs'
@@ -38,7 +39,7 @@ export function RecordViewer(props: { id: string }) {
     )
   }
   if (detail === null || events === null || streams === null) {
-    return <p className="p-6 text-sm text-slate-400">loading record…</p>
+    return <p className="p-6 text-sm text-hint">loading record…</p>
   }
 
   const firstTs = Object.values(streams)
@@ -59,13 +60,13 @@ export function RecordViewer(props: { id: string }) {
       <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2">
         <button
           onClick={() => useRecordsStore.getState().open(null)}
-          className="text-xs text-slate-500 hover:underline"
+          className="inline-flex items-center gap-1 text-xs text-slate-600 hover:underline"
         >
-          ← records
+          <ArrowLeft size={12} aria-hidden /> records
         </button>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{detail.name}</p>
-          <p className="text-xs text-slate-400">
+          <p className="truncate text-sm font-semibold" title={detail.name}>{detail.name}</p>
+          <p className="text-xs text-caption">
             {detail.experiment_name} · {detail.lab} · {formatWhen(detail.started_at)} ·{' '}
             {formatDuration(detail.started_at, detail.ended_at)}
           </p>
@@ -79,13 +80,16 @@ export function RecordViewer(props: { id: string }) {
         </a>
       </div>
 
+      {detail.report !== null && detail.report.error !== null && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+          <p>error: {detail.report.error}</p>
+        </div>
+      )}
       {detail.report !== null &&
-        (detail.report.error !== null ||
-          detail.report.finalize_errors.length > 0 ||
+        (detail.report.finalize_errors.length > 0 ||
           detail.report.persistence_errors.length > 0 ||
           detail.report.diagnostics.length > 0) && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-          {detail.report.error !== null && <p>error: {detail.report.error}</p>}
           {detail.report.finalize_errors.map((e, i) => (
             <p key={`f${i}`}>finalize: {e}</p>
           ))}
@@ -134,9 +138,9 @@ export function RecordViewer(props: { id: string }) {
       <EventLog events={events} origin={events.length > 0 ? events[0].timestamp : null} rev={0} />
 
       <div className="rounded-lg border border-slate-200 bg-white p-3">
-        <p className="mb-2 text-xs font-semibold text-slate-500">Workflow snapshot</p>
+        <p className="mb-2 text-xs font-semibold text-caption">Workflow snapshot</p>
         <WorkflowSnapshot doc={detail.doc} />
-        <p className="mt-2 text-[10px] text-slate-400">
+        <p className="mt-2 text-[10px] text-caption">
           roles: {Object.entries(detail.role_mapping).map(([r, d]) => `${r} → ${d}`).join(', ') || '—'}
         </p>
       </div>

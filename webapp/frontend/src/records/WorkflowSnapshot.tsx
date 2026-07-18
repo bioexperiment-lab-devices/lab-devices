@@ -16,8 +16,8 @@ function NodeCard(props: { node: BlockNode }) {
         <KindIcon kind={node.kind} />
         <span>
           {blockSummary(node)}
-          {node.label !== null && <span className="ml-1 text-slate-400">“{node.label}”</span>}
-          {timing && <span className="ml-1 text-[10px] text-slate-400">{timing}</span>}
+          {node.label !== null && <span className="ml-1 text-caption">“{node.label}”</span>}
+          {timing && <span className="ml-1 text-[10px] text-caption">{timing}</span>}
         </span>
       </p>
       {node.kind === 'serial' && <NodeList items={node.children} />}
@@ -34,12 +34,12 @@ function NodeCard(props: { node: BlockNode }) {
       {node.kind === 'branch' && (
         <div className="mt-1 flex gap-2 overflow-x-auto">
           <div className="min-w-40 flex-1 rounded border border-dashed border-slate-200 p-1">
-            <p className="text-[10px] text-slate-400">then</p>
+            <p className="text-[10px] text-caption">then</p>
             <NodeList items={node.then} />
           </div>
           {node.else !== null && (
             <div className="min-w-40 flex-1 rounded border border-dashed border-slate-200 p-1">
-              <p className="text-[10px] text-slate-400">else</p>
+              <p className="text-[10px] text-caption">else</p>
               <NodeList items={node.else} />
             </div>
           )}
@@ -50,7 +50,7 @@ function NodeCard(props: { node: BlockNode }) {
 }
 
 function NodeList(props: { items: BlockNode[] }) {
-  if (props.items.length === 0) return <p className="mt-1 text-[10px] text-slate-300">empty</p>
+  if (props.items.length === 0) return <p className="mt-1 text-[10px] text-hint">empty</p>
   return (
     <div className="mt-1 space-y-1 pl-2">
       {props.items.map((n) => (
@@ -62,7 +62,7 @@ function NodeList(props: { items: BlockNode[] }) {
 
 export function WorkflowSnapshot(props: { doc: ExperimentDocJson | null }) {
   if (props.doc === null) {
-    return <p className="text-xs text-slate-400">no workflow snapshot in this record</p>
+    return <p className="text-xs text-hint">no workflow snapshot in this record</p>
   }
   try {
     const { tree } = docToTree(props.doc)
