@@ -18,7 +18,7 @@ Spec: `docs/superpowers/specs/2026-07-18-inspector-form-structure-design.md`
 - **Meaning-carrying secondary text uses `text-caption`; incidental text uses `text-hint`.** Never raw `text-slate-400` or lighter on meaningful text.
 - **Interactive icons come from lucide-react only,** rendered through `IconButton` when icon-only. Decorative icons inside a labeled button carry `aria-hidden`.
 - **No document-shape change.** `convert.ts` and `tree.ts` are untouched; open-then-save stays a byte no-op.
-- Frontend gate (run from `webapp/frontend`): `npm run lint && npm run typecheck && npm test -- --run && npm run build`. Two known oxlint fast-refresh warnings are expected, exit 0.
+- Frontend gate (run from `webapp/frontend`): `npm run lint && npm run typecheck && npm test -- --run && npm run build`. Known oxlint fast-refresh warnings (4 as of this branch: StreamChart, IconButton, icons, ScrollX) are expected; exit 0 is the pass condition.
 
 ---
 
@@ -735,6 +735,19 @@ Then append these four states to the `states` array. Values are set through the 
     },
   },
   {
+    name: 'inspector-tail-start-offset',
+    description:
+      'a block sitting in a parallel lane, whose Timing section offers Start offset INSTEAD of ' +
+      'Gap after (a lane has no next-in-list). The only state that renders that control, and ' +
+      'the one field the Task 4 browser check never exercised.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.torture)
+      await selectBlock(page, PARALLEL_CHILD) // see note below
+      await expandSection(page, 'Timing')
+    },
+  },
+  {
     name: 'inspector-tail-absent',
     description:
       'a for_each block, which renders NO tail at all (expand.py:26 forbids all four ' +
@@ -749,6 +762,8 @@ Then append these four states to the `states` array. Values are set through the 
 ```
 
 The existing `inspector-operator-input` state needs no edit — it re-runs automatically and now captures the Task 5 field order.
+
+**`PARALLEL_CHILD` is the one selector you must determine against the running app**, because it depends on the torture fixture's lane contents rather than on a block kind. The requirement is exact: select a block whose **direct parent is a `parallel`**, since that is the only position where `timingFields` offers `Start offset` instead of `Gap after`. Confirm you picked the right block by asserting the Timing section contains a `Start offset` field and **no** `Gap after` field — if you see `Gap after`, the block you selected is not a lane child. Note that W13 made a `serial` under a `parallel` render *as* the lane, so the direct child of a `parallel` is typically that `serial`; its lane header is a valid selection target. Define `PARALLEL_CHILD` as a module-level `const` beside the other selectors, with a comment naming the block you settled on.
 
 If a `selectBlock` regex finds no match, check it against `blockSummary` in `src/builder/summary.ts`, which is the exact text those card headers render.
 
