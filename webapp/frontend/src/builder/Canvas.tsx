@@ -207,7 +207,11 @@ function BlockView({ node }: { node: BlockNode }) {
         (isDragging ? 'opacity-40' : '')
       }
     >
-      <div {...listeners} {...attributes} className="flex cursor-grab items-center gap-1 px-2 py-1">
+      <div
+        {...listeners}
+        {...attributes}
+        className="flex min-w-0 cursor-grab items-center gap-1 px-2 py-1"
+      >
         {isContainer ? (
           <IconButton
             icon={collapsed ? ChevronRight : ChevronDown}
@@ -221,9 +225,19 @@ function BlockView({ node }: { node: BlockNode }) {
           <span aria-hidden className="h-6 w-6 shrink-0" />
         )}
         <KindIcon kind={node.kind} />
-        <span title={blockSummary(node)} className="truncate">{blockSummary(node)}</span>
+        {/* max-w-80 (20rem): under width:max-content a nowrap truncate span's intrinsic
+            contribution is its full untruncated text (min-w-0 on this row only lets items
+            shrink — it can't cap that contribution), so an explicit max-width is what makes
+            `truncate` actually ellipsize instead of widening every card up the tree to the
+            canvas's single scroller. 20rem covers a `device · verb (k=v, k=v)` summary
+            (routinely 35-50 chars) in full at this text-sm size while still capping a
+            pathologically long device/verb/param-value string. */}
+        <span title={blockSummary(node)} className="max-w-80 truncate">{blockSummary(node)}</span>
         {node.label && (
-          <span title={node.label} className="truncate text-xs italic text-caption">“{node.label}”</span>
+          // max-w-40 (10rem): the label is a short user-typed nickname rendered at text-xs —
+          // 10rem comfortably fits an ordinary one or two-word label while still capping an
+          // arbitrarily long pasted one, so it can't be the thing that drives canvas width.
+          <span title={node.label} className="max-w-40 truncate text-xs italic text-caption">“{node.label}”</span>
         )}
         <span className="ml-auto flex items-center gap-1">
           {diags.length > 0 && (
