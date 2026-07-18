@@ -75,9 +75,13 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
   const verbs = group.known ? (catalog?.device_types[group.type] ?? {}) : null
   return (
     <div className="rounded border border-slate-200 bg-white p-1.5">
-      <p className="mb-1 text-xs font-semibold text-caption">
-        {group.type}
-        {!group.known && <span className="ml-1 font-normal text-amber-600">— unknown device type</span>}
+      <p className="mb-1 flex items-center text-xs font-semibold text-caption">
+        <span className="min-w-0 truncate" title={group.type}>
+          {group.type}
+        </span>
+        {!group.known && (
+          <span className="ml-1 shrink-0 font-normal text-amber-600">— unknown device type</span>
+        )}
       </p>
       {group.roles.length === 0 ? (
         <p className="mb-1 px-1 text-xs text-hint">no roles yet — add one to use this device</p>
@@ -110,6 +114,7 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
               <button
                 key={name}
                 id={`role-${name}`}
+                title={name}
                 onClick={() => {
                   setPicked(name)
                   setEditing(false)
@@ -117,7 +122,8 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
                 }}
                 className={
                   badgeClass({ active: name === selected }) +
-                  (focusedRole === name ? ' ring-2 ring-amber-400' : '')
+                  (focusedRole === name ? ' ring-2 ring-amber-400' : '') +
+                  ' max-w-full truncate'
                 }
               >
                 {name}
