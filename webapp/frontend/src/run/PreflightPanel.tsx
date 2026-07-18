@@ -103,6 +103,7 @@ export function PreflightPanel() {
   }
 
   const rows = doc !== null ? buildMappingRows(doc.roles, devices, chosen) : []
+  const unmapped = unmappedCount(rows)
   const clean = diagnostics !== null && diagnostics.length === 0
   const canStart = clean && mappingComplete(rows) && !startBusy && selectedId !== null
   const problems = [...(diagnostics ?? []), ...(startDiagnostics ?? [])]
@@ -183,9 +184,9 @@ export function PreflightPanel() {
             <span className="inline-flex items-center gap-1 text-emerald-700">
               <Check size={14} aria-hidden /> workflow valid
             </span>
-            {doc !== null && !mappingComplete(rows) && (
+            {unmapped > 0 && (
               <p className="mt-1 text-amber-700">
-                {unmappedCount(rows)} role{unmappedCount(rows) === 1 ? '' : 's'} unmapped — Start
+                {unmapped} role{unmapped === 1 ? '' : 's'} unmapped — Start
                 stays disabled until every role has a device.
               </p>
             )}

@@ -183,7 +183,7 @@ export function Toolbar() {
           title="Undo (⌘Z)"
           aria-label="Undo"
         >
-          <Undo2 size={14} aria-hidden />
+          <Undo2 size={16} aria-hidden />
         </button>
         <button
           className={buttonClass}
@@ -192,7 +192,7 @@ export function Toolbar() {
           title="Redo (⇧⌘Z)"
           aria-label="Redo"
         >
-          <Redo2 size={14} aria-hidden />
+          <Redo2 size={16} aria-hidden />
         </button>
         <button className={buttonClass} disabled={busy} onClick={fresh}>
           New
