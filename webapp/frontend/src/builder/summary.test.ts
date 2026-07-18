@@ -132,12 +132,67 @@ describe('blockSummary', () => {
   })
 })
 
+/** blockSummary(node) pinned against hand-written expected strings, for all 14 BlockNode
+ * kinds plus the two alternate forms that ALL_KIND_FIXTURES can't reach (newPaletteNode
+ * always builds `loop` as mode:'count' and `for_each` with a non-null `var`), plus a
+ * fault-marker case. This is the real safety net for the parts/join refactor: `blockSummary`
+ * IS `blockSummaryParts(node).map(s => s.text).join('')`, so comparing that join back to
+ * `blockSummary(node)` — as the previous version of this test did — is tautological and can
+ * never catch a broken segment (2026-07-18 review). The expected strings here are literals,
+ * derived by hand from reading blockSummaryParts, not computed from it.
+ *
+ * The last entry pins the fault marker's OWN leading space: `faultMarker` returns `' R×3'`
+ * (with the space), not `'R×3'` — losing that space would be an invisible regression since
+ * nothing else in the command case supplies a separator before the marker segment. */
+const PINNED_SUMMARIES: Array<[BlockNode, string]> = [
+  [{ uid: 'x', kind: 'command', device: 'pump1', verb: 'dispense', params: { volume_ml: 5 }, ...base },
+    'pump1 · dispense (volume_ml=5)'],
+  [{ uid: 'x', kind: 'measure', device: 'od_meter', verb: 'measure', into: 'od', params: {}, ...base },
+    'od_meter · measure → od'],
+  [{ uid: 'x', kind: 'group_ref', name: 'service', args: { tube: 1 }, ...base },
+    'service(tube=1)'],
+  [{ uid: 'x', kind: 'serial', children: [], ...base },
+    'Serial · 0'],
+  [{ uid: 'x', kind: 'parallel', children: [
+      { uid: 'a', kind: 'serial', children: [], ...base },
+      { uid: 'b', kind: 'serial', children: [], ...base },
+    ], ...base },
+    'Parallel · 2 lanes'],
+  [{ uid: 'x', kind: 'branch', condition: '', then: [], else: [], ...base },
+    'If …'],
+  [{ uid: 'x', kind: 'loop', mode: 'count', count: 2, until: '', check: 'after', pace: null, body: [], ...base },
+    'Loop ×2'],
+  [{ uid: 'x', kind: 'for_each', var: 'tube', items: [1, 2, 3], body: [], ...base },
+    'For each tube in [1, 2, 3]'],
+  [{ uid: 'x', kind: 'compute', into: '', value: '', ...base },
+    '? = …'],
+  [{ uid: 'x', kind: 'record', into: '', value: '', ...base },
+    '? ← …'],
+  [{ uid: 'x', kind: 'wait', duration: '1s', ...base },
+    'wait 1s'],
+  [{ uid: 'x', kind: 'operator_input', name: 'value', inputType: 'float', prompt: null, min: null, max: null, choices: null, ...base },
+    'input value (float)'],
+  [{ uid: 'x', kind: 'alarm', condition: '', message: '', ...base },
+    'Alarm if …'],
+  [{ uid: 'x', kind: 'abort', condition: '', message: '', ...base },
+    'Abort if …'],
+  // Alternate forms newPaletteNode never reaches — the coverage gap noted in review.
+  [{ uid: 'x', kind: 'loop', mode: 'until', count: 2, until: 'mean(od, last=3) > 0.6', check: 'after', pace: null, body: [], ...base },
+    'Loop until mean(od, last=3) > 0.6'],
+  [{ uid: 'x', kind: 'for_each', var: null, items: [{ tube: 1 }, { tube: 2 }], body: [], ...base },
+    'For each of 2 items'],
+  // Fault marker on a kind that otherwise has no trailing detail segment — pins the marker's
+  // own leading space.
+  [{ uid: 'x', kind: 'command', device: 'pump1', verb: 'dispense', params: {}, ...base, retry: { attempts: 3 } },
+    'pump1 · dispense R×3'],
+]
+
 describe('blockSummaryParts', () => {
   // blockSummary feeds the `title` attribute, the drag overlay and WorkflowSnapshot. If the
   // join ever drifts from the string those three silently disagree with the card.
-  it('joins to exactly the legacy summary for every kind', () => {
-    for (const node of ALL_KIND_FIXTURES) {
-      expect(blockSummaryParts(node).map((s) => s.text).join('')).toBe(blockSummary(node))
+  it('matches hardcoded expected strings for every kind, including alternate forms', () => {
+    for (const [node, expected] of PINNED_SUMMARIES) {
+      expect(blockSummary(node)).toBe(expected)
     }
   })
 
