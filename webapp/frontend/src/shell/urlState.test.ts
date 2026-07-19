@@ -49,6 +49,15 @@ describe('parseHash', () => {
     expect(parseHash('#/RUN').tab).toBe('Run')
   })
 
+  // Regression: the parser splits on the FIRST '?' via `raw.indexOf('?')`, not
+  // `raw.split('?', 2)` — the latter's split limit truncates the result array instead of
+  // merging the remainder, so it silently discards everything after a second '?'. A
+  // hand-edited URL is exactly where a stray extra '?' shows up, and URLSearchParams then
+  // treats it as a literal character in the `exp` value rather than a delimiter.
+  it('keeps everything after a second "?" in the query instead of discarding it', () => {
+    expect(parseHash('#/builder?exp=a1b2?extra=zzz')).toEqual(st({ exp: 'a1b2?extra=zzz' }))
+  })
+
   // Totality: a hand-edited or truncated URL must land on a usable screen, never throw.
   it.each([
     '#/nope',
@@ -80,6 +89,10 @@ describe('formatHash', () => {
       st(),
       st({ tab: 'Run' }),
       st({ tab: 'Records', rec: 'rec_99' }),
+      // A rec id is a path segment (encodeURIComponent), not a query value
+      // (URLSearchParams) — only the latter is covered by the scope/sel '%j' cases below,
+      // so a '/' in a rec id needs its own case here.
+      st({ tab: 'Records', rec: 'a/b' }),
       st({ exp: 'a1b2' }),
       st({ exp: 'a1b2', scope: 'dose', sel: "groups['dose'].body[1]" }),
     ]
