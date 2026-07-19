@@ -174,8 +174,17 @@ The inverse of `resolveDiagnosticPath`, emitting the subset of the grammar the b
 originate:
 
 - `blocks[i]` + `.children[i]` / `.body[i]` / `.then[i]` / `.else[i]` trailer — main tree.
-- `groups['name'].body[i]` + trailer — a group body, single-quoted, matching Python `repr()`
-  as `docs_store.py` produces it.
+- `groups['name'].body[i]` + trailer — a group body, quoted exactly as Python `repr()` spells
+  it, which means **single quotes normally but double quotes when the name contains an
+  apostrophe**. This flip is load-bearing, not cosmetic: `groups['o'brien'].body[0]` does not
+  match `GROUP_HEAD_RE` at all (the `'([^']*)'` alternative consumes `'o'`, then demands `]`
+  and finds `b`), so it resolves to `uid: null` — and worse, `quotedGroupHeadEnd` would end the
+  opaque head at that apostrophe and resume the space/arrow scans *inside* the name, which is
+  the Finding-1 bug class `paths.ts`'s header warns about. Emitting `repr()`'s spelling keeps
+  the writer byte-identical to the backend's `f"groups[{name!r}].body"`.
+  A name containing *both* quote characters is unrepresentable (the reader has no escape
+  handling); `pathForUid` returns `null` for it rather than emitting a path that would resolve
+  to nothing or, worse, to a different node.
 
 It does **not** emit the compound `blocks[i]->name.body[i]` form. That form is produced by a
 validator walk crossing from a call site into a plain group's body (`validate.py:894,940`); it
