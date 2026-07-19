@@ -20,9 +20,17 @@ const time = (at: number): string =>
 // props could be set together with nothing to stop it (Task 8 review, Finding 2). The one pair
 // that CAN both be true — a displaced draft plus a 404 on the document that displaced it — is
 // resolved by precedence at the single set site in App.tsx, not by widening this type.
+// `missing` and `unavailable` are the same server outcome — a requested experiment that does not
+// resolve — reached from the two paths that must answer it DIFFERENTLY, so they are two variants
+// rather than one. At boot nothing is open yet, so the executor opens a blank document. Mid-
+// navigation (useUrlSync's popstate `apply`) the store holds a real, possibly-dirty document the
+// user never agreed to discard, so it is kept. One shared message would have to lie about one of
+// the two, and the difference — whether your work is still there — is exactly what the reader
+// needs to know.
 export type BootNotice =
   | { kind: 'restored'; at: number }
   | { kind: 'missing' }
+  | { kind: 'unavailable' }
   | { kind: 'displaced'; name: string }
 
 // The draft carries content.name verbatim, and an unnamed document is ordinary — Toolbar's New
@@ -36,6 +44,8 @@ const message = (notice: BootNotice): string => {
       return `Restored unsaved changes from ${time(notice.at)}.`
     case 'missing':
       return `That experiment could not be found. Opened a new document instead.`
+    case 'unavailable':
+      return `That experiment could not be found. Kept the document you had open.`
     case 'displaced':
       // Names the document so this is actionable information rather than an alarm: the user
       // can go back to it and redo the edit knowing exactly what was lost. Past tense because

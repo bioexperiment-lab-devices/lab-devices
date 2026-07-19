@@ -64,6 +64,28 @@ export function urlStateOf(v: SyncView): UrlState {
 export const isNavigation = (a: UrlState, b: UrlState): boolean =>
   a.tab !== b.tab || a.exp !== b.exp || a.rec !== b.rec || a.scope !== b.scope
 
+/** Does this URL name a document other than the one that is open — i.e. must `apply` reopen it?
+ *
+ * Returns the id to fetch, or null when the loaded document already satisfies the URL. This is
+ * the one judgement on the `exp` path (design §3.1), and it is here rather than inline in
+ * `useUrlSync` for the usual reason: the async plumbing around it needs a browser, the decision
+ * does not. Two of its three branches are non-obvious.
+ *
+ * `exp === serverId` is null and not a reload. Re-fetching the open document on every popstate
+ * would discard unsaved edits on a Back press that only moved the scope or the selection — the
+ * common case (browser check (d)), and one no `confirm()` guard covers.
+ *
+ * **`exp === null` is also null — never a `newDoc()`.** A URL naming no document is not a
+ * request for a BLANK one, and reading it as such would be data loss triggered by a Back press.
+ * The entry is reachable without hand-editing: an unsaved document has no `exp`, so saving it
+ * changes `exp` from null to X, which `isNavigation` (above) pushes. Back then lands on the
+ * pre-save entry — the SAME document, before it had a server id. Blanking there would destroy
+ * the document the user just saved. `useUrlSync`'s trailing `write` re-projects `exp` from the
+ * unchanged `serverId`, so the address bar goes back to naming what is actually open.
+ */
+export const documentToLoad = (url: UrlState, serverId: string | null): string | null =>
+  url.exp !== null && url.exp !== serverId ? url.exp : null
+
 export interface UrlView {
   scope: string | null
   selectedUid: string | null

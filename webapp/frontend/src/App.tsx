@@ -10,8 +10,8 @@ import { RecordsTab } from './records/RecordsTab'
 import { RunTab } from './run/RunTab'
 import { RestoreNotice, type BootNotice } from './shell/RestoreNotice'
 import { decideBoot, draftIsDirty } from './shell/bootstrap'
+import { applyUrlFocus } from './shell/urlFocus'
 import { parseHash } from './shell/urlState'
-import { viewFromUrl } from './shell/urlSyncRules'
 import { useDraftAutosave } from './shell/useDraftAutosave'
 import { useUrlSync } from './shell/useUrlSync'
 import { loadDoc, newDoc, useDocStore } from './stores/docStore'
@@ -87,24 +87,18 @@ export default function App() {
      * view), and merging a fresh URL half with a stale draft half would produce a focus
      * neither ever held.
      *
-     * `viewFromUrl` rather than `url.scope`/`url.sel` raw, and it is the same call useUrlSync's
-     * popstate `apply` makes, so a link resolves identically whether it is followed cold or
-     * arrived at by Back. It also clears rather than guesses: an unresolvable `sel` (stale
-     * link, or the document changed server-side) leaves the selection null, and useUrlSync's
-     * first write then drops the dead param from the URL instead of re-sharing it. And its
-     * `Object.hasOwn` scope check is what stops a hand-edited `scope=toString` from naming a
-     * group that does not exist — a state nothing else in the app can produce, which renders
-     * as a silently empty canvas.
+     * The application itself is `applyUrlFocus` (shell/urlFocus.ts) — literally the same
+     * function useUrlSync's popstate `apply` calls, not a second transcription of it, so a link
+     * resolves identically whether it is followed cold or arrived at by Back. It carries the
+     * scope-before-selection ordering and the conditional/unconditional asymmetry those two
+     * paths must not disagree about. What stays HERE is the one thing that is boot-only: the
+     * early return above, which lets a restored draft's own focus stand when the URL names
+     * neither field. `apply` deliberately has no such guard — mid-session, a URL naming neither
+     * field means "no scope, no selection" and must clear both.
      */
     const applyUrlView = (): void => {
       if (url.scope === null && url.sel === null) return
-      const doc = useDocStore.getState()
-      const view = viewFromUrl(url, doc.tree, doc.groups)
-      // Scope BEFORE selection, always: `setScope` clears `selectedUid` as a side effect
-      // (docStore.ts), so selecting first would have the selection discarded by the scope
-      // change that follows it.
-      if (view.scope !== doc.scope) doc.setScope(view.scope)
-      useDocStore.getState().select(view.selectedUid)
+      applyUrlFocus(url)
     }
 
     if (action.kind === 'restoreDraft') {
@@ -212,7 +206,14 @@ export default function App() {
   // `last` from the stores until the executor has finished putting the URL's own state into
   // them (see applyUrlView above).
   useDraftAutosave(booted)
-  useUrlSync(booted)
+  // The `unavailable` notice is a MID-NAVIGATION outcome, unlike every other value this slot
+  // carries, and it is the better place for a live region to be read: `RestoreNotice` is
+  // role="status", so content inserted long after the page settled is announced, where a
+  // boot-time insertion races assistive tech registering the page. It overwrites whatever boot
+  // left behind rather than yielding to it (the 404 path's `prev ?? …`) — a boot advisory is
+  // about a page load the user has since navigated away from, and the fresher event is the one
+  // that explains what is on screen now.
+  useUrlSync(booted, () => setNotice({ kind: 'unavailable' }))
 
   return (
     // The notice goes through TabShell's `banner` slot rather than being stacked above

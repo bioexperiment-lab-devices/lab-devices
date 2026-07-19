@@ -148,7 +148,23 @@ across an `await`, which is a genuine widening: the guard's original soundness a
 every mutation being a synchronous zustand `set`. The durable half of that argument — `last` being
 recomputed after the apply, so a late write compares against fresh state — is what still holds,
 and is why this is safe to widen. A stale in-flight fetch must not be allowed to land after a
-newer one.
+newer one — enforced by a monotonic generation ref: only the newest `apply` may write to the
+stores, release the guard, or touch history.
+
+**A 404 mid-navigation keeps the open document; a 404 at boot opens a blank one.** Same server
+outcome, opposite answers, because the two paths have different stakes. At boot nothing is
+loaded, so `newDoc()` costs nothing (§5). Mid-navigation the store holds a real, possibly-dirty
+document, and a Back press passes none of the four `confirm('Discard unsaved changes?')` guards —
+blanking it would be unrecoverable data loss caused by the Back button. The trailing `write` then
+re-projects `exp` from the unchanged `serverId`, so the URL returns to naming what is genuinely
+open, and a fourth `BootNotice` variant (`unavailable`) says so rather than letting Back appear to
+do nothing. For the same reason, `apply` never treats a URL with **no** `exp` as a request for a
+blank document: that history entry is reachable by saving an unsaved document (`exp` null → X is
+a navigation), so Back lands on the pre-save entry for the *same* document.
+
+Both judgements are pure and live in `urlSyncRules.ts` (`documentToLoad`) with the rest; only the
+async plumbing stays in the hook. The URL→store focus application, previously duplicated verbatim
+between the boot executor and `apply`, is now one tested function (`shell/urlFocus.ts`).
 
 ---
 

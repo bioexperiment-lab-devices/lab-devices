@@ -8,18 +8,40 @@
  *
  * That state is `applying`. The store->hash writer and the URL->store reader form a loop:
  * applying a URL fires the subscriptions that write the URL. While a URL-originated update is
- * landing, the writer is suppressed. Today all four mutators `apply` calls (`setTab`, `open`,
- * `setScope`, `select`) are plain synchronous zustand `set`s, and zundo's `temporal` wrapper is
- * configured with only partialize/equality/limit — no handleSet/throttle — so nothing async sits
- * between a URL landing and the store reflecting it. But what actually makes the guard robust is
- * not that synchrony: it's that `apply` recomputes `last` from the store's own state at the end,
- * rather than trusting the `UrlState` it started from. A write the guard failed to suppress would
+ * landing, the writer is suppressed. What makes the guard robust is NOT that the mutators are
+ * synchronous: it's that `apply` recomputes `last` from the store's own state at the end, rather
+ * than trusting the `UrlState` it started from. A write the guard failed to suppress would
  * therefore diff against a FRESH projection, not a stale one — at worst an extra history entry,
  * never a corrupted one. (Every effect reachable from a URL-applied change — useValidation,
  * RecordsTab's refresh, RecordViewer, RunTab's attach — was audited and none touches a
- * URL-projected field, so no such write exists today; that audit, not the synchrony argument
- * above, is the thing to redo if a future effect starts writing tab/exp/rec/scope/sel.)
+ * URL-projected field, so no such write exists today; that audit is the thing to redo if a
+ * future effect starts writing tab/exp/rec/scope/sel.)
  * A ref rather than a module-level `let` so a remount cannot inherit a flag left true by a throw.
+ *
+ * THE GUARD IS HELD ACROSS AN AWAIT (design §3.1). `exp` is the one URL field that does not
+ * resolve against state already in memory — reopening a document is a server fetch — so `apply`
+ * is async and the suppression window is genuinely wider than the synchronous one the original
+ * argument assumed. Three things keep that safe, and all three are load-bearing:
+ *
+ *  1. `generation`, a ref bumped by every `apply`. Only the newest generation may write to the
+ *     stores, release the guard, or touch history; a slower earlier fetch resolving afterwards
+ *     returns without doing anything. Two rapid Back presses across three documents therefore
+ *     end on the document the URL names, not on whichever response happened to return last. A
+ *     ref and not an effect-local `let` because `applying` is a ref too: a counter scoped to the
+ *     effect would restart at 0 on a re-run, and a fetch left over from the previous run would
+ *     match the new run's generation and release a guard it does not own. AbortController was
+ *     the alternative; it would need a `signal` threaded through api/client.ts's four helpers,
+ *     and it would still need this check, since an abort cannot un-deliver a response that has
+ *     already resolved. The counter is the whole correctness story, so it is the only mechanism.
+ *  2. `finally`, unconditionally. A leaked `applying === true` freezes the URL writer for the
+ *     rest of the session — a silent, total failure — so the release is in a `finally` that
+ *     covers the fetch, the JSON conversion (`docToTree` throws DocConvertError) and the store
+ *     writes alike. The generation check gates only WHICH apply owns the flag, never whether
+ *     the release runs.
+ *  3. `disposed`, set by the effect cleanup. Effect-local, unlike the two refs above, because it
+ *     asks a per-binding question: this binding's listeners are gone, so an in-flight fetch must
+ *     not call `loadDoc` or `pushState` into a torn-down app. It gates the store write and the
+ *     trailing `write`, but never the guard release.
  *
  * PRECONDITION: this hook does not read the URL on mount. `last` is seeded from the stores'
  * CURRENT state and the address bar is immediately `replaceState`d to match it — the store
@@ -29,11 +51,14 @@
  * silently discard the link's view focus, with no history entry left to recover it from.
  */
 import { useEffect, useRef } from 'react'
-import { useDocStore } from '../stores/docStore'
+import { getExperiment } from '../api/studio'
+import { docToTree } from '../builder/convert'
+import { loadDoc, useDocStore } from '../stores/docStore'
 import { useNavStore } from '../stores/navStore'
 import { useRecordsStore } from '../stores/recordsStore'
+import { applyUrlFocus } from './urlFocus'
 import { formatHash, parseHash } from './urlState'
-import { isNavigation, urlStateOf, viewFromUrl, type SyncView } from './urlSyncRules'
+import { documentToLoad, isNavigation, urlStateOf, type SyncView } from './urlSyncRules'
 
 function currentView(): SyncView {
   const doc = useDocStore.getState()
@@ -51,11 +76,18 @@ function currentView(): SyncView {
 const hrefWith = (hash: string): string =>
   `${window.location.pathname}${window.location.search}${hash}`
 
-export function useUrlSync(enabled: boolean): void {
+/** `onMissing` fires when the URL names an experiment the server no longer has — see `apply`'s
+ * 404 decision below. Held in a ref so the effect can stay on `[enabled]` and an unstable caller
+ * cannot leave it stale. */
+export function useUrlSync(enabled: boolean, onMissing?: () => void): void {
   const applying = useRef(false)
+  const generation = useRef(0)
+  const onMissingRef = useRef(onMissing)
+  onMissingRef.current = onMissing
 
   useEffect(() => {
     if (!enabled) return
+    let disposed = false
 
     // `last` is the URL state the current history entry stands for. It is updated by BOTH
     // directions: a popstate that changes the tab must not leave the next canvas click looking
@@ -76,35 +108,94 @@ export function useUrlSync(enabled: boolean): void {
       else window.history.replaceState(null, '', hrefWith(hash))
     }
 
-    const apply = (hash: string): void => {
+    const apply = async (hash: string): Promise<void> => {
+      const url = parseHash(hash)
+      const gen = (generation.current += 1)
       applying.current = true
       try {
-        const url = parseHash(hash)
+        // Tab and record resolve against memory, so they land immediately — the tab must not
+        // sit on the old one for the length of a fetch.
         useNavStore.getState().setTab(url.tab)
         useRecordsStore.getState().open(url.rec)
-        const doc = useDocStore.getState()
-        const view = viewFromUrl(url, doc.tree, doc.groups)
-        // Scope BEFORE selection, always: docStore's `setScope` clears `selectedUid` as a
-        // side effect (docStore.ts), so selecting first would have the selection silently
-        // discarded by the scope change that follows it.
-        if (view.scope !== doc.scope) doc.setScope(view.scope)
-        useDocStore.getState().select(view.selectedUid)
+
+        const id = documentToLoad(url, useDocStore.getState().serverId)
+        if (id !== null) {
+          let content
+          try {
+            const res = await getExperiment(id)
+            // Inside the try WITH the fetch: docToTree throws DocConvertError on a malformed
+            // doc, and a malformed document is as unopenable as a missing one. Treating only
+            // the fetch as fallible would turn that throw into an unhandled rejection.
+            content = docToTree(res.doc)
+          } catch {
+            // 404 (or malformed) MID-NAVIGATION: keep the document that is open. Deliberately
+            // NOT the boot executor's `newDoc()` fallback, and the difference is the point. At
+            // boot there is no document yet, so a blank one costs nothing. Here the store holds
+            // a real, possibly-dirty document that the user never consented to discard — a Back
+            // press passes none of the four `confirm('Discard unsaved changes?')` guards
+            // (Toolbar.tsx's three, LoadDialog.tsx's one), so blanking it would be data loss
+            // caused by the Back button. The `finally` below then re-projects `exp` from the
+            // unchanged `serverId`, so the address bar returns to naming what is genuinely
+            // open: the URL and the store still agree, which is the property this whole task
+            // exists to restore. Silence would be the wrong half of that trade — Back appearing
+            // to do nothing is indistinguishable from a broken button — so the caller gets a
+            // notice naming the outcome.
+            if (gen === generation.current && !disposed) onMissingRef.current?.()
+            return
+          }
+          // A newer apply (another Back press) or a teardown happened while this was in
+          // flight. Return before touching the store: this response is now history.
+          if (gen !== generation.current || disposed) return
+          loadDoc(content, id)
+        }
+        if (disposed) return
+        // AFTER the document lands, never before: `scope` and `sel` are structural, so they can
+        // only be resolved against the tree that is now in the store (design §3.1). On the
+        // no-reload path this is the same synchronous position it always held.
+        applyUrlFocus(url)
       } finally {
-        applying.current = false
+        // Unconditional for THIS generation, on every path — resolved, rejected, or returned
+        // early. A leaked `true` freezes the URL writer permanently. A stale generation must
+        // NOT release: the newest apply owns the flag and may still be mid-fetch.
+        if (gen === generation.current) {
+          applying.current = false
+          if (!disposed) {
+            last = urlStateOf(currentView())
+            // The URL may name a param the resolution above just dropped (a `sel` pointing at
+            // a block deleted since the link was made, viewFromUrl's doc comment; or an `exp`
+            // that no longer resolves). `last` is already the fresh projection, so `write`
+            // compares it against itself: `isNavigation` reads false and this replaces the
+            // current history entry in place — no extra Back step — instead of leaving the
+            // address bar advertising state the store does not hold.
+            write()
+          }
+        }
       }
-      last = urlStateOf(currentView())
-      // The URL may name a param the resolution above just dropped (a `sel` pointing at a
-      // block deleted since the link was made, viewFromUrl's doc comment). `last` is already
-      // the fresh projection, so `write` compares it against itself: `isNavigation` reads
-      // false and this replaces the current history entry in place — no extra Back step —
-      // instead of leaving the address bar advertising a param the store no longer holds.
-      write()
     }
 
-    const onPopState = (): void => apply(window.location.hash)
-    window.addEventListener('popstate', onPopState)
+    // A same-document Back fires BOTH `popstate` and `hashchange` in Chromium (measured), and
+    // that was free while `apply` was synchronous and idempotent — the second run redid the
+    // same `set`s. It is not free now: the second run would issue a DUPLICATE document fetch
+    // whose response the generation check then throws away, doubling the request count on every
+    // cross-document navigation. So an event naming a hash an apply is already in flight for is
+    // dropped. Keyed on the hash rather than a bare in-flight flag, so a genuinely different
+    // URL arriving mid-fetch still applies and still wins by generation; and cleared when that
+    // apply settles, so hand-editing back to the same hash later is applied again rather than
+    // being swallowed as a duplicate.
+    let pending: string | null = null
+    const onUrlEvent = (): void => {
+      const hash = window.location.hash
+      if (hash === pending) return
+      pending = hash
+      // `void`: nothing awaits an apply, and the promise cannot reject — every throw inside is
+      // caught, and the `finally` runs regardless.
+      void apply(hash).finally(() => {
+        if (pending === hash) pending = null
+      })
+    }
+    window.addEventListener('popstate', onUrlEvent)
     // Also covers a hand-edited hash, which fires hashchange but not popstate everywhere.
-    window.addEventListener('hashchange', onPopState)
+    window.addEventListener('hashchange', onUrlEvent)
 
     // The initial URL is normalized in place — replaceState, not push — so Back still leaves
     // the app rather than stepping through the boot state.
@@ -115,8 +206,15 @@ export function useUrlSync(enabled: boolean): void {
     const unsubRec = useRecordsStore.subscribe(write)
 
     return () => {
-      window.removeEventListener('popstate', onPopState)
-      window.removeEventListener('hashchange', onPopState)
+      disposed = true
+      // Defensive, and specifically for the re-run case rather than unmount: a fetch left in
+      // flight owns `applying` (a ref, so it outlives this closure) and would otherwise hand
+      // the next binding a writer that is already suppressed. Clearing it here means the next
+      // binding always starts from a known state; the in-flight apply's own `finally` clearing
+      // it again is a harmless no-op, and its `disposed` check keeps it off the stores.
+      applying.current = false
+      window.removeEventListener('popstate', onUrlEvent)
+      window.removeEventListener('hashchange', onUrlEvent)
       unsubDoc()
       unsubNav()
       unsubRec()

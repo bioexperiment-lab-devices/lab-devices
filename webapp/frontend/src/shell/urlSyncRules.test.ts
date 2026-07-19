@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isNavigation, urlStateOf, viewFromUrl, type SyncView } from './urlSyncRules'
+import { documentToLoad, isNavigation, urlStateOf, viewFromUrl, type SyncView } from './urlSyncRules'
 import { EMPTY_URL_STATE, type UrlState } from './bootstrap'
 import type { GroupsMap } from '../builder/paths'
 import type { BlockNode, LoopNode, SerialNode } from '../builder/tree'
@@ -119,6 +119,36 @@ describe('isNavigation', () => {
 
   it('is false for no change at all', () => {
     expect(isNavigation(a, { ...a })).toBe(false)
+  })
+})
+
+describe('documentToLoad', () => {
+  it('returns the id when the URL names a DIFFERENT document', () => {
+    expect(documentToLoad(url({ exp: 'e2' }), 'e1')).toBe('e2')
+  })
+
+  it('returns the id when nothing is open yet', () => {
+    expect(documentToLoad(url({ exp: 'e2' }), null)).toBe('e2')
+  })
+
+  it('is null when the open document already satisfies the URL', () => {
+    // A Back press across a scope or selection change within one document must NOT refetch:
+    // that would discard unsaved edits, and no confirm() guard covers a Back press.
+    expect(documentToLoad(url({ exp: 'e1', scope: 'dose' }), 'e1')).toBeNull()
+    expect(documentToLoad(url({ exp: 'e1', sel: 'blocks[0]' }), 'e1')).toBeNull()
+  })
+
+  it('is null when the URL names NO document, whatever is open', () => {
+    // Reachable without hand-editing: saving an unsaved document moves exp null -> X, which
+    // isNavigation pushes, so Back lands on the pre-save entry for the SAME document. Reading
+    // that as "open a blank one" would destroy the document that was just saved.
+    expect(documentToLoad(url({ exp: null }), 'e1')).toBeNull()
+    expect(documentToLoad(url({ exp: null }), null)).toBeNull()
+  })
+
+  it('ignores every field except exp', () => {
+    const a = url({ tab: 'Run', exp: 'e1', rec: 'r1', scope: 'dose', sel: 'blocks[0]' })
+    expect(documentToLoad(a, 'e1')).toBeNull()
   })
 })
 
