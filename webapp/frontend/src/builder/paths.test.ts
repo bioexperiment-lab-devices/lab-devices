@@ -1,6 +1,17 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { diagnosticsByUid, mapDiagnostics, resolveDiagnosticPath, type GroupsMap } from './paths'
+import {
+  diagnosticsByUid,
+  mapDiagnostics,
+  pathForUid,
+  resolveDiagnosticPath,
+  type GroupsMap,
+} from './paths'
 import type { BlockNode, BranchNode, ForEachNode, LoopNode, SerialNode } from './tree'
+import { visitNodes } from './tree'
+import { docToTree } from './convert'
+import type { ExperimentDocJson } from '../types/doc'
 
 const base = { label: null, gapAfter: null, startOffset: null }
 const wait = (uid: string): BlockNode => ({ uid, kind: 'wait', duration: '1s', ...base })
@@ -200,6 +211,106 @@ describe('resolveDiagnosticPath', () => {
 
   it('returns uid null for an out-of-range index rather than the wrong block', () => {
     expect(resolveDiagnosticPath(tree, {}, 'blocks[99]').uid).toBeNull()
+  })
+})
+
+// paths.test.ts sits at src/builder/, so the repo's webapp/fixtures/ dir is three levels up
+// (src/builder -> src -> frontend -> webapp). __tests__/torture.test.ts needs four, being one
+// directory deeper.
+const FIXTURE = fileURLToPath(new URL('../../../fixtures/ui-audit-torture.json', import.meta.url))
+
+const singleWaitDoc = () =>
+  ({
+    doc_version: 1,
+    name: 't',
+    description: null,
+    roles: {},
+    workflow: { schema_version: 1, blocks: [{ wait: { duration: '1s' } }] },
+  }) as unknown as ExperimentDocJson
+
+describe('pathForUid', () => {
+  it('emits blocks[i] for a top-level node', () => {
+    const { tree: t } = docToTree(singleWaitDoc())
+    expect(pathForUid(t, {}, t[0].uid)).toBe('blocks[0]')
+  })
+
+  it('emits a slot trailer for a nested node, descending via childSlots', () => {
+    expect(pathForUid(tree, {}, 'w2')).toBe('blocks[0].children[1].body[0]')
+    expect(pathForUid(tree, {}, 'w3')).toBe('blocks[0].children[2].then[0]')
+    expect(pathForUid(tree, {}, 'w4')).toBe('blocks[0].children[2].else[0]')
+  })
+
+  it('returns null for a uid that is not in the tree', () => {
+    expect(pathForUid([], {}, 'nope')).toBeNull()
+    expect(pathForUid(tree, {}, 'nope')).toBeNull()
+  })
+
+  it('never emits the compound blocks[i]->name.body[i] form', () => {
+    // That form describes a group RENDERED at a call site, not an authored location, so it
+    // has no writer (design §4.1). Every path this file emits addresses where the node was
+    // AUTHORED: the main tree, or the group's own body.
+    const groups: GroupsMap = { mygroup: { params: [], body: [waitNode] } }
+    const path = pathForUid(tree, groups, waitNode.uid)
+    expect(path).toBe("groups['mygroup'].body[0]")
+    expect(path).not.toContain('->')
+  })
+
+  // The property that matters: whatever pathForUid writes, resolveDiagnosticPath must read
+  // back to the same node. The torture fixture is type-forced to contain every BlockKind
+  // (__tests__/torture.test.ts), so this covers every container shape childSlots knows.
+  it('round-trips every node in the torture fixture', () => {
+    const doc = JSON.parse(readFileSync(FIXTURE, 'utf8')) as ExperimentDocJson
+    // DocContent types `groups` as optional (convert.ts stays permissive for the docStore's
+    // required-field authoring API); docToTree always populates it, so `{}` never applies.
+    const { tree: fixtureTree, groups = {} } = docToTree(doc)
+    const uids: string[] = []
+    visitNodes(fixtureTree, (n) => uids.push(n.uid))
+    let groupUidCount = 0
+    for (const group of Object.values(groups)) {
+      visitNodes(group.body, (n) => {
+        uids.push(n.uid)
+        groupUidCount++
+      })
+    }
+    // Guard against the property vacuously passing over an empty or main-tree-only list.
+    expect(uids.length).toBeGreaterThan(30)
+    expect(groupUidCount).toBeGreaterThan(4)
+    expect(new Set(uids).size).toBe(uids.length)
+    for (const uid of uids) {
+      const path = pathForUid(fixtureTree, groups, uid)
+      expect(path, `no path for ${uid}`).not.toBeNull()
+      expect(
+        resolveDiagnosticPath(fixtureTree, groups, path!).uid,
+        `round-trip failed for ${path}`,
+      ).toBe(uid)
+    }
+  })
+
+  // Non-identifier group names are reachable via Import: GROUP_NAME_RE (docStore.ts) is
+  // enforced only on add/rename, and convert.ts loads keys verbatim (paths.ts header).
+  it.each(['a b', "a'b", 'a->b', 'a"b', "o'brien"])(
+    'round-trips inside a group named %j',
+    (name) => {
+      const groups: GroupsMap = {
+        [name]: { params: [], body: docToTree(singleWaitDoc()).tree },
+      }
+      const uid = groups[name].body[0].uid
+      const path = pathForUid([], groups, uid)
+      expect(path).not.toBeNull()
+      const r = resolveDiagnosticPath([], groups, path!)
+      expect(r.uid).toBe(uid)
+      expect(r.scope).toBe(name)
+    },
+  )
+
+  it('returns null for a group name the path grammar cannot represent', () => {
+    // A name carrying BOTH quote characters has no unescaped spelling: the reader's
+    // GROUP_HEAD_RE accepts `'[^']*'` or `"[^"]*"` and has no escape handling, so either
+    // spelling would be misparsed. Emitting nothing beats emitting a path that resolves to
+    // the wrong node (or to null) downstream.
+    const name = `a'b"c`
+    const groups: GroupsMap = { [name]: { params: [], body: [waitNode] } }
+    expect(pathForUid([], groups, waitNode.uid)).toBeNull()
   })
 })
 

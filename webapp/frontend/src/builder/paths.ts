@@ -143,6 +143,67 @@ export function resolveDiagnosticPath(tree: BlockNode[], groups: GroupsMap, path
   return { uid: node?.uid ?? null, role: null, param, scope: null }
 }
 
+/** Spells a group name as a quoted `groups[...]` head the reader above can read back, the
+ * way Python's `repr()` would: single quotes normally, flipping to double quotes when the
+ * name contains an apostrophe (docs_store.py builds every direct head with `{name!r}`, and
+ * GROUP_HEAD_RE is quote-tolerant for exactly that reason).
+ *
+ * Returns null when the name contains BOTH quote characters. `repr()` would fall back to
+ * single quotes with a backslash-escaped apostrophe, but GROUP_HEAD_RE's character classes
+ * (`'[^']*'` / `"[^"]*"`) have no escape handling, so neither spelling survives the round
+ * trip — and quotedGroupHeadEnd would end the opaque head early, letting a later space or
+ * `->` inside the name be misread as a suffix/compound boundary. Emitting nothing is the
+ * honest answer: a caller that gets null falls back to no selection, whereas a caller that
+ * gets an unparseable path would select the wrong node.
+ */
+function quoteGroupName(name: string): string | null {
+  if (!name.includes("'")) return `'${name}'`
+  if (!name.includes('"')) return `"${name}"`
+  return null
+}
+
+/** Depth-first search for `uid`, building the structural path as it descends. */
+function findPath(list: BlockNode[], uid: string, prefix: string): string | null {
+  for (let i = 0; i < list.length; i++) {
+    const node = list[i]
+    const here = `${prefix}[${i}]`
+    if (node.uid === uid) return here
+    for (const [slot, children] of childSlots(node)) {
+      const found = findPath(children, uid, `${here}.${slot}`)
+      if (found !== null) return found
+    }
+  }
+  return null
+}
+
+/** The inverse of resolveDiagnosticPath: the structural path addressing a node (design §4.1),
+ * so a selected block can be named in a URL by a STABLE structural location rather than by a
+ * uid, which `newUid()` re-mints on every `docToTree` (convert.ts) and which therefore means
+ * nothing to anyone but the author who produced it.
+ *
+ * Emits only the two forms the BUILDER can originate — `blocks[i]` + trailer, and
+ * `groups['name'].body[i]` + trailer. It never emits the compound `blocks[i]->name.body[i]`
+ * form: that is produced by a validator walk crossing from a call site into a plain group's
+ * body (validate.py:894,940) and describes a group RENDERED at a call site, not an authored
+ * location. Selection always refers to an authored node, so the compound form has no writer;
+ * resolveDiagnosticPath keeps READING it for diagnostics.
+ *
+ * Descends via childSlots (tree.ts) rather than a local slot list, for the same reason the
+ * torture walker does: a hand-listed set silently stops descending the day a new container
+ * kind lands.
+ */
+export function pathForUid(tree: BlockNode[], groups: GroupsMap, uid: string): string | null {
+  const inMain = findPath(tree, uid, 'blocks')
+  if (inMain !== null) return inMain
+  for (const [name, group] of Object.entries(groups)) {
+    const quoted = quoteGroupName(name)
+    if (quoted === null) continue
+    const inGroup = findPath(group.body, uid, `groups[${quoted}].body`)
+    if (inGroup !== null) return inGroup
+  }
+  return null
+}
+
 export function mapDiagnostics(
   tree: BlockNode[],
   groups: GroupsMap,
