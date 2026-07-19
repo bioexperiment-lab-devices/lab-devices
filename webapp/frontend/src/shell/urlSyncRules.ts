@@ -13,7 +13,7 @@
  */
 import { pathForUid, resolveDiagnosticPath, type GroupsMap } from '../builder/paths'
 import type { BlockNode } from '../builder/tree'
-import type { UrlState } from './bootstrap'
+import type { DisplacedDraft, UrlState } from './bootstrap'
 import type { Tab } from './tabs'
 
 /** The slice of navStore + docStore + recordsStore that the URL is a projection of. A plain
@@ -85,6 +85,29 @@ export const isNavigation = (a: UrlState, b: UrlState): boolean =>
  */
 export const documentToLoad = (url: UrlState, serverId: string | null): string | null =>
   url.exp !== null && url.exp !== serverId ? url.exp : null
+
+/** Does reopening a different document mid-session — `apply`'s exp-changed path in
+ * useUrlSync.ts, reachable by a Back/Forward press across two documents or a hand-edited `exp`
+ * — discard unsaved work in the document that is open right now?
+ *
+ * Design §5.1 already settled this exact question for the BOOT path (`displacedBy`,
+ * bootstrap.ts): a dirty draft belonging to a document other than the one about to load is
+ * warned about, not silently dropped, because storage holds a single draft slot (fork 3) and
+ * autosave overwrites it moments later regardless of how it was lost. `apply`'s `loadDoc`
+ * destroys the open document's edits the IDENTICAL way `loadDoc` does at boot, so the
+ * mid-session path must answer the identical way — this is not a new decision, just the same
+ * one asked again where the boot executor cannot reach.
+ *
+ * Takes the already-sampled `dirty`/`name` rather than a store snapshot: the (impure) act of
+ * reading `selectDirty` off `useDocStore.getState()`, and choosing WHEN to read it — before
+ * `loadDoc` overwrites the very document being asked about, and only once the generation check
+ * confirms this `apply` is not a stale one — stays in the hook. This stays a total function of
+ * two plain values, returning the same `DisplacedDraft` shape `displacedBy` does so both paths
+ * hand App.tsx an identical notice payload.
+ */
+export function displacedByReopen(dirty: boolean, name: string): DisplacedDraft | null {
+  return dirty ? { name } : null
+}
 
 export interface UrlView {
   scope: string | null

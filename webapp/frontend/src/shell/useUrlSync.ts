@@ -15,7 +15,16 @@
  * never a corrupted one. (Every effect reachable from a URL-applied change — useValidation,
  * RecordsTab's refresh, RecordViewer, RunTab's attach — was audited and none touches a
  * URL-projected field, so no such write exists today; that audit is the thing to redo if a
- * future effect starts writing tab/exp/rec/scope/sel.)
+ * future effect starts writing tab/exp/rec/scope/sel.) That audit is scoped to writes the
+ * URL-apply chain itself triggers. It says nothing about a genuinely independent user action —
+ * a tab click, say — landing inside the same now-async window: the guard suppresses that write
+ * too, indiscriminately, and when `apply`'s trailing `write()` (below) finally runs it diffs the
+ * fresh post-fetch projection against itself (`last` was just refreshed from that same
+ * projection), so `isNavigation` reads false. The action's own history entry is silently
+ * downgraded from `pushState` to `replaceState` — one lost Back step, not a corrupted one.
+ * Under the old synchronous guard no user action could land inside the window at all; this is
+ * the price of holding it across an await, judged acceptable because the STORE is never wrong,
+ * only the history entry standing in for one of the actions that produced it.
  * A ref rather than a module-level `let` so a remount cannot inherit a flag left true by a throw.
  *
  * THE GUARD IS HELD ACROSS AN AWAIT (design §3.1). `exp` is the one URL field that does not
@@ -53,12 +62,18 @@
 import { useEffect, useRef } from 'react'
 import { getExperiment } from '../api/studio'
 import { docToTree } from '../builder/convert'
-import { loadDoc, useDocStore } from '../stores/docStore'
+import { loadDoc, selectDirty, useDocStore } from '../stores/docStore'
 import { useNavStore } from '../stores/navStore'
 import { useRecordsStore } from '../stores/recordsStore'
 import { applyUrlFocus } from './urlFocus'
 import { formatHash, parseHash } from './urlState'
-import { documentToLoad, isNavigation, urlStateOf, type SyncView } from './urlSyncRules'
+import {
+  displacedByReopen,
+  documentToLoad,
+  isNavigation,
+  urlStateOf,
+  type SyncView,
+} from './urlSyncRules'
 
 function currentView(): SyncView {
   const doc = useDocStore.getState()
@@ -77,13 +92,22 @@ const hrefWith = (hash: string): string =>
   `${window.location.pathname}${window.location.search}${hash}`
 
 /** `onMissing` fires when the URL names an experiment the server no longer has — see `apply`'s
- * 404 decision below. Held in a ref so the effect can stay on `[enabled]` and an unstable caller
- * cannot leave it stale. */
-export function useUrlSync(enabled: boolean, onMissing?: () => void): void {
+ * 404 decision below. `onDisplaced` fires when a successful reopen is about to discard unsaved
+ * work in the document that is open right now — the identical loss design §5.1 already warns
+ * about at boot, reached here mid-session (see `displacedByReopen`, urlSyncRules.ts). Both held
+ * in a ref so the effect can stay on `[enabled]` and an unstable caller cannot leave either
+ * stale. */
+export function useUrlSync(
+  enabled: boolean,
+  onMissing?: () => void,
+  onDisplaced?: (name: string) => void,
+): void {
   const applying = useRef(false)
   const generation = useRef(0)
   const onMissingRef = useRef(onMissing)
   onMissingRef.current = onMissing
+  const onDisplacedRef = useRef(onDisplaced)
+  onDisplacedRef.current = onDisplaced
 
   useEffect(() => {
     if (!enabled) return
@@ -144,8 +168,21 @@ export function useUrlSync(enabled: boolean, onMissing?: () => void): void {
             return
           }
           // A newer apply (another Back press) or a teardown happened while this was in
-          // flight. Return before touching the store: this response is now history.
+          // flight. Return before touching the store: this response is now history. This is
+          // also why the displaced check below sits AFTER this line rather than before it: a
+          // stale apply must not warn about a loss it is not the one causing.
           if (gen !== generation.current || disposed) return
+          // Sample BEFORE `loadDoc` replaces the store on the next line: this is the document
+          // about to be destroyed. The generation check just above guarantees this apply owns
+          // the flag, so no OTHER apply could have reopened a different document in the
+          // meantime — only the open document's own content could have changed, via the user's
+          // own edits, which is exactly the state this warning is about. design §5.1 already
+          // warns for the identical loss at boot (`displacedByReopen` mirrors `displacedBy`,
+          // bootstrap.ts); `apply` must not be silent about it just because the loss happens
+          // mid-session, on a Back press, instead (Important 1, W16 Task 15 review).
+          const open = useDocStore.getState()
+          const displaced = displacedByReopen(selectDirty(open), open.name)
+          if (displaced !== null) onDisplacedRef.current?.(displaced.name)
           loadDoc(content, id)
         }
         if (disposed) return
@@ -182,16 +219,35 @@ export function useUrlSync(enabled: boolean, onMissing?: () => void): void {
     // URL arriving mid-fetch still applies and still wins by generation; and cleared when that
     // apply settles, so hand-editing back to the same hash later is applied again rather than
     // being swallowed as a duplicate.
+    //
+    // `pendingToken` — not a re-comparison of `hash` — decides who is allowed to clear
+    // `pending`, because a hash string is not a unique name for one specific apply: A -> B -> A
+    // revisits the same string. Without the token, apply#1(A)'s `finally` would see
+    // `pending === 'A'` (apply#3(A) having just set it back) and null it out from under
+    // apply#3, un-coalescing a `hashchange` that arrives while apply#3 is still in flight.
+    // Efficiency only — the generation counter still discards whichever response loses — but
+    // comparing the token apply#N itself captured means only apply#N's own settling can ever
+    // clear the `pending` it set.
     let pending: string | null = null
+    let pendingToken = 0
     const onUrlEvent = (): void => {
       const hash = window.location.hash
       if (hash === pending) return
       pending = hash
-      // `void`: nothing awaits an apply, and the promise cannot reject — every throw inside is
-      // caught, and the `finally` runs regardless.
-      void apply(hash).finally(() => {
-        if (pending === hash) pending = null
-      })
+      const token = (pendingToken += 1)
+      // `void`: nothing awaits an apply. Only the fetch and `docToTree` are actually caught
+      // inside `apply` (its inner try/catch) — a throw from `loadDoc`, `applyUrlFocus`, the
+      // missing-document callback, or `write()` would otherwise escape this `void` as an
+      // unhandled rejection. Harmless rather than broken: `apply`'s `finally` still releases
+      // `applying` on every one of those paths before the throw propagates, so the guard is
+      // never leaked — but an unhandled rejection is still noise a test environment or a
+      // stricter host could turn into a hard failure, so it is swallowed here explicitly
+      // rather than left to rely on nothing downstream ever observing the rejection.
+      void apply(hash)
+        .finally(() => {
+          if (pendingToken === token) pending = null
+        })
+        .catch(() => {})
     }
     window.addEventListener('popstate', onUrlEvent)
     // Also covers a hand-edited hash, which fires hashchange but not popstate everywhere.

@@ -181,8 +181,13 @@ export default function App() {
           // true: X 404'd AND Y's unsaved work is gone anyway (the newDoc() above is itself a
           // store mutation, so autosave clobbers the draft on this branch too). With one slot,
           // the irreversible loss outranks the 404 — the 404 costs the user a re-navigation,
-          // the draft is unrecoverable — and unlike the lost draft, the empty document plus the
-          // experiment id still sitting in the address bar is at least self-evidencing.
+          // the draft is unrecoverable. (An earlier version of this comment claimed the empty
+          // document plus the experiment id still sitting in the address bar was "at least
+          // self-evidencing" — false: `newDoc()` nulls `serverId`, and useUrlSync's mount
+          // `replaceState` (that hook's PRECONDITION) reprojects the hash from the store the
+          // instant it mounts, dropping `exp` entirely before the user ever sees it. Nothing on
+          // screen survives to explain the loss, which is exactly why 'missing' is a notice and
+          // not something this path can skip as redundant.)
           setNotice((prev) => prev ?? { kind: 'missing' })
         }
       })
@@ -206,14 +211,28 @@ export default function App() {
   // `last` from the stores until the executor has finished putting the URL's own state into
   // them (see applyUrlView above).
   useDraftAutosave(booted)
-  // The `unavailable` notice is a MID-NAVIGATION outcome, unlike every other value this slot
-  // carries, and it is the better place for a live region to be read: `RestoreNotice` is
-  // role="status", so content inserted long after the page settled is announced, where a
-  // boot-time insertion races assistive tech registering the page. It overwrites whatever boot
-  // left behind rather than yielding to it (the 404 path's `prev ?? …`) — a boot advisory is
-  // about a page load the user has since navigated away from, and the fresher event is the one
-  // that explains what is on screen now.
-  useUrlSync(booted, () => setNotice({ kind: 'unavailable' }))
+  // `unavailable` and `displaced` are the two notices this slot can now carry MID-NAVIGATION,
+  // not just at boot — `useUrlSync`'s `apply` produces both, from the same Back press across
+  // two documents: a 404 on the one being opened, or (on success) losing the unsaved edits of
+  // the one that was open. `RestoreNotice`'s role="status" is the better place for either to be
+  // read: content inserted long after the page settled is announced, where a boot-time
+  // insertion races assistive tech registering the page.
+  //
+  // `unavailable` overwrites whatever boot left behind rather than yielding to it (the 404
+  // path's `prev ?? …` above) — a boot advisory is about a page load the user has since
+  // navigated away from, and the fresher event is the one that explains what is on screen now.
+  // EXCEPT for 'displaced': that is the one variant reporting IRREVERSIBLE loss (the row-3
+  // comment above — the draft is gone the moment autosave's debounce fires, a 404 merely costs
+  // a re-navigation), so a mid-session 404 must not erase the only record the user will ever
+  // get that their edits are gone. The functional update below yields to 'displaced'
+  // specifically, rather than the blanket overwrite a bare `setNotice({ kind: 'unavailable' })`
+  // would be. `displaced` itself always overwrites unconditionally: it is already this slot's
+  // highest-precedence variant, so it has nothing left to yield to.
+  useUrlSync(
+    booted,
+    () => setNotice((prev) => (prev?.kind === 'displaced' ? prev : { kind: 'unavailable' })),
+    (name) => setNotice({ kind: 'displaced', name }),
+  )
 
   return (
     // The notice goes through TabShell's `banner` slot rather than being stacked above

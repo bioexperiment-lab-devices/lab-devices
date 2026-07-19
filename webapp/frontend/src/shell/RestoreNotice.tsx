@@ -1,11 +1,14 @@
-/** Announces boot-time advisories the user cannot otherwise discover: unsaved work restored
- * from browser storage (design §6.3), a requested experiment that no longer resolves
- * (design §5 — a 404'd `loadServer(X)` falls back to `newDoc()` "and surfaces a notice"), or
- * unsaved work on a DIFFERENT document that opening this one has just cost (design §5.1).
+/** Announces advisories the user cannot otherwise discover: unsaved work restored from browser
+ * storage (design §6.3), a requested experiment that no longer resolves (design §5 — a 404'd
+ * `loadServer(X)` falls back to `newDoc()` "and surfaces a notice"), or unsaved work on a
+ * DIFFERENT document that opening this one has just cost (design §5.1). Two of those four
+ * variants — 'unavailable' and 'displaced' — are no longer boot-only: `useUrlSync`'s popstate
+ * `apply` (W16 Task 15) reaches the identical 404 and the identical displacement from a Back
+ * press across two documents, mid-session rather than at page load.
  *
  * Inline and dismissible rather than a modal: restore is automatic precisely so that refresh
  * is non-destructive (design §2.1), and a boot-time modal would put the interruption back.
- * Not a self-hiding toast either — all three variants report that state on screen is not what
+ * Not a self-hiding toast either — all four variants report that state on screen is not what
  * the caller expected, which the user should be able to read at their own pace.
  */
 import { X } from 'lucide-react'
@@ -14,12 +17,14 @@ import { IconButton } from '../ui/IconButton'
 const time = (at: number): string =>
   new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 
-// App.tsx has exactly one boot-time advisory slot, and the outcomes are near-exclusive by
-// construction (decideBoot picks one BootAction branch). A discriminated union keeps that an
+// App.tsx has exactly one advisory slot, and the outcomes are near-exclusive by construction
+// (decideBoot picks one BootAction branch at boot; useUrlSync's apply produces at most one of
+// 'unavailable'/'displaced' per navigation mid-session). A discriminated union keeps that an
 // invariant of the type rather than something callers have to remember — independent optional
-// props could be set together with nothing to stop it (Task 8 review, Finding 2). The one pair
-// that CAN both be true — a displaced draft plus a 404 on the document that displaced it — is
-// resolved by precedence at the single set site in App.tsx, not by widening this type.
+// props could be set together with nothing to stop it (Task 8 review, Finding 2). The pairs
+// that CAN both be true — a displaced draft plus a 404 on the document that displaced it, at
+// boot or, identically, mid-session — are resolved by precedence at the single set site in
+// App.tsx, not by widening this type.
 // `missing` and `unavailable` are the same server outcome — a requested experiment that does not
 // resolve — reached from the two paths that must answer it DIFFERENTLY, so they are two variants
 // rather than one. At boot nothing is open yet, so the executor opens a blank document. Mid-

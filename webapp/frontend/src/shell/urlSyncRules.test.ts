@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { documentToLoad, isNavigation, urlStateOf, viewFromUrl, type SyncView } from './urlSyncRules'
+import {
+  displacedByReopen,
+  documentToLoad,
+  isNavigation,
+  urlStateOf,
+  viewFromUrl,
+  type SyncView,
+} from './urlSyncRules'
 import { EMPTY_URL_STATE, type UrlState } from './bootstrap'
 import type { GroupsMap } from '../builder/paths'
 import type { BlockNode, LoopNode, SerialNode } from '../builder/tree'
@@ -149,6 +156,20 @@ describe('documentToLoad', () => {
   it('ignores every field except exp', () => {
     const a = url({ tab: 'Run', exp: 'e1', rec: 'r1', scope: 'dose', sel: 'blocks[0]' })
     expect(documentToLoad(a, 'e1')).toBeNull()
+  })
+})
+
+describe('displacedByReopen', () => {
+  it('warns, naming the document, when it is dirty', () => {
+    expect(displacedByReopen(true, 'Y')).toEqual({ name: 'Y' })
+  })
+
+  it('is silent when it is clean — nothing the server does not already have', () => {
+    expect(displacedByReopen(false, 'Y')).toBeNull()
+  })
+
+  it('carries the name verbatim, even an empty one — spelling it is the caller’s business', () => {
+    expect(displacedByReopen(true, '')).toEqual({ name: '' })
   })
 })
 
