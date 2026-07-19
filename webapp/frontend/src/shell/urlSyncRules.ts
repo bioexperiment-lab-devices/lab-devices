@@ -86,8 +86,15 @@ export interface UrlView {
  *
  * `scope` and `sel` are resolved INDEPENDENTLY, and a `sel` inside a group is not taken as
  * evidence about `scope`. `formatHash`/`urlStateOf` always emit the two consistently, so a
- * disagreement is only reachable by hand-editing the URL, and there the least surprising
- * behaviour is to do what the URL literally says rather than to infer one field from the other.
+ * disagreement is reachable by hand-editing the URL, and there the least surprising behaviour
+ * is to do what the URL literally says rather than to infer one field from the other. It is
+ * also reachable without hand-editing: `followUndoScope` (docStore.ts) writes `scope` via a
+ * bare `useDocStore.setState({ scope })` on undo/redo, which — unlike `setScope` — does not
+ * clear `selectedUid`, so an undo that switches scope can leave `selectedUid` pointing inside a
+ * group while `scope` reads something else. The next `write` then legitimately emits a
+ * scope-absent `sel` that names a path inside a group. The consequence is benign either way:
+ * Inspector's `findNode` returns null (an empty inspector) and the Delete path no-ops, since
+ * `removeNode` returns its input array by identity when the uid is not in the active list.
  */
 export function viewFromUrl(url: UrlState, tree: BlockNode[], groups: GroupsMap): UrlView {
   return {
