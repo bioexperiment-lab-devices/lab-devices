@@ -94,13 +94,18 @@ const hrefWith = (hash: string): string =>
 /** `onMissing` fires when the URL names an experiment the server no longer has — see `apply`'s
  * 404 decision below. `onDisplaced` fires when a successful reopen is about to discard unsaved
  * work in the document that is open right now — the identical loss design §5.1 already warns
- * about at boot, reached here mid-session (see `displacedByReopen`, urlSyncRules.ts). Both held
- * in a ref so the effect can stay on `[enabled]` and an unstable caller cannot leave either
- * stale. */
+ * about at boot, reached here mid-session (see `displacedByReopen`, urlSyncRules.ts). `onOpened`
+ * fires on every OTHER successful cross-document reopen — one that does not displace anything —
+ * so the caller can retire an advisory left behind by an earlier, unrelated navigation: a
+ * `displaced` banner is otherwise undismissable evidence of nothing once the user has moved on,
+ * and left standing it silently outranks every notice a later navigation would otherwise raise
+ * (Finding N2, W16 final review). All three held in a ref so the effect can stay on `[enabled]`
+ * and an unstable caller cannot leave any of them stale. */
 export function useUrlSync(
   enabled: boolean,
   onMissing?: () => void,
   onDisplaced?: (name: string) => void,
+  onOpened?: () => void,
 ): void {
   const applying = useRef(false)
   const generation = useRef(0)
@@ -108,6 +113,8 @@ export function useUrlSync(
   onMissingRef.current = onMissing
   const onDisplacedRef = useRef(onDisplaced)
   onDisplacedRef.current = onDisplaced
+  const onOpenedRef = useRef(onOpened)
+  onOpenedRef.current = onOpened
 
   useEffect(() => {
     if (!enabled) return
@@ -180,9 +187,17 @@ export function useUrlSync(
           // warns for the identical loss at boot (`displacedByReopen` mirrors `displacedBy`,
           // bootstrap.ts); `apply` must not be silent about it just because the loss happens
           // mid-session, on a Back press, instead (Important 1, W16 Task 15 review).
+          //
+          // The two callbacks are mutually exclusive by construction — this is a single `if`
+          // deciding between them, never a "clear, then maybe set" sequence — so there is no
+          // ordering hazard between retiring a stale advisory and raising the one THIS reopen
+          // is about: a winning, document-replacing apply either raises its own `displaced`
+          // warning, or, having nothing to warn about, is the proof that whatever advisory was
+          // on screen belongs to a navigation that is now over (Finding N2, W16 final review).
           const open = useDocStore.getState()
           const displaced = displacedByReopen(selectDirty(open), open.name)
           if (displaced !== null) onDisplacedRef.current?.(displaced.name)
+          else onOpenedRef.current?.()
           loadDoc(content, id)
         }
         if (disposed) return

@@ -221,17 +221,31 @@ export default function App() {
   // `unavailable` overwrites whatever boot left behind rather than yielding to it (the 404
   // path's `prev ?? …` above) — a boot advisory is about a page load the user has since
   // navigated away from, and the fresher event is the one that explains what is on screen now.
-  // EXCEPT for 'displaced': that is the one variant reporting IRREVERSIBLE loss (the row-3
-  // comment above — the draft is gone the moment autosave's debounce fires, a 404 merely costs
-  // a re-navigation), so a mid-session 404 must not erase the only record the user will ever
-  // get that their edits are gone. The functional update below yields to 'displaced'
-  // specifically, rather than the blanket overwrite a bare `setNotice({ kind: 'unavailable' })`
-  // would be. `displaced` itself always overwrites unconditionally: it is already this slot's
-  // highest-precedence variant, so it has nothing left to yield to.
+  // EXCEPT for 'displaced' FROM THE SAME NAVIGATION: that is the one variant reporting
+  // IRREVERSIBLE loss (the row-3 comment above — the draft is gone the moment autosave's
+  // debounce fires, a 404 merely costs a re-navigation), so a mid-session 404 must not erase
+  // the only record the user will ever get that their edits are gone. The functional update
+  // below yields to 'displaced' specifically, rather than the blanket overwrite a bare
+  // `setNotice({ kind: 'unavailable' })` would be. `displaced` itself always overwrites
+  // unconditionally: it is already this slot's highest-precedence variant, so it has nothing
+  // left to yield to within that navigation.
+  //
+  // "FROM THE SAME NAVIGATION" is load-bearing and used to be silently absent: that precedence
+  // was designed for a 404 and a displacement arising from ONE popstate, but
+  // `prev?.kind === 'displaced'` cannot tell that apart from a `displaced` banner some earlier,
+  // unrelated navigation left on screen — so once shown and left undismissed, it absorbed every
+  // 404 for the rest of the session (Finding N2, W16 final review). The third callback below,
+  // `onOpened`, closes that gap: `useUrlSync` fires it on every successful cross-document
+  // reopen that does NOT itself displace anything, and it unconditionally clears the slot. It
+  // cannot race `onDisplaced` — `apply` calls at most one of the two per reopen (that file's
+  // comment) — so a `displaced` warning raised by THIS reopen is never the one being cleared;
+  // only a `displaced` (or any other) advisory left over from a past, already-settled
+  // navigation is.
   useUrlSync(
     booted,
     () => setNotice((prev) => (prev?.kind === 'displaced' ? prev : { kind: 'unavailable' })),
     (name) => setNotice({ kind: 'displaced', name }),
+    () => setNotice(null),
   )
 
   return (
