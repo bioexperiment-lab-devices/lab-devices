@@ -28,9 +28,30 @@ export const EMPTY_URL_STATE: UrlState = {
   sel: null,
 }
 
+/** The unsaved work a `loadServer` boot is about to destroy (design §5.1).
+ *
+ * `name` is `content.name` VERBATIM and may be empty — how an unnamed document is spelled to
+ * the user is the notice's business, not this module's. Carried as an object rather than a bare
+ * `displacedName: string | null` so "there is nothing to warn about" is a null OBJECT, distinct
+ * from "there is a document being displaced and it happens to have no name" (an empty string).
+ * Flattening the two would make the highest-stakes case — a never-saved, never-named document,
+ * where no server copy exists at all — indistinguishable from the no-op case.
+ */
+export interface DisplacedDraft {
+  name: string
+}
+
 export type BootAction =
   | { kind: 'restoreDraft'; draft: Draft }
-  | { kind: 'loadServer'; id: string }
+  // `displaces` is part of the ACTION rather than a separate predicate the executor has to
+  // remember to call, because it is a property of this boot decision and nothing else: row 3 is
+  // the only row that reaches it, and row 3 is only identifiable here. A sibling
+  // `shouldWarnAboutDisplacedDraft(url, draft)` export would be a smaller diff, but it would be
+  // a second traversal of the same matrix that a future edit to decideBoot could silently
+  // desynchronise from — and, being optional at the call site, could simply be dropped. As a
+  // required field of the variant, TypeScript makes the case impossible to construct without
+  // answering it.
+  | { kind: 'loadServer'; id: string; displaces: DisplacedDraft | null }
   | { kind: 'newDoc' }
 
 // Must be snapshotOf (docStore.ts), NOT JSON.stringify(d.content) directly: snapshotOf
@@ -51,16 +72,49 @@ export type BootAction =
 // One definition, not two: the snapshotOf-vs-JSON.stringify rule above must not be re-derived.
 export const draftIsDirty = (d: Draft): boolean => snapshotOf(d.content) !== d.savedSnapshot
 
+/** Row 3's casualty: the dirty draft of a DIFFERENT document than the URL names (design §5.1).
+ *
+ * `decideBoot` still never clears it — fork 7 is unchanged — but fork 3 stores exactly ONE
+ * draft, so `useDraftAutosave` overwrites it with the incoming document on the first post-boot
+ * store mutation (BuilderTab mounting is enough: useValidation's unconditional
+ * `setValidating(true)` contradicts the `validating: false` loadDoc just set). The loss is
+ * therefore certain, and the user settled on making it VISIBLE rather than preventing it —
+ * preventing it would need per-document keys, reversing fork 3.
+ *
+ * Why this is the boot path that needs it: the three `confirm('Discard unsaved changes?')`
+ * guards cover New / Load / Import / Duplicate, all of which are in-app actions. Following a
+ * shared link is a fresh page load and hits none of them.
+ *
+ * `draft.serverId !== url.exp` deliberately treats a serverId of NULL as foreign. That is a
+ * never-saved document, so unlike every other row-3 draft there is no server copy of it
+ * anywhere — the single most valuable thing this warning can name.
+ *
+ * A CLEAN foreign draft returns null: it will still be overwritten, but it holds nothing the
+ * server does not already have, so warning about it would be noise that trains the user to
+ * dismiss the banner unread.
+ */
+function displacedBy(url: UrlState, draft: Draft | null): DisplacedDraft | null {
+  if (draft === null) return null
+  if (draft.serverId === url.exp) return null
+  if (!draftIsDirty(draft)) return null
+  // parseDraft shape-checks `content` and then casts (draftStorage.ts), so `name` is only
+  // typed as a string, not proven to be one. Degrade to unnamed rather than rendering
+  // "undefined" into the notice.
+  const name = typeof draft.content.name === 'string' ? draft.content.name : ''
+  return { name }
+}
+
 export function decideBoot(url: UrlState, draft: Draft | null): BootAction {
   if (url.exp !== null) {
     // Rows 1-3: the URL names a document, so it wins on identity. A draft only applies when
     // it is FOR that document and actually holds unsaved work; otherwise the server copy may
-    // be newer. A draft for some other document is left in storage untouched — no branch
-    // here clears it — so navigating back to it still restores it.
+    // be newer. A draft for some other document is not cleared by any branch here — but see
+    // displacedBy above: storage does not actually preserve it either, so row 3 reports what
+    // it is about to cost instead of pretending nothing happens.
     if (draft !== null && draft.serverId === url.exp && draftIsDirty(draft)) {
       return { kind: 'restoreDraft', draft }
     }
-    return { kind: 'loadServer', id: url.exp }
+    return { kind: 'loadServer', id: url.exp, displaces: displacedBy(url, draft) }
   }
   // Rows 4-5: the URL names nothing, so the draft is the only candidate, whatever its
   // serverId. Splitting on serverId === null here would silently make Phase A a no-op for

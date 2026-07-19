@@ -159,6 +159,14 @@ export default function App() {
       setBooted(true)
       return
     }
+    // Row 3 with a dirty draft for some OTHER document (design §5.1). decideBoot never clears
+    // that draft, but fork 3 stores exactly one, so useDraftAutosave overwrites it moments from
+    // now — and this boot path, a fresh page load from a shared link, passes none of the three
+    // `confirm('Discard unsaved changes?')` guards. Set synchronously, before the fetch, so the
+    // warning does not depend on the server answering: the draft is lost either way.
+    if (action.displaces !== null) {
+      setNotice({ kind: 'displaced', name: action.displaces.name })
+    }
     let cancelled = false
     getExperiment(action.id)
       .then((res) => {
@@ -174,7 +182,14 @@ export default function App() {
         // learn that the document they asked for is actually gone (Task 8 review, Finding 2).
         if (!cancelled) {
           newDoc()
-          setNotice({ kind: 'missing' })
+          // Functional update, and it YIELDS to whatever is already there. The only notice that
+          // can already be set at this point is 'displaced', and the two are simultaneously
+          // true: X 404'd AND Y's unsaved work is gone anyway (the newDoc() above is itself a
+          // store mutation, so autosave clobbers the draft on this branch too). With one slot,
+          // the irreversible loss outranks the 404 — the 404 costs the user a re-navigation,
+          // the draft is unrecoverable — and unlike the lost draft, the empty document plus the
+          // experiment id still sitting in the address bar is at least self-evidencing.
+          setNotice((prev) => prev ?? { kind: 'missing' })
         }
       })
       // `finally`, not the `then`: the fetch-failed branch above falls back to an empty

@@ -13,12 +13,12 @@ const content = (name: string) => ({
   groups: {},
 })
 
-const draft = (serverId: string | null, dirty: boolean): Draft => ({
+const draft = (serverId: string | null, dirty: boolean, name = 'doc'): Draft => ({
   v: 1,
   serverId,
   // A dirty draft's savedSnapshot deliberately disagrees with its content.
-  savedSnapshot: dirty ? 'STALE' : JSON.stringify(content('doc')),
-  content: content('doc'),
+  savedSnapshot: dirty ? 'STALE' : JSON.stringify(content(name)),
+  content: content(name),
   view: { scope: null, selectedUid: null, collapsed: {} },
   updatedAt: 1_700_000_000_000,
 })
@@ -35,6 +35,7 @@ describe('decideBoot', () => {
     expect(decideBoot(url({ exp: 'X' }), draft('X', false))).toEqual({
       kind: 'loadServer',
       id: 'X',
+      displaces: null,
     })
   })
 
@@ -67,18 +68,81 @@ describe('decideBoot', () => {
       view: { scope: null, selectedUid: null, collapsed: {} },
       updatedAt: 1_700_000_000_000,
     }
-    expect(decideBoot(url({ exp: 'X' }), d)).toEqual({ kind: 'loadServer', id: 'X' })
+    expect(decideBoot(url({ exp: 'X' }), d)).toEqual({
+      kind: 'loadServer',
+      id: 'X',
+      displaces: null,
+    })
   })
 
   it('row 3: url exp differs from the draft -> load from the server', () => {
     expect(decideBoot(url({ exp: 'X' }), draft('Y', true))).toEqual({
       kind: 'loadServer',
       id: 'X',
+      displaces: { name: 'doc' },
     })
   })
 
   it('row 3: url exp with no draft at all -> load from the server', () => {
-    expect(decideBoot(url({ exp: 'X' }), null)).toEqual({ kind: 'loadServer', id: 'X' })
+    expect(decideBoot(url({ exp: 'X' }), null)).toEqual({
+      kind: 'loadServer',
+      id: 'X',
+      displaces: null,
+    })
+  })
+
+  // ---- design §5.1: row 3 destroys the foreign draft, so it must name it ------------------
+  // decideBoot does not clear it, but fork 3 keeps ONE draft key and useDraftAutosave
+  // overwrites it on the first post-boot mutation. These four cases fix the boundary between
+  // "real unsaved work is being destroyed" and "nothing of value is lost", which is the
+  // difference between an actionable warning and a banner the user learns to dismiss unread.
+
+  it('§5.1: a DIRTY draft for another document is reported, by name', () => {
+    const action = decideBoot(url({ exp: 'X' }), draft('Y', true, 'Morbidostat v3'))
+    expect(action).toEqual({
+      kind: 'loadServer',
+      id: 'X',
+      displaces: { name: 'Morbidostat v3' },
+    })
+  })
+
+  it('§5.1: a CLEAN draft for another document is NOT reported — nothing is being lost', () => {
+    const action = decideBoot(url({ exp: 'X' }), draft('Y', false, 'Morbidostat v3'))
+    expect(action).toEqual({ kind: 'loadServer', id: 'X', displaces: null })
+  })
+
+  // The highest-stakes case, and the one a `serverId === null ? notForeign` shortcut would
+  // miss: a never-saved document has no server copy anywhere, so the draft IS the only copy.
+  it('§5.1: a dirty NEVER-SAVED draft counts as another document', () => {
+    const action = decideBoot(url({ exp: 'X' }), draft(null, true, 'Untitled scratch'))
+    expect(action).toEqual({
+      kind: 'loadServer',
+      id: 'X',
+      displaces: { name: 'Untitled scratch' },
+    })
+  })
+
+  // Row 2, not row 3: the draft is for the very document being opened. Warning here would tell
+  // the user their work was replaced by itself.
+  it('§5.1: a draft for the SAME document is NOT reported', () => {
+    const action = decideBoot(url({ exp: 'X' }), draft('X', false, 'Same doc'))
+    expect(action).toEqual({ kind: 'loadServer', id: 'X', displaces: null })
+  })
+
+  it('§5.1: no draft at all is NOT reported', () => {
+    expect(decideBoot(url({ exp: 'X' }), null)).toMatchObject({ displaces: null })
+  })
+
+  // An unnamed document is ordinary (Toolbar's New starts one), and the empty string must
+  // reach the notice as an empty string rather than being papered over here — bootstrap.ts
+  // carries content.name verbatim and RestoreNotice decides how to spell "unnamed". A null
+  // `displaces` would wrongly mean "nothing was lost".
+  it('§5.1: an unnamed dirty foreign draft is still reported, with an empty name', () => {
+    expect(decideBoot(url({ exp: 'X' }), draft('Y', true, ''))).toEqual({
+      kind: 'loadServer',
+      id: 'X',
+      displaces: { name: '' },
+    })
   })
 
   // The foreign draft must survive: URL-wins-identity would otherwise destroy unsaved work
