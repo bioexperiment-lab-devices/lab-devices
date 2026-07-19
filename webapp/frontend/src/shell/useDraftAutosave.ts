@@ -3,6 +3,11 @@
  * Subscribes to the store rather than reading it in an effect body: zustand's subscribe fires
  * on every mutation regardless of which component rendered, which is exactly the coverage this
  * needs — an edit made from the Inspector, the canvas, or an undo must all land in the draft.
+ *
+ * This freshness guarantee is silently dependent on `useDocStore.subscribe` staying the
+ * UNFILTERED, whole-store form used below — if docStore ever adopts `subscribeWithSelector` or
+ * an equality function here, mutations to fields the selector/equality check ignores would stop
+ * rescheduling the debounce and this hook would break quietly, with no type error to catch it.
  */
 import { useEffect } from 'react'
 import { useDocStore, selectContent } from '../stores/docStore'

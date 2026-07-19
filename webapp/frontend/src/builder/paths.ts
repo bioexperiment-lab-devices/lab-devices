@@ -1,6 +1,7 @@
 /** Resolve backend diagnostic paths (engine structural grammar + studio doc-level
- * grammar) onto editor tree uids. Unresolvable paths map to uid null and surface in the
- * problems panel only.
+ * grammar) onto editor tree uids, and the inverse: spell a tree uid back out as one of those
+ * paths (`pathForUid`, design §4.1), so a selected block can be named in a URL. Unresolvable
+ * paths map to uid null and surface in the problems panel only.
  *
  * Path grammar (validate.py, roles.py, docs_store.py):
  *  - `blocks[i]` + trailer                — the main tree, scope null.

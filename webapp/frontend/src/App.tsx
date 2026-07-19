@@ -155,9 +155,10 @@ export default function App() {
     }
     // Row 3 with a dirty draft for some OTHER document (design §5.1). decideBoot never clears
     // that draft, but fork 3 stores exactly one, so useDraftAutosave overwrites it moments from
-    // now — and this boot path, a fresh page load from a shared link, passes none of the three
-    // `confirm('Discard unsaved changes?')` guards. Set synchronously, before the fetch, so the
-    // warning does not depend on the server answering: the draft is lost either way.
+    // now — and this boot path, a fresh page load from a shared link, passes none of the four
+    // `confirm('Discard unsaved changes?')` guards (Toolbar.tsx's three, LoadDialog.tsx's one).
+    // Set synchronously, before the fetch, so the warning does not depend on the server
+    // answering: the draft is lost either way.
     if (action.displaces !== null) {
       setNotice({ kind: 'displaced', name: action.displaces.name })
     }

@@ -30,9 +30,10 @@ alone a specific block inside it.
 Two consequences the user hits directly:
 
 1. **Refresh is destructive.** Any accidental reload, browser update, or crash loses in-progress
-   authoring outright. The existing `window.confirm('Discard unsaved changes?')` guards
-   (`Toolbar.tsx:117,127,145`) cover New / Load / Import only — the far more common loss path,
-   the reload, is unguarded.
+   authoring outright. The existing `window.confirm('Discard unsaved changes?')` guards — four
+   of them, not three: `Toolbar.tsx:118,129,150` (Duplicate/New/Import) and `LoadDialog.tsx:31`
+   (Load) — cover only those in-app actions. The far more common loss path, the reload, is
+   unguarded.
 2. **Nothing is addressable.** "Look at the dose loop in the morbidostat experiment" is a
    sentence, not a link.
 
@@ -274,8 +275,9 @@ A corollary worth stating, since it is a decision and not an oversight: every po
 work "was replaced" before anything has replaced it — the loss lands when the user opens Builder.
 Tab-gating the warning would add a second variable to the matrix for little gain.
 
-This matters more than a stale doc comment, because the three
-`confirm('Discard unsaved changes?')` guards cover New / Load / Import / Duplicate only.
+This matters more than a stale doc comment, because the four
+`confirm('Discard unsaved changes?')` guards (`Toolbar.tsx`'s three — Duplicate/New/Import — and
+`LoadDialog.tsx`'s one — Load) are all in-app actions.
 **Following a shared link is a fresh page load and hits none of them**, so unsaved work on Y
 disappears with no prompt at all.
 
@@ -287,6 +289,27 @@ variant (§6.3).
 
 Fork 7 is otherwise unchanged: the URL still wins identity, and `decideBoot` still never clears a
 foreign draft.
+
+**Per-tab storage (§6.2) makes the warning conditional, not definitive — and that is fine.** The
+argument above is derived purely from the single-slot fact (fork 3): one draft, so a foreign one
+is always about to be overwritten. But `readDraft` (§6.2) does not always read *this tab's* copy.
+A BRAND-NEW tab has no `sessionStorage` entry yet, so it falls through to the `localStorage`
+mirror — and that mirror may belong to a tab that is still open right now. That tab's own
+`sessionStorage` draft is completely untouched and keeps autosaving normally; nothing was lost,
+yet `displacedBy` has no way to know that and still reports the foreign draft as "replaced." This
+is exactly the workflow `webapp/README.md` recommends: *"Keep two experiments open in two
+separate browser tabs if you need to edit both … each tab keeps its own copy."* Following that
+advice and then opening a third link in either tab reaches row 3 and raises a warning about work
+that, in the other tab, is perfectly safe.
+
+This is a deliberate over-warning, not a bug to fix. `displacedBy` runs at boot, synchronously,
+against a plain string read from storage — it has no channel to ask whether the mirror's owning
+tab is still alive (`sessionStorage` carries no such signal, and polling for one would add
+cross-tab coordination fork 6 was chosen specifically to avoid). Between "warn about a loss that
+might not be real" and "stay silent about a loss that might be," only the first is recoverable
+from: reading a false alarm costs nothing but a dismiss click, while a suppressed true alarm — the
+owning tab *was* closed, so the mirror genuinely is the last copy — is the exact unrecoverable
+loss this whole increment exists to surface. The failure direction is chosen on purpose.
 
 **`loadServer(X)` where X 404s** (deleted, or a stale link) is handled by the executor, not
 `decideBoot` — it is an async outcome, not a decision over known inputs. The executor falls back
@@ -346,11 +369,21 @@ disabled-storage contexts. Out of scope to fix here, but the new code must not c
 
 ### 6.3 Write and restore
 
-Autosave subscribes to the `DocSnapshot` fields of `docStore` and writes debounced ~500ms.
-View-state changes (`scope`, `selectedUid`, `collapsed`) are included in the same subscription.
+Autosave subscribes to the WHOLE `docStore`, not just its `DocSnapshot` fields
+(`useDraftAutosave.ts:19`), and writes debounced ~500ms after the most recent mutation of any
+kind. View-state changes (`scope`, `selectedUid`, `collapsed`) are covered by that same breadth,
+not by a separate carve-out — as are `validating`, `diagnostics`, and the other non-`DocSnapshot`
+fields (`focusedRole`, `scrollToUid`), which also reschedule the debounce. This is more than
+incidental: it is load-bearing. §5.1's row-3 clobber timing is measured from the *async
+validation result* landing (`setDiagnostics`/`setValidating(false)` or
+`setValidationError`/`setValidating(false)`), which is only a mutation this subscription can see
+because it is unfiltered — a `DocSnapshot`-only subscription would miss it entirely and put the
+loss a full validation round trip later than reality. `useDraftAutosave.ts`'s header comment
+carries a matching warning against narrowing the subscription later.
 
-`clearDraft()` is called on the three existing `confirm()` guard sites plus Duplicate — the
-actions that legitimately erase the draft. It is **not** called on unload.
+`clearDraft()` is called on all four existing `confirm()` guard sites — `Toolbar.tsx`'s
+Duplicate/New/Import and `LoadDialog.tsx`'s Load — the actions that legitimately erase the draft.
+It is **not** called on unload.
 
 On restore, a dismissible inline notice appears in the Builder toolbar row: *"Restored unsaved
 changes from 14:32"*. Not a modal (§2.1), not a toast that vanishes before it is read.

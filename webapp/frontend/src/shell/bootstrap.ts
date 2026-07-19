@@ -95,9 +95,9 @@ export const draftIsDirty = (d: Draft): boolean => snapshotOf(d.content) !== d.s
  * lands on, since both mutate the store. The user settled on making the loss VISIBLE rather
  * than preventing it — preventing it would need per-document keys, reversing fork 3.
  *
- * Why this is the boot path that needs it: the three `confirm('Discard unsaved changes?')`
- * guards cover New / Load / Import / Duplicate, all of which are in-app actions. Following a
- * shared link is a fresh page load and hits none of them.
+ * Why this is the boot path that needs it: the four `confirm('Discard unsaved changes?')`
+ * guards — Toolbar.tsx's New / Import / Duplicate, plus LoadDialog.tsx's Load — are all
+ * in-app actions. Following a shared link is a fresh page load and hits none of them.
  *
  * `draft.serverId !== url.exp` deliberately treats a serverId of NULL as foreign. That is a
  * never-saved document, so unlike every other row-3 draft there is no server copy of it

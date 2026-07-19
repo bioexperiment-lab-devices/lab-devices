@@ -251,13 +251,14 @@ export function useUrlSync(
       pending = hash
       const token = (pendingToken += 1)
       // `void`: nothing awaits an apply. Only the fetch and `docToTree` are actually caught
-      // inside `apply` (its inner try/catch) — a throw from `loadDoc`, `applyUrlFocus`, the
-      // missing-document callback, or `write()` would otherwise escape this `void` as an
-      // unhandled rejection. Harmless rather than broken: `apply`'s `finally` still releases
-      // `applying` on every one of those paths before the throw propagates, so the guard is
-      // never leaked — but an unhandled rejection is still noise a test environment or a
-      // stricter host could turn into a hard failure, so it is swallowed here explicitly
-      // rather than left to rely on nothing downstream ever observing the rejection.
+      // inside `apply` (its inner try/catch) — a throw from `selectDirty`, `displacedByReopen`,
+      // the displaced/opened callbacks, `loadDoc`, `applyUrlFocus`, the missing-document
+      // callback, or `write()` would otherwise escape this `void` as an unhandled rejection.
+      // Harmless rather than broken: `apply`'s `finally` still releases `applying` on every one
+      // of those paths before the throw propagates, so the guard is never leaked — but an
+      // unhandled rejection is still noise a test environment or a stricter host could turn
+      // into a hard failure, so it is swallowed here explicitly rather than left to rely on
+      // nothing downstream ever observing the rejection.
       void apply(hash)
         .finally(() => {
           if (pendingToken === token) pending = null
