@@ -84,3 +84,66 @@ export function parseDraft(raw: string | null): Draft | null {
 export function serializeDraft(d: Draft): string {
   return JSON.stringify(d)
 }
+
+/* ---- storage edge (design §6.2) -------------------------------------------------------
+ * Untested by design: neither Storage API exists in the node vitest environment
+ * (webapp/frontend/CLAUDE.md). Everything decidable lives in parseDraft above.
+ */
+
+const session = (): Storage | null => {
+  try {
+    return window.sessionStorage
+  } catch {
+    return null
+  }
+}
+
+const local = (): Storage | null => {
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+const readKey = (s: Storage | null): string | null => {
+  if (s === null) return null
+  try {
+    return s.getItem(DRAFT_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+/** Session first (this tab's own work), then the cross-session mirror. */
+export function readDraft(): Draft | null {
+  return parseDraft(readKey(session())) ?? parseDraft(readKey(local()))
+}
+
+export function writeDraft(d: Draft): void {
+  const raw = serializeDraft(d)
+  try {
+    session()?.setItem(DRAFT_STORAGE_KEY, raw)
+  } catch {
+    // Quota or disabled storage. The app stays fully functional without a draft; a failed
+    // write is not an error state worth surfacing mid-keystroke.
+  }
+  try {
+    local()?.setItem(DRAFT_STORAGE_KEY, raw)
+  } catch {
+    // Mirror is best-effort by definition — the session copy above is authoritative.
+  }
+}
+
+export function clearDraft(): void {
+  try {
+    session()?.removeItem(DRAFT_STORAGE_KEY)
+  } catch {
+    /* nothing to recover: the draft is already unreachable */
+  }
+  try {
+    local()?.removeItem(DRAFT_STORAGE_KEY)
+  } catch {
+    /* as above */
+  }
+}
