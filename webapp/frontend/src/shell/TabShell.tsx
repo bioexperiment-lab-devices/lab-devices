@@ -6,6 +6,15 @@ export function TabShell(props: {
   onSelect: (tab: Tab) => void
   statusLine: string
   lab: string | null
+  // A full-width strip above the header (the boot-time restore notice). It is a SLOT rather
+  // than something App stacks above <TabShell/>, because this component's root owns the
+  // viewport-height column: a sibling above an h-screen box makes the page taller than the
+  // viewport, and the box does not shrink to compensate — <main>'s content gives the flex item
+  // a large automatic minimum height, so `flex-shrink` cannot apply. Measured before this slot
+  // existed: documentElement.scrollHeight 933 vs clientHeight 900, i.e. a second scrollbar and
+  // the last 33px of the shell pushed below the fold. Inside the column it simply takes its
+  // share and <main> keeps the remainder.
+  banner?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -13,6 +22,7 @@ export function TabShell(props: {
     // nothing downstream needs to know the header's height — this is what retired
     // BuilderTab's h-[calc(100vh-9rem)], which hard-coded the old two-row header.
     <div className="flex h-screen flex-col bg-slate-100 text-slate-900">
+      {props.banner !== undefined && <div className="shrink-0">{props.banner}</div>}
       <header className="flex shrink-0 items-stretch gap-6 border-b border-slate-200 bg-white px-6">
         <h1 className="self-center py-3 text-lg font-semibold">Experiment Studio</h1>
         {/* items-stretch + border-b-2 on each tab: the buttons run the full header height,

@@ -42,7 +42,14 @@ export type BootAction =
 // agree with selectDirty (docStore.ts) only by coincidence, and diverge the moment a draft's
 // content was built by a path that orders those trailing keys differently, misclassifying a
 // semantically clean draft as dirty. Do not "simplify" this back to JSON.stringify.
-const isDirty = (d: Draft): boolean => snapshotOf(d.content) !== d.savedSnapshot
+// Exported for the boot executor (App.tsx), which needs the same predicate for a different
+// question: decideBoot uses it to choose a branch, the executor uses it to decide whether the
+// restore is worth ANNOUNCING. Restoring a clean draft is a harmless no-op that still carries
+// view state, but telling the user "Restored unsaved changes" when there were none is a lie —
+// and it is reachable, because Toolbar's New does newDoc() + clearDraft() while autosave's
+// 500ms debounce is still armed, so the empty document writes a fresh clean draft right back.
+// One definition, not two: the snapshotOf-vs-JSON.stringify rule above must not be re-derived.
+export const draftIsDirty = (d: Draft): boolean => snapshotOf(d.content) !== d.savedSnapshot
 
 export function decideBoot(url: UrlState, draft: Draft | null): BootAction {
   if (url.exp !== null) {
@@ -50,7 +57,7 @@ export function decideBoot(url: UrlState, draft: Draft | null): BootAction {
     // it is FOR that document and actually holds unsaved work; otherwise the server copy may
     // be newer. A draft for some other document is left in storage untouched — no branch
     // here clears it — so navigating back to it still restores it.
-    if (draft !== null && draft.serverId === url.exp && isDirty(draft)) {
+    if (draft !== null && draft.serverId === url.exp && draftIsDirty(draft)) {
       return { kind: 'restoreDraft', draft }
     }
     return { kind: 'loadServer', id: url.exp }
