@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.9.0...v0.10.0) (2026-07-18)
+
+
+### Features
+
+* **studio:** canvas visual language — construct tints, depth zebra, role swatches, hatching ([#43](https://github.com/bioexperiment-lab-devices/lab-devices/issues/43)) ([b18e778](https://github.com/bioexperiment-lab-devices/lab-devices/commit/b18e778cdcc2977b9e59a788a2b62b5eb1131e34))
+* **studio:** make the Builder lab-independent and put it first ([#41](https://github.com/bioexperiment-lab-devices/lab-devices/issues/41)) ([237d0d7](https://github.com/bioexperiment-lab-devices/lab-devices/commit/237d0d7f832c3581a55c5d2129726d5783c9ea9b))
+* **studio:** re-cut the Inspector settings form into intent-based sections (W15) ([#44](https://github.com/bioexperiment-lab-devices/lab-devices/issues/44)) ([3501c53](https://github.com/bioexperiment-lab-devices/lab-devices/commit/3501c53f994bf5a9f771d3795833a5f4200568f2))
+
 ## [0.9.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.8.1...v0.9.0) (2026-07-18)
 
 
