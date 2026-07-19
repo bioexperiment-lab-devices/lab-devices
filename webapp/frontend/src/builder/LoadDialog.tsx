@@ -3,6 +3,7 @@ import { Download, X } from 'lucide-react'
 import { deleteExperiment, getExperiment, listExperiments } from '../api/studio'
 import type { ExperimentSummary } from '../types/doc'
 import { loadDoc, selectDirty, useDocStore } from '../stores/docStore'
+import { clearDraft } from '../stores/draftStorage'
 import { IconButton } from '../ui/IconButton'
 import { DocConvertError, docToTree } from './convert'
 import { exportFilename, serializeDoc, triggerDownload } from './files'
@@ -31,6 +32,11 @@ export function LoadDialog(props: { onClose: () => void }) {
     try {
       const res = await getExperiment(id)
       loadDoc(docToTree(res.doc), res.id)
+      // The draft described the document just discarded (Toolbar.tsx's New/Import/Duplicate
+      // do the same after their own loadDoc/newDoc). Autosave will write a fresh one for the
+      // newly-opened document on its next tick; leaving the old one would resurrect it on
+      // refresh.
+      clearDraft()
       props.onClose()
     } catch (e) {
       setError(

@@ -515,3 +515,57 @@ describe('docStore', () => {
     })
   })
 })
+
+const emptyDocContent = () => ({
+  name: '',
+  description: null,
+  roles: {},
+  streams: {},
+  tree: [],
+  groups: {},
+})
+
+describe('loadDoc view rehydration', () => {
+  it('leaves view state cleared when no view is supplied', () => {
+    loadDoc({ ...emptyDocContent(), name: 'a' }, 'srv1')
+    const s = useDocStore.getState()
+    expect(s.scope).toBeNull()
+    expect(s.selectedUid).toBeNull()
+    expect(s.collapsed).toEqual({})
+  })
+
+  it('rehydrates scope, selection and the collapsed map from a draft view', () => {
+    loadDoc({ ...emptyDocContent(), name: 'a', groups: { dose: { params: [], body: [] } } }, 'srv1', {
+      scope: 'dose',
+      selectedUid: 'u7',
+      collapsed: { u7: true },
+    })
+    const s = useDocStore.getState()
+    expect(s.scope).toBe('dose')
+    expect(s.selectedUid).toBe('u7')
+    expect(s.collapsed).toEqual({ u7: true })
+  })
+
+  // Rehydrating view state must not reintroduce the cross-document contamination that the
+  // explicit undefined-writes in loadDoc exist to prevent (2026-07-14 review, I1).
+  it('clears a previous document view state when the next load supplies none', () => {
+    loadDoc({ ...emptyDocContent(), name: 'a' }, 'srv1', {
+      scope: null,
+      selectedUid: 'u7',
+      collapsed: { u7: true },
+    })
+    loadDoc({ ...emptyDocContent(), name: 'b' }, 'srv2')
+    const s = useDocStore.getState()
+    expect(s.selectedUid).toBeNull()
+    expect(s.collapsed).toEqual({})
+  })
+
+  it('still clears undo history when a view is supplied', () => {
+    loadDoc({ ...emptyDocContent(), name: 'a' }, 'srv1', {
+      scope: null,
+      selectedUid: null,
+      collapsed: {},
+    })
+    expect(useDocStore.temporal.getState().pastStates).toHaveLength(0)
+  })
+})

@@ -22,6 +22,7 @@ import {
   useDocStore,
   useTemporal,
 } from '../stores/docStore'
+import { clearDraft } from '../stores/draftStorage'
 import { DocConvertError, docToTree } from './convert'
 import { exportFilename, parseDocFile, serializeDoc, triggerDownload } from './files'
 import { TextField } from './fields'
@@ -120,6 +121,7 @@ export function Toolbar() {
       if (!id) return
       const res = await duplicateExperiment(id)
       loadDoc(docToTree(res.doc), res.id)
+      clearDraft()
     })
   }
 
@@ -128,6 +130,9 @@ export function Toolbar() {
     setError(null)
     setNote(null)
     newDoc()
+    // The draft described the document just discarded. Autosave will write a fresh one for
+    // the new document on its next tick; leaving the old one would resurrect it on refresh.
+    clearDraft()
   }
 
   const exportDoc = () => {
@@ -147,6 +152,7 @@ export function Toolbar() {
       const res = await importExperiment(parseDocFile(await file.text()))
       try {
         loadDoc(docToTree(res.doc), res.id)
+        clearDraft()
         setNote(`imported as '${res.doc.name}'`)
       } catch (e) {
         if (!(e instanceof DocConvertError)) throw e
