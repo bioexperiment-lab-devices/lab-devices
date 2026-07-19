@@ -9,6 +9,7 @@
  * whole matrix before any hash parsing exists (design §9). urlState.ts merely produces it.
  */
 import type { Draft } from '../stores/draftStorage'
+import { snapshotOf } from '../stores/docStore'
 import type { Tab } from './tabs'
 
 export interface UrlState {
@@ -32,7 +33,16 @@ export type BootAction =
   | { kind: 'loadServer'; id: string }
   | { kind: 'newDoc' }
 
-const isDirty = (d: Draft): boolean => JSON.stringify(d.content) !== d.savedSnapshot
+// Must be snapshotOf (docStore.ts), NOT JSON.stringify(d.content) directly: snapshotOf
+// rebuilds the content object with a FIXED key order (name, description, roles, streams,
+// tree, groups, persistence, defaults, metadata), independent of whatever order the content
+// happened to be constructed in. JSON.stringify is key-insertion-order sensitive, and
+// convert.ts's docToTree builds DocContent in a DIFFERENT order (...groups, metadata,
+// persistence, defaults) than snapshotOf's canonical one — so a raw JSON.stringify here would
+// agree with selectDirty (docStore.ts) only by coincidence, and diverge the moment a draft's
+// content was built by a path that orders those trailing keys differently, misclassifying a
+// semantically clean draft as dirty. Do not "simplify" this back to JSON.stringify.
+const isDirty = (d: Draft): boolean => snapshotOf(d.content) !== d.savedSnapshot
 
 export function decideBoot(url: UrlState, draft: Draft | null): BootAction {
   if (url.exp !== null) {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { decideBoot, EMPTY_URL_STATE, type UrlState } from './bootstrap'
 import type { Draft } from '../stores/draftStorage'
+import { snapshotOf } from '../stores/docStore'
+import type { DocContent } from '../builder/convert'
 
 const content = (name: string) => ({
   name,
@@ -36,6 +38,38 @@ describe('decideBoot', () => {
     })
   })
 
+  // Regression for a false-dirty read: isDirty must use snapshotOf (docStore.ts), not a raw
+  // JSON.stringify(d.content), because JSON.stringify is key-insertion-order sensitive and
+  // snapshotOf is not — it rebuilds the object with a FIXED key order (…persistence, defaults,
+  // metadata). This content sets persistence/defaults/metadata in the OPPOSITE order
+  // (metadata, then persistence, then defaults) — mirroring convert.ts's docToTree, which
+  // spreads them in exactly that order. savedSnapshot is snapshotOf(orderedContent), so the
+  // draft is genuinely clean; a plain JSON.stringify(d.content) would produce a differently-
+  // ordered string and read this as dirty, misrouting row 2 into row 1 (restoreDraft) and
+  // skipping the "server copy may be newer" fetch entirely.
+  it('row 2: differently-ordered persistence/defaults/metadata keys still read as clean', () => {
+    const orderedContent: DocContent = {
+      name: 'doc',
+      description: null,
+      roles: {},
+      streams: {},
+      tree: [],
+      groups: {},
+      metadata: { name: 'doc' },
+      persistence: { default: 'in_memory', format: 'jsonl' },
+      defaults: { retry: { attempts: 1 } },
+    }
+    const d: Draft = {
+      v: 1,
+      serverId: 'X',
+      savedSnapshot: snapshotOf(orderedContent),
+      content: orderedContent,
+      view: { scope: null, selectedUid: null, collapsed: {} },
+      updatedAt: 1_700_000_000_000,
+    }
+    expect(decideBoot(url({ exp: 'X' }), d)).toEqual({ kind: 'loadServer', id: 'X' })
+  })
+
   it('row 3: url exp differs from the draft -> load from the server', () => {
     expect(decideBoot(url({ exp: 'X' }), draft('Y', true))).toEqual({
       kind: 'loadServer',
@@ -48,11 +82,19 @@ describe('decideBoot', () => {
   })
 
   // The foreign draft must survive: URL-wins-identity would otherwise destroy unsaved work
-  // every time someone follows a link (design §5, row 3).
-  it('row 3: never asks for the foreign draft to be cleared', () => {
-    const action = decideBoot(url({ exp: 'X' }), draft('Y', true))
-    expect(JSON.stringify(action)).not.toContain('clear')
-  })
+  // every time someone follows a link (design §5, row 3). There is deliberately no runtime
+  // test asserting that here: `BootAction` is a closed union (restoreDraft | loadServer |
+  // newDoc) whose serialized form can never contain the substring 'clear' no matter what
+  // decideBoot returns, so a return-value assertion on that string cannot fail and cannot
+  // exercise the requirement. `decideBoot` is also pure and returns a value — it has no way
+  // to observe or report whether storage was touched, so nothing here could ever check that
+  // either. What actually guarantees the requirement is structural, not behavioural:
+  // bootstrap.ts imports `Draft` as a TYPE-ONLY import (`import type { Draft } from
+  // '../stores/draftStorage'`) and has no runtime import from draftStorage.ts, so no
+  // reference to `clearDraft` can exist in this module at all — a compile-time guarantee
+  // stronger than any assertion on decideBoot's return value. The behavioural half of the
+  // requirement — that the boot EXECUTOR must not clear a foreign draft when it acts on a
+  // BootAction — belongs to that executor's own task, not to this pure decision matrix.
 
   it('row 4: no url exp, unsaved new-doc draft -> restore it', () => {
     const d = draft(null, true)
