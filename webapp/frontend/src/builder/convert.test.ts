@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { BlockJson, ExperimentDocJson, WorkflowJson } from '../types/doc'
-import { docToTree, nodeToBlock, treeToDoc } from './convert'
+import { docToTree, nodeToBlock, treeToDoc, type DocContent } from './convert'
 import type { ComputeNode, ForEachNode, LoopNode, MeasureNode, SerialNode, WaitNode } from './tree'
 
 const fixture = (name: string): ExperimentDocJson =>
@@ -268,6 +268,42 @@ describe('treeToDoc', () => {
   it('omits the per-stream persistence key entirely for a stream that never had an override', () => {
     const content = docToTree(fixture('valid-od-growth'))
     expect(treeToDoc(content).workflow.streams?.od?.persistence).toBeUndefined()
+  })
+})
+
+describe('treeToDoc rejects a corrupt-but-shaped DocContent', () => {
+  // App.tsx's boot executor calls treeToDoc(action.draft.content) as a pre-flight, purely for
+  // its throw, before a restored draft ever reaches loadDoc/the store: draftStorage.ts's
+  // parseDraft only checks that `content` is an object and then casts, so a damaged
+  // sessionStorage/localStorage entry can hand the executor a `DocContent` that is shaped but
+  // not valid. That pre-flight is only as good as treeToDoc's willingness to throw on the
+  // shapes storage damage actually produces — this is the property it depends on, proven here
+  // because it is pure and cheap to check without a browser (Task 8 review, Finding 1).
+  const base: Omit<DocContent, 'tree'> = {
+    name: 'x',
+    description: null,
+    roles: {},
+    streams: {},
+    groups: {},
+  }
+
+  it('throws when tree is null', () => {
+    expect(() => treeToDoc({ ...base, tree: null as unknown as DocContent['tree'] })).toThrow()
+  })
+
+  it('throws when tree is a bare object instead of an array', () => {
+    expect(() => treeToDoc({ ...base, tree: {} as unknown as DocContent['tree'] })).toThrow()
+  })
+
+  it('throws when tree contains a block with no recognizable type key', () => {
+    expect(() =>
+      treeToDoc({ ...base, tree: [{ zap: 1 }] as unknown as DocContent['tree'] }),
+    ).toThrow()
+  })
+
+  it('throws when streams is missing entirely', () => {
+    const { streams: _streams, ...withoutStreams } = base
+    expect(() => treeToDoc({ ...withoutStreams, tree: [] } as unknown as DocContent)).toThrow()
   })
 })
 
