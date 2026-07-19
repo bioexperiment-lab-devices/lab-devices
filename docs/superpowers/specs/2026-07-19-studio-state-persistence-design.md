@@ -88,9 +88,9 @@ dismissible inline notice (§6.3). This is a consequence of fork 4, not an indep
 
 ### 2.2 Why the uid could not go in the URL
 
-`tree.ts:163` mints uids as `` `uid-${Date.now().toString(36)}${Math.random().toString(36)…}` ``
-and `convert.ts:108` calls it for every node **on every `docToTree`**. Uids are therefore fresh
-on each server load. A uid in a URL resolves for the author's own refresh (the draft preserves
+`newUid` (`tree.ts:159`) mints uids as `crypto.randomUUID()`, falling back to
+`` `uid-${Date.now().toString(36)}${Math.random().toString(36)…}` ``, and `convert.ts:108` calls
+it for every node **on every `docToTree`**. Uids are therefore fresh on each server load. A uid in a URL resolves for the author's own refresh (the draft preserves
 the tree verbatim, uids included) and resolves to nothing for anyone else, or for the same user
 after a Load — failing precisely in the sharing case that motivates having a URL at all.
 
@@ -201,8 +201,13 @@ path that resolves to something else.
 | 1 | `exp=X` | `serverId=X`, content differs from `savedSnapshot` | `restoreDraft` | The user's unsaved work, on the document the URL names. |
 | 2 | `exp=X` | `serverId=X`, content matches `savedSnapshot` | `loadServer(X)` | Draft is clean; the server copy may be newer. |
 | 3 | `exp=X` | `serverId=Y` (Y ≠ X), or none | `loadServer(X)` | Fork 7: URL wins identity. **Y's draft is left in storage untouched**, so navigating back to Y still restores it. |
-| 4 | no `exp` | `serverId=null` (unsaved new doc) | `restoreDraft` | Nothing else to show, and this is the highest-value case: a brand-new experiment has no server copy at all. |
+| 4 | no `exp` | any draft | `restoreDraft` | The URL names no document, so the draft is the only candidate — whether it is an unsaved new doc (`serverId=null`, the highest-value case: no server copy exists at all) or a saved-then-edited one (`serverId=X`, which the URL writer then reflects back as `exp=X`). |
 | 5 | no `exp` | none | `newDoc` | Cold start. |
+
+Row 4 deliberately does **not** split on the draft's `serverId`. An earlier draft of this matrix
+did, restoring only when `serverId === null`, which silently made Phase A a no-op for every
+saved-then-edited document — the exact case the increment exists to protect, and unreachable by
+Phase A's tests because Phase A supplies no `exp` at all.
 
 Row 3's "left untouched" is what makes fork 7 safe rather than merely opinionated: URL-wins would
 otherwise destroy unsaved work every time someone follows a link. It is also why row 3 must not
@@ -330,12 +335,19 @@ the PR since CI does.
 ## 9. Phases
 
 **Phase A — draft persistence.** `draftStorage.ts`, `useDraftAutosave.ts`, `loadDoc` view
-argument, `clearDraft` at the guard sites, the restore notice, and the draft half of
-`decideBoot` (rows 4/5 plus a degenerate no-URL form). Ships standalone: refresh stops being
-destructive. Independently mergeable.
+argument, `clearDraft` at the guard sites, the restore notice, and **all of `bootstrap.ts`** —
+the `UrlState` type and the complete five-row `decideBoot`. Ships standalone: refresh stops
+being destructive. Independently mergeable.
 
-**Phase B — URL state.** `urlState.ts`, `pathForUid`, `useUrlSync.ts`, navStore seeding, and the
-full five-row `decideBoot`. Depends on A only through `decideBoot`'s signature.
+Building the whole matrix in Phase A rather than "the draft half" avoids rewriting a pure
+function that Phase B would immediately widen. Phase A's executor simply passes the empty
+`UrlState` (`{tab:'Builder', exp:null, rec:null, scope:null, sel:null}`), so only rows 4 and 5
+are *reachable* at runtime; rows 1–3 are tested from the start and become live in Phase B. This
+is why `UrlState` is declared in `bootstrap.ts` and merely *produced* by `urlState.ts`, rather
+than the other way round.
+
+**Phase B — URL state.** `urlState.ts`, `pathForUid`, `useUrlSync.ts`, navStore seeding, and
+feeding a real `UrlState` into the existing `decideBoot`.
 
 ## 10. Out of scope
 
