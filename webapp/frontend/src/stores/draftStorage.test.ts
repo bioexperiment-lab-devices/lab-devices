@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDraft, serializeDraft, type Draft } from './draftStorage'
+import { parseDraft, resolveDraft, serializeDraft, type Draft } from './draftStorage'
 
 const sample = (): Draft => ({
   v: 1,
@@ -54,5 +54,34 @@ describe('parseDraft', () => {
       view: { scope: null, selectedUid: null },
     })
     expect(parseDraft(raw)?.view.collapsed).toEqual({})
+  })
+})
+
+describe('resolveDraft', () => {
+  it('prefers a valid session copy over a different valid mirror', () => {
+    const sessionDraft = sample()
+    const mirrorDraft = { ...sample(), serverId: 'zzzz' }
+    expect(resolveDraft(serializeDraft(sessionDraft), serializeDraft(mirrorDraft))).toEqual(sessionDraft)
+  })
+
+  // Regression guard: a corrupt session copy must not fall through to the mirror and be
+  // presented, via the restore notice, as this tab's own authoritative work — the mirror is
+  // read only when the session slot is genuinely empty (design §6.2), not merely unparseable.
+  // Fails under the old `parseDraft(session) ?? parseDraft(local)`.
+  it('returns null for a corrupt session copy without falling back to a valid mirror', () => {
+    expect(resolveDraft('{not json', serializeDraft(sample()))).toBeNull()
+  })
+
+  it('falls back to a valid mirror when session is absent', () => {
+    const mirrorDraft = sample()
+    expect(resolveDraft(null, serializeDraft(mirrorDraft))).toEqual(mirrorDraft)
+  })
+
+  it('returns null when both session and mirror are absent', () => {
+    expect(resolveDraft(null, null)).toBeNull()
+  })
+
+  it('returns null when session is absent and the mirror is corrupt', () => {
+    expect(resolveDraft(null, '{not json')).toBeNull()
   })
 })

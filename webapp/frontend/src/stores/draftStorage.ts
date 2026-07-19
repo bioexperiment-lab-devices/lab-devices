@@ -85,9 +85,20 @@ export function serializeDraft(d: Draft): string {
   return JSON.stringify(d)
 }
 
+// A present-but-corrupt session slot is not the same as an absent one: a null session copy
+// means this tab has never saved and it is fair to reach for the cross-session mirror, but a
+// non-null, unparseable one means this tab *does* have its own copy and something damaged it
+// in place. Falling through to the mirror in that case would silently present a different
+// (older) snapshot as this tab's own authoritative work via the restore notice — so a
+// non-null sessionRaw is decisive on its own, even when it fails to parse.
+export function resolveDraft(sessionRaw: string | null, localRaw: string | null): Draft | null {
+  if (sessionRaw !== null) return parseDraft(sessionRaw)
+  return parseDraft(localRaw)
+}
+
 /* ---- storage edge (design §6.2) -------------------------------------------------------
  * Untested by design: neither Storage API exists in the node vitest environment
- * (webapp/frontend/CLAUDE.md). Everything decidable lives in parseDraft above.
+ * (webapp/frontend/CLAUDE.md). Everything decidable lives in parseDraft/resolveDraft above.
  */
 
 const session = (): Storage | null => {
@@ -117,7 +128,7 @@ const readKey = (s: Storage | null): string | null => {
 
 /** Session first (this tab's own work), then the cross-session mirror. */
 export function readDraft(): Draft | null {
-  return parseDraft(readKey(session())) ?? parseDraft(readKey(local()))
+  return resolveDraft(readKey(session()), readKey(local()))
 }
 
 export function writeDraft(d: Draft): void {
