@@ -7,6 +7,7 @@ import { temporal, type TemporalState } from 'zundo'
 import type { ExperimentDocJson, WorkflowJson } from '../types/doc'
 import type { MappedDiagnostic } from '../builder/paths'
 import { treeToDoc, type DocContent } from '../builder/convert'
+import type { DraftView } from './draftStorage'
 import {
   containsUid,
   duplicateNode,
@@ -487,7 +488,7 @@ export function useTemporal<T>(selector: (s: TemporalState<DocSnapshot>) => T): 
   return useStore(temporalStore, selector)
 }
 
-export function loadDoc(content: DocContent, serverId: string | null): void {
+export function loadDoc(content: DocContent, serverId: string | null, view?: DraftView): void {
   // Unlike persistence/defaults/metadata (opaque carry-through, legitimately `undefined`),
   // `groups` is a required field on the live state (like tree) — normalize it up front so
   // `savedSnapshot` below is computed from the SAME value that lands in state, not from
@@ -506,11 +507,16 @@ export function loadDoc(content: DocContent, serverId: string | null): void {
     metadata: content.metadata,
     serverId,
     savedSnapshot: snapshotOf(normalized),
-    selectedUid: null,
-    scope: null,
+    // View state is restored only when a caller supplies it (a draft restore, design §6.1).
+    // Omitting `view` must clear it exactly as before, for the same reason the explicit
+    // undefined-writes above exist: document B must never inherit document A's view.
+    // focusedRole and scrollToUid are transient scroll/highlight requests, not persisted
+    // state — they always clear.
+    selectedUid: view?.selectedUid ?? null,
+    scope: view?.scope ?? null,
     focusedRole: null,
     scrollToUid: null,
-    collapsed: {},
+    collapsed: view?.collapsed ?? {},
     diagnostics: [],
     validating: false,
     validationError: null,
