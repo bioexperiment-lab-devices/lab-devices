@@ -235,10 +235,28 @@ Row 3 must not call `clearDraft`. That is necessary but, as §5.1 records, not s
 An earlier version of row 3 promised that "Y's draft is left in storage untouched, so navigating
 back to Y still restores it." **That promise was false, and it contradicted fork 3.** Fork 3
 chose a *single* autosaved draft over per-document drafts; with one storage key,
-`useDraftAutosave` overwrites Y's draft with X on the first post-boot mutation. (The trigger is
-`BuilderTab` mounting: `useValidation` unconditionally calls `setValidating(true)`, and `loadDoc`
-has just set `validating: false`, so it is a real state change. Opening X on `#/devices` instead
-leaves Y's draft intact — the A/B split that isolated this.)
+`useDraftAutosave` overwrites Y's draft with X shortly after boot.
+
+**The trigger is not what it first appears, and getting this wrong hides the bug.** An earlier
+version of this section blamed `BuilderTab` mounting — `useValidation` unconditionally calls
+`setValidating(true)`, and `loadDoc` has just set `validating: false`, so it *is* a real state
+change. But autosave is gated on `booted`, and `booted` flips true only inside the fetch's
+`.finally()`, after `loadDoc` and `applyUrlView` have already run. At mount there is no
+subscription to observe anything. The `loadDoc`-triggered re-run of `useValidation` loses the
+race too: React flushes passive effects child-first, so `BuilderTab`'s effect runs before
+`App`'s in the same commit, and lands in the earlier commit if they are split.
+
+The first mutation the subscription actually sees is the **async validation result** —
+`setDiagnostics` + `setValidating(false)`, or `setValidationError` + `setValidating(false)` on
+the failure path. That is `useValidation`'s 500ms debounce, plus a server round trip, plus
+autosave's own 500ms debounce. Measured: Y's draft intact at +900ms, gone by +5s. **Any check
+sampling at ~1s concludes no loss occurs.** The loss is nonetheless certain, because both the
+success and failure arms mutate the store.
+
+A corollary worth stating, since it is a decision and not an oversight: every post-boot
+`docStore` mutation lives under `src/builder/`, so a boot at `#/devices?exp=X` warns that unsaved
+work "was replaced" before anything has replaced it — the loss lands when the user opens Builder.
+Tab-gating the warning would add a second variable to the matrix for little gain.
 
 This matters more than a stale doc comment, because the three
 `confirm('Discard unsaved changes?')` guards cover New / Load / Import / Duplicate only.
