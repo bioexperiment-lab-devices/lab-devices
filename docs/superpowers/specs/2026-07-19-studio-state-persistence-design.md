@@ -135,10 +135,20 @@ steady: docStore ──debounce 500ms──▶ writeDraft
         popstate ──parseHash──▶ apply (guarded against the writer)
 ```
 
-The writer and the `popstate` reader form a loop. It is broken with an `applyingFromUrl` ref in
+The writer and the `popstate` reader form a loop. It is broken with an `applying` ref in
 `useUrlSync`: while a URL-originated update is being applied to stores, the store→hash writer is
 suppressed. This is the one piece of genuinely stateful glue in the increment and the reason
 `useUrlSync` is a hook rather than a module-level subscription.
+
+**`apply` handles `exp` too** (user-settled 2026-07-19). Every other field resolves synchronously
+against state already in memory; `exp` does not — reopening a document is a server fetch. Without
+it, a hand-edited `exp=` snapped back within a tick and Back across two documents *rewrote* the
+older history entry instead of reopening it. Handling it means the `applying` guard must be held
+across an `await`, which is a genuine widening: the guard's original soundness argument leaned on
+every mutation being a synchronous zustand `set`. The durable half of that argument — `last` being
+recomputed after the apply, so a late write compares against fresh state — is what still holds,
+and is why this is safe to widen. A stale in-flight fetch must not be allowed to land after a
+newer one.
 
 ---
 
@@ -209,7 +219,7 @@ path that resolves to something else.
 |---|---|---|---|---|
 | 1 | `exp=X` | `serverId=X`, content differs from `savedSnapshot` | `restoreDraft` | The user's unsaved work, on the document the URL names. |
 | 2 | `exp=X` | `serverId=X`, content matches `savedSnapshot` | `loadServer(X)` | Draft is clean; the server copy may be newer. |
-| 3 | `exp=X` | `serverId=Y` (Y ≠ X), or none | `loadServer(X)` | Fork 7: URL wins identity. **Y's draft is left in storage untouched**, so navigating back to Y still restores it. |
+| 3 | `exp=X` | `serverId=Y` (Y ≠ X), or none | `loadServer(X)` + **warn if Y's draft is dirty** | Fork 7: URL wins identity. `decideBoot` itself never clears Y's draft — but see §5.1, because storage does not actually preserve it. |
 | 4 | no `exp` | any draft | `restoreDraft` | The URL names no document, so the draft is the only candidate — whether it is an unsaved new doc (`serverId=null`, the highest-value case: no server copy exists at all) or a saved-then-edited one (`serverId=X`, which the URL writer then reflects back as `exp=X`). |
 | 5 | no `exp` | none | `newDoc` | Cold start. |
 
@@ -218,9 +228,31 @@ did, restoring only when `serverId === null`, which silently made Phase A a no-o
 saved-then-edited document — the exact case the increment exists to protect, and unreachable by
 Phase A's tests because Phase A supplies no `exp` at all.
 
-Row 3's "left untouched" is what makes fork 7 safe rather than merely opinionated: URL-wins would
-otherwise destroy unsaved work every time someone follows a link. It is also why row 3 must not
-call `clearDraft`.
+Row 3 must not call `clearDraft`. That is necessary but, as §5.1 records, not sufficient.
+
+### 5.1 Row 3 cannot actually preserve the foreign draft (user-settled 2026-07-19)
+
+An earlier version of row 3 promised that "Y's draft is left in storage untouched, so navigating
+back to Y still restores it." **That promise was false, and it contradicted fork 3.** Fork 3
+chose a *single* autosaved draft over per-document drafts; with one storage key,
+`useDraftAutosave` overwrites Y's draft with X on the first post-boot mutation. (The trigger is
+`BuilderTab` mounting: `useValidation` unconditionally calls `setValidating(true)`, and `loadDoc`
+has just set `validating: false`, so it is a real state change. Opening X on `#/devices` instead
+leaves Y's draft intact — the A/B split that isolated this.)
+
+This matters more than a stale doc comment, because the three
+`confirm('Discard unsaved changes?')` guards cover New / Load / Import / Duplicate only.
+**Following a shared link is a fresh page load and hits none of them**, so unsaved work on Y
+disappears with no prompt at all.
+
+Settled: **keep the single draft and warn before clobbering.** When boot takes row 3 and the
+stored draft is dirty and belongs to a different document, surface a notice naming that document.
+This makes the loss visible rather than preventing it — a deliberate trade, taken over
+per-document draft keys, which would have reversed fork 3. The notice is a third `BootNotice`
+variant (§6.3).
+
+Fork 7 is otherwise unchanged: the URL still wins identity, and `decideBoot` still never clears a
+foreign draft.
 
 **`loadServer(X)` where X 404s** (deleted, or a stale link) is handled by the executor, not
 `decideBoot` — it is an async outcome, not a decision over known inputs. The executor falls back
@@ -297,7 +329,8 @@ changes from 14:32"*. Not a modal (§2.1), not a toast that vanishes before it i
 |---|---|
 | `stores/navStore.ts` | `tab` seeded from the URL at boot instead of the hardcoded `'Builder'`. |
 | `stores/docStore.ts` | `loadDoc(content, serverId, view?)` — optional third argument so a restore can rehydrate `scope` / `selectedUid` / `collapsed`. Today it hardcodes them empty. Default behaviour unchanged when omitted, keeping the 517-line `docStore.test.ts` contract intact. |
-| `builder/Toolbar.tsx` | The three `confirm()` guards (117/127/145) plus Duplicate also `clearDraft()`. Guards themselves unchanged. |
+| `builder/Toolbar.tsx` | New, Import and Duplicate also `clearDraft()` after the store reset. Guards themselves unchanged. |
+| `builder/LoadDialog.tsx` | Load's handler lives **here**, not in `Toolbar.tsx` — the toolbar's Load button only opens the dialog, and `open(id)` carries both the confirm guard and the `loadDoc` call. It gets the fourth `clearDraft()`. |
 | `builder/paths.ts` | Gains `pathForUid` (§4.1). |
 | `App.tsx` | Mounts `useUrlSync` and `useDraftAutosave`; runs the boot executor. |
 
@@ -357,6 +390,11 @@ than the other way round.
 
 **Phase B — URL state.** `urlState.ts`, `pathForUid`, `useUrlSync.ts`, navStore seeding, and
 feeding a real `UrlState` into the existing `decideBoot`.
+
+**Phase C — two defects Phase B's browser checks exposed**, both settled with the user
+2026-07-19 rather than papered over: the row-3 clobber warning (§5.1) and `exp` handling in
+`apply` (§3.1). Neither was foreseeable from the design alone; both were found by driving the
+real app, which is why the plan's per-task browser verification earns its cost.
 
 ## 10. Out of scope
 
