@@ -75,11 +75,25 @@ export const draftIsDirty = (d: Draft): boolean => snapshotOf(d.content) !== d.s
 /** Row 3's casualty: the dirty draft of a DIFFERENT document than the URL names (design §5.1).
  *
  * `decideBoot` still never clears it — fork 7 is unchanged — but fork 3 stores exactly ONE
- * draft, so `useDraftAutosave` overwrites it with the incoming document on the first post-boot
- * store mutation (BuilderTab mounting is enough: useValidation's unconditional
- * `setValidating(true)` contradicts the `validating: false` loadDoc just set). The loss is
- * therefore certain, and the user settled on making it VISIBLE rather than preventing it —
- * preventing it would need per-document keys, reversing fork 3.
+ * draft, so `useDraftAutosave` eventually overwrites it with the incoming document. BuilderTab
+ * mounting is NOT enough on its own to trigger that (an earlier version of this comment said
+ * it was — disproved by browser measurement, then independently re-traced): `useDraftAutosave`
+ * is gated on `booted` (App.tsx), and `booted` is only set true in the boot effect's
+ * `.finally()` — AFTER the `.then()`'s `loadDoc` and after `applyUrlView()`'s
+ * `setScope`/`select`. So `useValidation`'s unconditional `setValidating(true)` on mount,
+ * `loadDoc` itself, and `applyUrlView` all fire while `booted` is still false: there is no
+ * autosave subscription yet to observe any of them. The `loadDoc`-triggered re-run of
+ * `useValidation` loses the race too — React flushes passive effects child-first, so
+ * BuilderTab's `useValidation` effect runs before App's `useDraftAutosave` effect within a
+ * shared commit, and if the two land in separate commits the validation effect is still in the
+ * earlier one. The first mutation the subscription actually observes is the ASYNC VALIDATION
+ * RESULT landing — `setDiagnostics` + `setValidating(false)` on the success arm, or
+ * `setValidationError` + `setValidating(false)` on the failure arm — which is useValidation's
+ * 500ms debounce, plus one server round trip, THEN autosave's own 500ms debounce. That gap is
+ * why sampling the foreign draft at ~1s to check whether it survived proves nothing: measured
+ * intact at +900ms, gone by +5s. The loss is still certain regardless of which arm validation
+ * lands on, since both mutate the store. The user settled on making the loss VISIBLE rather
+ * than preventing it — preventing it would need per-document keys, reversing fork 3.
  *
  * Why this is the boot path that needs it: the three `confirm('Discard unsaved changes?')`
  * guards cover New / Load / Import / Duplicate, all of which are in-app actions. Following a
@@ -92,9 +106,21 @@ export const draftIsDirty = (d: Draft): boolean => snapshotOf(d.content) !== d.s
  * A CLEAN foreign draft returns null: it will still be overwritten, but it holds nothing the
  * server does not already have, so warning about it would be noise that trains the user to
  * dismiss the banner unread.
+ *
+ * Deliberately not gated on the active tab. Every post-boot docStore mutation lives under
+ * src/builder/ (verified by grep — outside builder/, nothing mutates docStore after boot;
+ * PreflightPanel's setValidating/setDiagnostics are local useState), so a boot at
+ * `#/devices?exp=X` or `#/run?exp=X` warns that unsaved work "was replaced" before anything
+ * has actually overwritten it — the loss lands only once the user opens Builder. Tab-gating
+ * the decision would add a second variable to this matrix for little gain, so leaving it as is
+ * is a deliberate choice, not an oversight.
  */
 function displacedBy(url: UrlState, draft: Draft | null): DisplacedDraft | null {
   if (draft === null) return null
+  // Unreachable-as-load-bearing: a dirty same-document draft is intercepted by decideBoot's
+  // row-1 guard and never reaches displacedBy, so mutation-testing this line (delete it) leaves
+  // all 16 tests green. Keep it anyway — it is the only thing that would stop a future
+  // decideBoot edit that calls displacedBy for a same-document draft from mislabeling it foreign.
   if (draft.serverId === url.exp) return null
   if (!draftIsDirty(draft)) return null
   // parseDraft shape-checks `content` and then casts (draftStorage.ts), so `name` is only

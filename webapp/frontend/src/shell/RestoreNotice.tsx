@@ -5,8 +5,8 @@
  *
  * Inline and dismissible rather than a modal: restore is automatic precisely so that refresh
  * is non-destructive (design §2.1), and a boot-time modal would put the interruption back.
- * Not a self-hiding toast either — both variants report that state on screen is not what the
- * caller expected, which the user should be able to read at their own pace.
+ * Not a self-hiding toast either — all three variants report that state on screen is not what
+ * the caller expected, which the user should be able to read at their own pace.
  */
 import { X } from 'lucide-react'
 import { IconButton } from '../ui/IconButton'
