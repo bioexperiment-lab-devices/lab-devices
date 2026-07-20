@@ -18,6 +18,11 @@ class UnknownVerbError(WorkflowLoadError):
     """A command targets a (device-type, verb) pair absent from the registry."""
 
 
+class UnknownRoleError(WorkflowLoadError):
+    """A device field or role-kinded arg names a role with no declaration
+    (design 2026-07-20 §5.1)."""
+
+
 class ExpressionError(WorkflowLoadError):
     """An expression string is syntactically invalid (design §6, §15)."""
 

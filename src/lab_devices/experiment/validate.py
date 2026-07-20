@@ -142,7 +142,9 @@ def _check_for_each_and_arity(w: Workflow, out: list[Diagnostic]) -> bool:
                 ok = False
         elif isinstance(b, B.GroupRef):
             group = w.groups.get(b.name)
-            params = set(group.params) if group is not None else set()
+            # Group.params is list[ParamDecl] as of the typed-declaration data model
+            # (design 2026-07-20 §2.1); this arity check only needs the declared names.
+            params = {p.name for p in group.params} if group is not None else set()
             if group is not None and set(b.args) != params:
                 out.append(Diagnostic(
                     "group", path,

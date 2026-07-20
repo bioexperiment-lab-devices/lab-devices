@@ -15,6 +15,7 @@ from lab_devices.experiment.workflow import (
     Defaults,
     Group,
     Metadata,
+    ParamDecl,
     Persistence,
     StreamDecl,
     Workflow,
@@ -413,7 +414,9 @@ def workflow_from_dict(d: Any) -> Workflow:
             raise WorkflowLoadError(f"group {name!r} params must be a list of strings")
         groups[name] = Group(
             name=name, body=_children(g.get("body", []), f"groups.{name}.body"),
-            params=list(params),
+            # TRANSITIONAL (Task 1 -> Task 3): v1 params are untyped strings. Task 3
+            # replaces this with the typed `params` list parser (design 2026-07-20 §2.1).
+            params=[ParamDecl(name=p, kind="string") for p in params],
         )
     return Workflow(
         schema_version=version,
@@ -444,7 +447,8 @@ def workflow_to_dict(w: Workflow) -> dict[str, Any]:
         }
     if w.groups:
         out["groups"] = {
-            name: ({"params": list(g.params)} if g.params else {})
+            # TRANSITIONAL (Task 1 -> Task 3): emits v1 name-only params.
+            name: ({"params": [p.name for p in g.params]} if g.params else {})
                   | {"body": [block_to_dict(c) for c in g.body]}
             for name, g in w.groups.items()
         }
