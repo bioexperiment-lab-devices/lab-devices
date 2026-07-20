@@ -210,6 +210,7 @@ class _Expansion:
         self.seeds: list[tuple[dict[str, Any], str]] = []  # (compute block, authored path)
         self.streams: dict[str, dict[str, Any]] = {}       # qualified name -> StreamDecl JSON
         self.instances: dict[str, str] = {}                # qualified `as` -> claiming group
+        self.bindings: set[str] = set()                    # qualified binding names emitted
 
     def bump(self, k: int) -> None:
         self.n += k
@@ -348,8 +349,15 @@ def _expand_for_each(
     return out
 
 
-def _open_locals(gname: str, locals_: dict[str, Any], as_value: Any, exp: _Expansion) -> Env:
-    """Qualify one instance's locals as `{as}_{local}`, emitting streams and init seeds."""
+def _open_locals(
+    gname: str, locals_: dict[str, Any], as_value: Any, call_env: Env, exp: _Expansion
+) -> Env:
+    """Qualify one instance's locals as `{as}_{local}`, emitting streams and init seeds.
+
+    `call_env` is the group_ref's bound args env: an `init` expression is restricted to a
+    constant expression (design 2026-07-20 §2.3) -- a value-kind param hole is still constant
+    after substitution, so it is substituted against the call site before being hoisted.
+    """
     if as_value is not None and not _ident(as_value):
         raise WorkflowLoadError(
             f"group_ref {gname!r}: 'as' must expand to an identifier, got {as_value!r} "
@@ -384,11 +392,21 @@ def _open_locals(gname: str, locals_: dict[str, Any], as_value: Any, exp: _Expan
             exp.streams[qualified] = {
                 k: decl[k] for k in ("units", "persistence") if decl.get(k) is not None
             }
-        elif decl.get("init") is not None:
-            exp.seeds.append((
-                {"compute": {"into": qualified, "value": decl["init"]}},
-                f"groups[{gname!r}].locals[{lname!r}]",
-            ))
+        else:
+            if qualified in exp.bindings:
+                raise WorkflowLoadError(
+                    f"group local emits binding {qualified!r}, which is already emitted "
+                    f"(design 2026-07-20 §2.2)"
+                )
+            exp.bindings.add(qualified)
+            if decl.get("init") is not None:
+                seed_value = _substitute(decl["init"], call_env)
+                if not isinstance(seed_value, str):
+                    seed_value = _fmt(seed_value)  # compute.value is an expression string
+                exp.seeds.append((
+                    {"compute": {"into": qualified, "value": seed_value}},
+                    f"groups[{gname!r}].locals[{lname!r}]",
+                ))
     return env
 
 
@@ -423,7 +441,7 @@ def _expand_group_ref(
         raise WorkflowLoadError(f"group_ref {name!r}: unknown group")
     # group is non-None only when `name` matched the isinstance(name, str) guard above.
     env = _bind(decls, args, f"group_ref {name!r} args")
-    env.update(_open_locals(cast(str, name), locals_, body.get("as"), exp))
+    env.update(_open_locals(cast(str, name), locals_, body.get("as"), env, exp))
     raw_body = group.get("body", [])
     if not isinstance(raw_body, list):
         raise WorkflowLoadError(f"group {name!r} body must be a list")

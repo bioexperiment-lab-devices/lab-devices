@@ -130,6 +130,38 @@ def test_a_local_kind_other_than_stream_or_binding_is_rejected():
         })
 
 
+def test_init_expression_is_substituted_against_the_call_site_args():
+    # A value-kind param hole is still a constant after substitution (design §2.3), so
+    # `init: "{tube}"` must seed the call-site value, not die on an unbound hole.
+    out = expand_dict({
+        "schema_version": 2,
+        "groups": {"svc": _svc({"c": {"kind": "binding", "init": "{tube}"}},
+                               [{"compute": {"into": "{c}", "value": "1"}}])},
+        "blocks": [{"group_ref": {"name": "svc", "as": "t1", "args": {"tube": 7}}}],
+    })
+    assert out["blocks"][0]["compute"] == {"into": "t1_c", "value": "7"}
+
+
+def test_binding_locals_across_instances_can_collide_on_qualified_name():
+    # as="a" + local "b_c" and as="a_b" + local "c" both qualify to "a_b_c" -- exactly the
+    # silent-merge outcome the duplicate-`as` rule exists to prevent (design 2026-07-20 §6).
+    group = {
+        "params": [],
+        "locals": {"b_c": {"kind": "binding"}, "c": {"kind": "binding"}},
+        "body": [{"compute": {"into": "{b_c}", "value": "1"}},
+                 {"compute": {"into": "{c}", "value": "1"}}],
+    }
+    with pytest.raises(WorkflowLoadError, match="already emitted"):
+        expand_dict({
+            "schema_version": 2,
+            "groups": {"svc": group},
+            "blocks": [
+                {"group_ref": {"name": "svc", "as": "a", "args": {}}},
+                {"group_ref": {"name": "svc", "as": "a_b", "args": {}}},
+            ],
+        })
+
+
 def test_an_escaping_local_is_readable_from_a_top_level_expression():
     # examples/morbidostat.json gates a top-level abort on per-tube latches (design §2.2).
     out = expand_dict({
