@@ -120,6 +120,28 @@ def test_duplicate_qualified_instance_name_is_a_load_error():
         })
 
 
+def test_stream_locals_across_instances_can_collide_on_qualified_name():
+    # Mirrors test_binding_locals_across_instances_can_collide_on_qualified_name: as="a" +
+    # local "b_c" and as="a_b" + local "c" both qualify to "a_b_c". This must be caught at
+    # emission time, not silently overwritten in exp.streams before the merge-step check
+    # against pre-declared top-level streams ever runs (design 2026-07-20 §6).
+    group = {
+        "params": [],
+        "locals": {"b_c": {"kind": "stream"}, "c": {"kind": "stream"}},
+        "body": [{"record": {"into": "{b_c}", "value": "1"}},
+                 {"record": {"into": "{c}", "value": "1"}}],
+    }
+    with pytest.raises(WorkflowLoadError, match="already emitted"):
+        expand_dict({
+            "schema_version": 2,
+            "groups": {"svc": group},
+            "blocks": [
+                {"group_ref": {"name": "svc", "as": "a", "args": {}}},
+                {"group_ref": {"name": "svc", "as": "a_b", "args": {}}},
+            ],
+        })
+
+
 def test_a_local_kind_other_than_stream_or_binding_is_rejected():
     with pytest.raises(WorkflowLoadError, match="must be 'stream' or 'binding'"):
         expand_dict({

@@ -389,6 +389,11 @@ def _open_locals(
         qualified = f"{as_value}_{lname}"
         env[lname] = (kind, qualified)
         if kind == "stream":
+            if qualified in exp.streams:
+                raise WorkflowLoadError(
+                    f"group local emits stream {qualified!r}, which is already emitted "
+                    f"(design 2026-07-20 §2.2)"
+                )
             exp.streams[qualified] = {
                 k: decl[k] for k in ("units", "persistence") if decl.get(k) is not None
             }
