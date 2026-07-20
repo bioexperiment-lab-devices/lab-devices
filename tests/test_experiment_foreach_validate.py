@@ -76,10 +76,14 @@ def test_for_each_unseeded_accumulator_is_read_before_write():
 
 
 def test_group_arity_mismatch_is_diagnosed():
+    # Reported per-param, not as a set-difference message (design 2026-07-20 §2.4):
+    # 'x' is missing 't' AND supplies an unrelated 'x'.
     with pytest.raises(ValidationError) as exc:
         _validate({"schema_version": 2, "streams": {"od_1": {}}, "groups": _GROUP_OD,
                    "blocks": [{"group_ref": {"name": "svc", "args": {"x": 1}}}]})
-    assert any("must match params" in m for m in _messages(exc))
+    msgs = _messages(exc)
+    assert any("missing argument 't' (int)" in m for m in msgs)
+    assert any("group_ref 'svc' has no parameter 'x'" in m for m in msgs)
 
 
 def test_for_each_forbidden_block_key_is_diagnosed():

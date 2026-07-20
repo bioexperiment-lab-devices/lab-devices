@@ -39,7 +39,12 @@ from lab_devices.experiment.expr import (
 )
 from lab_devices.experiment.registry import ParamSpec, lookup, mode_action
 from lab_devices.experiment.serialize import load_workflow
-from lab_devices.experiment.workflow import Workflow
+from lab_devices.experiment.workflow import (
+    REFERENCE_KINDS,
+    LocalDecl,
+    ParamDecl,
+    Workflow,
+)
 
 
 def _iter_blocks(blocks: list[B.Block], prefix: str) -> Iterator[tuple[str, B.Block]]:
@@ -112,38 +117,95 @@ def _uses_macros(w: Workflow) -> bool:
     return False
 
 
-def _check_for_each_and_arity(w: Workflow, out: list[Diagnostic]) -> bool:
-    ok = True
-    for path, b in _iter_all_blocks(w):
+def _check_group_args(
+    b: B.GroupRef,
+    path: str,
+    w: Workflow,
+    env: Mapping[str, ParamDecl],
+    out: list[Diagnostic],
+) -> None:
+    """`args` must supply EXACTLY the declared params, reported one diagnostic per
+    param (design 2026-07-20 §2.4). A set-difference message tells the author what the
+    two sets are; a per-param message tells them what to type."""
+    group = w.groups.get(b.name)
+    if group is None:
+        return  # unknown group: already diagnosed by _check_groups
+    declared = {p.name: p for p in group.params}
+    for name, decl in declared.items():
+        if name not in b.args:
+            out.append(Diagnostic(
+                "group", path,
+                f"group_ref {b.name!r} is missing argument {name!r} ({decl.kind})",
+            ))
+    for name in b.args:
+        if name not in declared:
+            out.append(Diagnostic(
+                "group", path, f"group_ref {b.name!r} has no parameter {name!r}"
+            ))
+
+
+def _check_for_each(
+    b: B.ForEach,
+    path: str,
+    w: Workflow,
+    env: Mapping[str, ParamDecl],
+    out: list[Diagnostic],
+) -> None:
+    for key, present in (("retry", b.retry is not None), ("on_error", b.on_error != "fail"),
+                         ("gap_after", b.gap_after is not None),
+                         ("start_offset", b.start_offset is not None)):
+        if present:
+            out.append(Diagnostic(
+                "for_each", path,
+                f"for_each may not carry block-level {key!r}; put it on the body blocks",
+            ))
+    if not b.body:
+        out.append(Diagnostic("for_each", path, "for_each 'body' must be non-empty"))
+    if not b.items:
+        out.append(Diagnostic("for_each", path, "for_each 'in' must be non-empty"))
+    if not b.vars:
+        out.append(Diagnostic("for_each", path, "for_each 'vars' must be non-empty"))
+
+
+def _walk_decls(
+    blocks: list[B.Block],
+    prefix: str,
+    w: Workflow,
+    env: dict[str, ParamDecl],
+    out: list[Diagnostic],
+) -> None:
+    """Walk the AUTHORED tree carrying the declarations in scope. `_iter_all_blocks`
+    cannot serve here: it is scope-blind, and every check below is about what a name
+    means at the point it is written."""
+    for i, b in enumerate(blocks):
+        path = f"{prefix}[{i}]"
         if isinstance(b, B.ForEach):
-            for key, present in (("retry", b.retry is not None), ("on_error", b.on_error != "fail"),
-                                 ("gap_after", b.gap_after is not None),
-                                 ("start_offset", b.start_offset is not None)):
-                if present:
-                    out.append(Diagnostic(
-                        "for_each", path,
-                        f"for_each may not carry block-level {key!r}; put it on the body blocks",
-                    ))
-                    ok = False
-            if not b.body:
-                out.append(Diagnostic("for_each", path, "for_each 'body' must be non-empty"))
-                ok = False
-            if not b.items:
-                out.append(Diagnostic("for_each", path, "for_each 'in' must be non-empty"))
-                ok = False
-        elif isinstance(b, B.GroupRef):
-            group = w.groups.get(b.name)
-            # Group.params is list[ParamDecl] as of the typed-declaration data model
-            # (design 2026-07-20 §2.1); this arity check only needs the declared names.
-            params = {p.name for p in group.params} if group is not None else set()
-            if group is not None and set(b.args) != params:
-                out.append(Diagnostic(
-                    "group", path,
-                    f"group_ref {b.name!r}: args {sorted(b.args)} must match params "
-                    f"{sorted(params)}",
-                ))
-                ok = False
-    return ok
+            _check_for_each(b, path, w, env, out)
+            inner = dict(env)
+            _walk_decls(b.body, f"{path}.body", w, inner, out)
+            continue
+        if isinstance(b, B.GroupRef):
+            _check_group_args(b, path, w, env, out)
+        if isinstance(b, (B.Serial, B.Parallel)):
+            _walk_decls(b.children, f"{path}.children", w, env, out)
+        elif isinstance(b, B.Loop):
+            _walk_decls(b.body, f"{path}.body", w, env, out)
+        elif isinstance(b, B.Branch):
+            _walk_decls(b.then, f"{path}.then", w, env, out)
+            if b.else_ is not None:
+                _walk_decls(b.else_, f"{path}.else", w, env, out)
+
+
+def _check_declarations(w: Workflow, out: list[Diagnostic]) -> bool:
+    """Every typed-declaration rule, on the authored doc (design 2026-07-20 §2, §4).
+    True iff nothing new was found, i.e. the doc is safe to hand to the expander."""
+    before = len(out)
+    _walk_decls(w.blocks, "blocks", w, {}, out)
+    for name, group in w.groups.items():
+        where = f"groups[{name!r}]"
+        env = {p.name: p for p in group.params}
+        _walk_decls(group.body, f"{where}.body", w, env, out)
+    return len(out) == before
 
 
 _INPUT_TYPES: dict[str, BindingType] = {
@@ -968,10 +1030,10 @@ def _validate_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
 def _validate_macro_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
     """Gate the authored (templated) doc, then expand and run every concrete check on
     the expansion. The authored blocks (holes, for_each, parametrized group_refs) never
-    reach the concrete checks — only `_check_groups` and `_check_for_each_and_arity` see
+    reach the concrete checks — only `_check_groups` and `_check_declarations` see
     them; `_validate_workflow` below only ever sees the macro-free `expanded` doc."""
     expandable = _check_groups(workflow, out)
-    expandable = _check_for_each_and_arity(workflow, out) and expandable
+    expandable = _check_declarations(workflow, out) and expandable
     if not expandable:
         _check_defaults(workflow, out)
         return
