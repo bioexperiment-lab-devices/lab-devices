@@ -169,9 +169,25 @@ eager parsing when `'{' in text` (Increment 7, §4.1) — so this adds no new de
 
 **Concatenation splits by kind:**
 
-- **Reference kinds** (`role`, `stream`, `binding`) — the hole must be the **entire string**.
-  `"{od}"` is legal; `"od_{od}"` and `"{od}_raw"` are load errors. This is the rule that makes a
-  reference resolve to a name that provably exists in a declaration.
+- **Reference kinds** (`role`, `stream`, `binding`) — the hole must occupy a **whole identifier**:
+  it may not sit adjacent to identifier characters (`[A-Za-z0-9_]`) on either side.
+
+  ```
+  "{od}"                                legal — the entire string (a name field)
+  "count({od}, last=11min) > 0"         legal — delimited by "(" and ","
+  "od_{od}"                             load error — glued to a leading "od_"
+  "{od}_raw"                            load error — glued to a trailing "_raw"
+  ```
+
+  Stating the rule as "the entire string" would be wrong: a reference legitimately appears
+  *inside* a larger expression string, which is exactly where most stream references live. What
+  must be forbidden is **concatenation with adjacent identifier text**, because that is what
+  manufactures a new name instead of referring to a declared one. In a plain name field
+  (`device`, `into`, an `args` value) the two formulations coincide — the whole string is the
+  identifier — so the rule reads as "must be the entire string" there.
+
+  A reference hole always substitutes as the name string; the typed-JSON-value rule of §3.1
+  applies to value kinds only.
 - **Value kinds** (`int`, `number`, `bool`, `string`) — interpolate anywhere. `"position": "{tube}"`
   and `"label": "tube {tube}: service"` both keep working unchanged.
 
