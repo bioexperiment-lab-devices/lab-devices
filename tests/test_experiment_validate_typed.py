@@ -158,3 +158,105 @@ def test_number_param_accepts_an_int_literal():
 def test_for_each_cell_kind_is_checked_too():
     w = wf2([_fe([{"name": "t", "kind": "int"}], [{"t": 1}, {"t": "two"}])])
     assert any("expected int for parameter 't', got 'two'" in m for m in messages(w))
+
+
+def test_role_arg_must_name_a_declared_role():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"meter": "densitometer_9"}}}],
+        groups=_svc([{"name": "meter", "kind": "role",
+                      "device_type": "densitometer"}]),
+    )
+    assert any("names undeclared role 'densitometer_9'" in m for m in messages(w))
+
+
+def test_role_arg_device_type_must_match_the_declaration():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"meter": "pump_1"}}}],
+        groups=_svc([{"name": "meter", "kind": "role",
+                      "device_type": "densitometer"}]),
+    )
+    assert any(
+        "role 'pump_1' has type 'pump', but parameter 'meter' requires "
+        "'densitometer'" in m
+        for m in messages(w)
+    )
+
+
+def test_role_arg_naming_a_matching_role_is_clean():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"meter": "densitometer_1"}}}],
+        groups=_svc([{"name": "meter", "kind": "role",
+                      "device_type": "densitometer"}]),
+    )
+    assert validate(w) is None
+
+
+def test_stream_arg_must_name_a_declared_stream():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"od": "od_9"}}}],
+        streams=["od_1"],
+        groups=_svc([{"name": "od", "kind": "stream"}]),
+    )
+    assert any("names undeclared stream 'od_9'" in m for m in messages(w))
+
+
+def test_stream_arg_naming_a_declared_stream_is_clean():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"od": "od_1"}}}],
+        streams=["od_1"],
+        groups=_svc([{"name": "od", "kind": "stream"}]),
+    )
+    assert validate(w) is None
+
+
+def test_binding_arg_must_be_identifier_shaped():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"c": "9lives"}}}],
+        groups=_svc([{"name": "c", "kind": "binding"}]),
+    )
+    assert any("binding argument '9lives' is not a usable binding name" in m
+               for m in messages(w))
+
+
+def test_binding_arg_may_not_be_a_reserved_name():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"c": "not"}}}],
+        groups=_svc([{"name": "c", "kind": "binding"}]),
+    )
+    assert any("binding argument 'not' is not a usable binding name" in m
+               for m in messages(w))
+
+
+def test_binding_arg_may_not_collide_with_a_stream():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"c": "od_1"}}}],
+        streams=["od_1"],
+        groups=_svc([{"name": "c", "kind": "binding"}]),
+    )
+    assert any("binding argument 'od_1' is already declared as a stream" in m
+               for m in messages(w))
+
+
+def test_reference_arg_must_be_a_string():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"od": 3}}}],
+        streams=["od_1"],
+        groups=_svc([{"name": "od", "kind": "stream"}]),
+    )
+    assert any("stream argument must be a name string, got 3" in m for m in messages(w))
+
+
+def test_stream_arg_may_not_name_another_groups_local_by_hand():
+    """The scope boundary, pinned as intended behaviour: a group local's qualified name
+    is manufactured by the expander and is not a declared stream at this point. Passing
+    one by literal spelling is not expressible -- thread a hole instead."""
+    groups = {
+        "owner": {"locals": {"c_series": {"kind": "stream"}}, "body": [STOP_PUMP]},
+        "svc": {"params": [{"name": "od", "kind": "stream"}], "body": [STOP_PUMP]},
+    }
+    w = wf2(
+        [{"group_ref": {"name": "owner", "as": "tube_1"}},
+         {"group_ref": {"name": "svc", "args": {"od": "tube_1_c_series"}}}],
+        groups=groups,
+    )
+    assert any("names undeclared stream 'tube_1_c_series'" in m for m in messages(w))

@@ -132,6 +132,46 @@ def _value_matches(kind: str, value: object) -> bool:
     return isinstance(value, (int, float))
 
 
+def _check_role_arg(
+    decl: ParamDecl, value: str, ctx: str, w: Workflow, out: list[Diagnostic]
+) -> None:
+    role = w.roles.get(value)
+    if role is None:
+        out.append(Diagnostic(
+            "declaration", ctx, f"role argument names undeclared role {value!r}"
+        ))
+    elif role.type != decl.device_type:
+        out.append(Diagnostic(
+            "declaration", ctx,
+            f"role {value!r} has type {role.type!r}, but parameter {decl.name!r} "
+            f"requires {decl.device_type!r}",
+        ))
+
+
+def _check_stream_arg(value: str, ctx: str, w: Workflow, out: list[Diagnostic]) -> None:
+    if value not in w.streams:
+        out.append(Diagnostic(
+            "declaration", ctx, f"stream argument names undeclared stream {value!r}"
+        ))
+
+
+def _check_binding_arg(value: str, ctx: str, w: Workflow, out: list[Diagnostic]) -> None:
+    """Bindings have no declaration section -- they are created by their writer
+    (`compute.into`, `operator_input.name`), so shape and namespace disjointness are
+    the only checks available (design 2026-07-20 §2). Existence stays the job of the
+    path-sensitive 'may be read before it is written' rule."""
+    if _IDENT_RE.fullmatch(value) is None or value in _RESERVED_NAMES:
+        out.append(Diagnostic(
+            "params", ctx, f"binding argument {value!r} is not a usable binding name"
+        ))
+    elif value in w.streams:
+        out.append(Diagnostic(
+            "declaration", ctx,
+            f"binding argument {value!r} is already declared as a stream; a name is a "
+            f"binding or a stream, never both",
+        ))
+
+
 def _check_typed_arg(
     decl: ParamDecl,
     value: object,
@@ -140,7 +180,22 @@ def _check_typed_arg(
     env: Mapping[str, ParamDecl],
     out: list[Diagnostic],
 ) -> None:
-    """One `group_ref` arg or one `for_each` cell against its declaration."""
+    """One `group_ref` arg or one `for_each` cell against its declaration. Reference
+    kinds resolve against the DECLARED sections only -- see the scope note above."""
+    if decl.kind in REFERENCE_KINDS:
+        if not isinstance(value, str):
+            out.append(Diagnostic(
+                "params", ctx,
+                f"{decl.kind} argument must be a name string, got {value!r}",
+            ))
+            return
+        if decl.kind == "role":
+            _check_role_arg(decl, value, ctx, w, out)
+        elif decl.kind == "stream":
+            _check_stream_arg(value, ctx, w, out)
+        else:
+            _check_binding_arg(value, ctx, w, out)
+        return
     if not _value_matches(decl.kind, value):
         out.append(Diagnostic(
             "params", ctx, f"expected {decl.kind} for parameter {decl.name!r}, got {value!r}"
