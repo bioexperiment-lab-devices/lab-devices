@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.11.0...v0.12.0) (2026-07-20)
+
+
+### Features
+
+* **ci:** dispatch a studio image bump to lab-bridge on release ([#48](https://github.com/bioexperiment-lab-devices/lab-devices/issues/48)) ([08d64ce](https://github.com/bioexperiment-lab-devices/lab-devices/commit/08d64ce54d951703750c42e5c3ea074bc5769dd6))
+
 ## [0.11.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.10.0...v0.11.0) (2026-07-19)
 
 
