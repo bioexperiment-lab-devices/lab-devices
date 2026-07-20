@@ -15,10 +15,13 @@ def _messages(exc):
     return [d.message for d in exc.value.diagnostics]
 
 
+_ROLES_DOC = {"pump_1": {"type": "pump"}, "densitometer_1": {"type": "densitometer"}}
+
+
 def test_retry_on_a_wait_block_is_rejected():
     with pytest.raises(ValidationError) as exc:
         _validate({
-            "schema_version": 1,
+            "schema_version": 2,
             "blocks": [{"wait": {"duration": "1s"}, "retry": {"attempts": 3}}],
         })
     assert any("only valid on command and measure" in m for m in _messages(exc))
@@ -27,7 +30,8 @@ def test_retry_on_a_wait_block_is_rejected():
 def test_retry_on_dispense_without_allow_repeat_is_rejected():
     with pytest.raises(ValidationError) as exc:
         _validate({
-            "schema_version": 1,
+            "schema_version": 2,
+            "roles": _ROLES_DOC,
             "blocks": [{
                 "command": {"device": "pump_1", "verb": "dispense",
                             "params": {"volume_ml": 0.5}},
@@ -39,7 +43,8 @@ def test_retry_on_dispense_without_allow_repeat_is_rejected():
 
 def test_retry_on_dispense_with_allow_repeat_is_accepted():
     _validate({
-        "schema_version": 1,
+        "schema_version": 2,
+        "roles": _ROLES_DOC,
         "blocks": [{
             "command": {"device": "pump_1", "verb": "dispense", "params": {"volume_ml": 0.5}},
             "retry": {"attempts": 3, "allow_repeat": True},
@@ -49,7 +54,8 @@ def test_retry_on_dispense_with_allow_repeat_is_accepted():
 
 def test_retry_on_a_measure_needs_no_opt_in():
     _validate({
-        "schema_version": 1,
+        "schema_version": 2,
+        "roles": _ROLES_DOC,
         "streams": {"od_1": {}},
         "blocks": [{
             "measure": {"device": "densitometer_1", "verb": "measure", "into": "od_1"},
@@ -61,7 +67,7 @@ def test_retry_on_a_measure_needs_no_opt_in():
 def test_defaults_retry_may_not_set_allow_repeat():
     with pytest.raises(ValidationError) as exc:
         _validate({
-            "schema_version": 1,
+            "schema_version": 2,
             "defaults": {"retry": {"attempts": 2, "allow_repeat": True}},
             "blocks": [{"wait": {"duration": "1s"}}],
         })
@@ -77,7 +83,8 @@ def test_defaults_retry_over_a_non_idempotent_verb_still_validates():
     NOT by this test. Do not read this as a validator-enforced property.
     """
     _validate({
-        "schema_version": 1,
+        "schema_version": 2,
+        "roles": _ROLES_DOC,
         "defaults": {"retry": {"attempts": 3}},
         "blocks": [{
             "command": {"device": "pump_1", "verb": "dispense", "params": {"volume_ml": 0.5}}
@@ -111,7 +118,7 @@ def test_defaults_retry_attempts_below_one_on_a_programmatic_ast_is_rejected():
 
 def test_on_error_continue_is_accepted_on_every_container():
     _validate({
-        "schema_version": 1,
+        "schema_version": 2,
         "groups": {"g": {"body": [{"wait": {"duration": "1s"}}]}},
         "blocks": [
             {"serial": {"children": [{"wait": {"duration": "1s"}}]}, "on_error": "continue"},
@@ -147,7 +154,8 @@ _TOLERANT_MEASURE = {
 def test_tolerated_measure_then_unguarded_windowed_read_is_rejected():
     with pytest.raises(ValidationError) as exc:
         _validate({
-            "schema_version": 1,
+            "schema_version": 2,
+            "roles": _ROLES_DOC,
             "streams": {"od_1": {}},
             "blocks": [
                 _TOLERANT_MEASURE,
@@ -160,7 +168,8 @@ def test_tolerated_measure_then_unguarded_windowed_read_is_rejected():
 
 def test_tolerated_measure_guarded_by_a_count_branch_validates():
     _validate({
-        "schema_version": 1,
+        "schema_version": 2,
+        "roles": _ROLES_DOC,
         "streams": {"od_1": {}},
         "blocks": [
             _TOLERANT_MEASURE,
@@ -176,7 +185,8 @@ def test_tolerated_measure_guarded_by_a_count_branch_validates():
 def test_tolerated_measure_guarded_by_a_short_circuit_and_validates():
     """evaluate.py:85 documents this idiom; the analyzer now recognises it."""
     _validate({
-        "schema_version": 1,
+        "schema_version": 2,
+        "roles": _ROLES_DOC,
         "streams": {"od_1": {}},
         "blocks": [
             _TOLERANT_MEASURE,
@@ -189,7 +199,8 @@ def test_tolerated_measure_guarded_by_a_short_circuit_and_validates():
 def test_an_untolerated_measure_still_needs_no_guard():
     """Regression: the existing definitely-written proof must not weaken."""
     _validate({
-        "schema_version": 1,
+        "schema_version": 2,
+        "roles": _ROLES_DOC,
         "streams": {"od_1": {}},
         "blocks": [
             {"measure": {"device": "densitometer_1", "verb": "measure", "into": "od_1"}},
@@ -202,7 +213,8 @@ def test_an_untolerated_measure_still_needs_no_guard():
 def _guarded(condition, blocks=None):
     """A tolerated measure, then `condition` as a branch guard."""
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "roles": _ROLES_DOC,
         "streams": {"od_1": {}},
         "blocks": [
             _TOLERANT_MEASURE,
@@ -295,7 +307,8 @@ def test_a_branch_guard_does_not_seed_the_else_arm():
     rejected for want of a guard."""
     with pytest.raises(ValidationError) as exc:
         _validate({
-            "schema_version": 1,
+            "schema_version": 2,
+            "roles": _ROLES_DOC,
             "streams": {"od_1": {}},
             "blocks": [
                 _TOLERANT_MEASURE,
@@ -316,7 +329,8 @@ def test_a_branch_guard_does_not_leak_past_the_branch():
     inherit the `then` arm's proof."""
     with pytest.raises(ValidationError) as exc:
         _validate({
-            "schema_version": 1,
+            "schema_version": 2,
+            "roles": _ROLES_DOC,
             "streams": {"od_1": {}},
             "blocks": [
                 _TOLERANT_MEASURE,
@@ -334,7 +348,8 @@ def test_an_untolerated_measure_still_allows_a_duration_window_read():
     duration included, even though it does not strictly prove one non-empty. Rejecting it
     is a separate strictness change (design 2026-07-14 §5.2 note)."""
     _validate({
-        "schema_version": 1,
+        "schema_version": 2,
+        "roles": _ROLES_DOC,
         "streams": {"od_1": {}},
         "blocks": [
             {"measure": {"device": "densitometer_1", "verb": "measure", "into": "od_1"}},

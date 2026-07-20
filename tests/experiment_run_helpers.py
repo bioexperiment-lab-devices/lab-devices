@@ -7,6 +7,7 @@ from lab_devices.experiment.run import assign_block_ids
 from lab_devices.experiment.serialize import workflow_from_dict
 from lab_devices.experiment.state import BindingValue
 from lab_devices.experiment.workflow import Workflow
+from tests.experiment_role_helpers import auto_roles
 from tests.fakelab import FakeLab
 
 
@@ -17,13 +18,14 @@ def make_workflow(
     groups: dict[str, Any] | None = None,
     persistence: dict[str, Any] | None = None,
 ) -> Workflow:
-    doc: dict[str, Any] = {"schema_version": 1, "blocks": blocks}
+    doc: dict[str, Any] = {"schema_version": 2, "blocks": blocks}
     if streams is not None:
         doc["streams"] = streams
     if groups is not None:
         doc["groups"] = groups
     if persistence is not None:
         doc["persistence"] = persistence
+    doc["roles"] = auto_roles(doc)
     workflow = workflow_from_dict(doc)
     assign_block_ids(workflow)
     return workflow

@@ -5,7 +5,7 @@ from lab_devices.experiment.serialize import block_to_dict, workflow_from_dict
 
 
 def _wf(doc_blocks, groups=None):
-    doc = {"schema_version": 1, "blocks": doc_blocks}
+    doc = {"schema_version": 2, "roles": {"pump_1": {"type": "pump"}}, "blocks": doc_blocks}
     if groups:
         doc["groups"] = groups
     return workflow_from_dict(doc)
@@ -25,7 +25,7 @@ def test_loader_rejects_authored_id_key():
 
     with pytest.raises(WorkflowLoadError, match="exactly one type key"):
         workflow_from_dict(
-            {"schema_version": 1,
+            {"schema_version": 2, "roles": {"pump_1": {"type": "pump"}},
              "blocks": [{"command": {"device": "pump_1", "verb": "stop"}, "id": "x"}]}
         )
 
