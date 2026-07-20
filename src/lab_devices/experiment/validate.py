@@ -41,6 +41,7 @@ from lab_devices.experiment.registry import ParamSpec, lookup, mode_action
 from lab_devices.experiment.serialize import load_workflow
 from lab_devices.experiment.workflow import (
     REFERENCE_KINDS,
+    Group,
     LocalDecl,
     ParamDecl,
     Workflow,
@@ -104,6 +105,111 @@ def _check_groups(w: Workflow, out: list[Diagnostic]) -> bool:
     for name in w.groups:
         visit(name, ())
     return ok
+
+
+def _is_plain(group: Group) -> bool:
+    """A PLAIN group -- no params, no locals -- is the one expand.py lazily inlines: its
+    body is expanded once, eagerly, regardless of how many group_refs later name it."""
+    return not group.params and not group.locals
+
+
+def _body_reaches_locals_ref(w: Workflow, blocks: list[B.Block], seen: set[str]) -> bool:
+    for b in blocks:
+        if isinstance(b, B.GroupRef):
+            target = w.groups.get(b.name)
+            if target is None:
+                continue
+            if target.locals:
+                return True
+            if _is_plain(target) and _group_reaches_locals_ref(w, b.name, seen):
+                return True
+        elif isinstance(b, B.ForEach):
+            if _body_reaches_locals_ref(w, b.body, seen):
+                return True
+        elif isinstance(b, (B.Serial, B.Parallel)):
+            if _body_reaches_locals_ref(w, b.children, seen):
+                return True
+        elif isinstance(b, B.Loop):
+            if _body_reaches_locals_ref(w, b.body, seen):
+                return True
+        elif isinstance(b, B.Branch):
+            if _body_reaches_locals_ref(w, b.then, seen):
+                return True
+            if b.else_ is not None and _body_reaches_locals_ref(w, b.else_, seen):
+                return True
+    return False
+
+
+def _group_reaches_locals_ref(w: Workflow, name: str, seen: set[str]) -> bool:
+    """True if a PLAIN group's body -- transitively, through further plain group_refs it
+    lazily inlines -- reaches a group_ref naming a group that declares locals. `seen`
+    guards a group cycle (already reported by _check_groups) by treating a revisit as
+    False rather than recursing forever."""
+    if name in seen:
+        return False
+    seen.add(name)
+    group = w.groups.get(name)
+    if group is None:
+        return False
+    return _body_reaches_locals_ref(w, group.body, seen)
+
+
+def _ref_count(blocks: list[B.Block], name: str, weight: int) -> int:
+    """Occurrences of `group_ref {name}` reachable from `blocks`, weighted by every
+    enclosing for_each's row count -- known statically, since `items` is authored data,
+    not runtime-parametrized."""
+    total = 0
+    for b in blocks:
+        if isinstance(b, B.GroupRef) and b.name == name:
+            total += weight
+        if isinstance(b, B.ForEach):
+            total += _ref_count(b.body, name, weight * max(len(b.items), 1))
+        elif isinstance(b, (B.Serial, B.Parallel)):
+            total += _ref_count(b.children, name, weight)
+        elif isinstance(b, B.Loop):
+            total += _ref_count(b.body, name, weight)
+        elif isinstance(b, B.Branch):
+            total += _ref_count(b.then, name, weight)
+            if b.else_ is not None:
+                total += _ref_count(b.else_, name, weight)
+    return total
+
+
+def _check_group_reuse(w: Workflow, out: list[Diagnostic]) -> bool:
+    """A PLAIN group (no params, no locals) is lazily inlined by expand.py: its body is
+    expanded exactly ONCE, eagerly, up front -- independent of how many group_refs later
+    point at it. If that frozen body reaches a locals-bearing group_ref, the qualified
+    names and hoisted seed it produced are fixed at that single expansion; a second
+    reference to the plain group would silently replay the SAME resolved instance a
+    second time, with no duplicate-instance error to catch it (unlike a direct,
+    non-plain reference, where _open_locals's duplicate-`as` check fires live on every
+    call). Confirmed empirically: two references to such a group produce one hoisted
+    seed but two executions writing the same qualified names. Rejected here, on the
+    authored doc, before expansion (design 2026-07-20 §2.2, §6).
+
+    Scope: counts direct textual group_ref occurrences (weighted by enclosing for_each
+    row counts), not further multiplied through an enclosing group that is itself
+    referenced more than once -- that deeper chain is not the pattern confirmed above,
+    and the diagnostic on the directly-multiply-referenced group is what is actionable.
+    """
+    before = len(out)
+    for name, group in w.groups.items():
+        if not _is_plain(group) or not _group_reaches_locals_ref(w, name, set()):
+            continue
+        count = _ref_count(w.blocks, name, 1)
+        for other_name, other in w.groups.items():
+            if other_name != name:
+                count += _ref_count(other.body, name, 1)
+        if count > 1:
+            out.append(Diagnostic(
+                "group", f"groups[{name!r}]",
+                f"plain group {name!r} is referenced {count} times, but its body resolves "
+                f"a group-local instance; a param-less group's body is expanded once and "
+                f"reused verbatim, so every reference beyond the first would alias the "
+                f"same instance. Give {name!r} params so each call gets its own expansion, "
+                f"or reference it exactly once (design 2026-07-20 §2.2, §6)",
+            ))
+    return len(out) == before
 
 
 def _uses_macros(w: Workflow) -> bool:
@@ -1260,9 +1366,12 @@ def _validate_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
 def _validate_macro_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
     """Gate the authored (templated) doc, then expand and run every concrete check on
     the expansion. The authored blocks (holes, for_each, parametrized group_refs) never
-    reach the concrete checks — only `_check_groups` and `_check_declarations` see
-    them; `_validate_workflow` below only ever sees the macro-free `expanded` doc."""
+    reach the concrete checks — only `_check_groups`, `_check_group_reuse` and
+    `_check_declarations` see them; `_validate_workflow` below only ever sees the
+    macro-free `expanded` doc."""
     expandable = _check_groups(workflow, out)
+    if expandable:  # _check_group_reuse walks the group graph; only sound once acyclic
+        expandable = _check_group_reuse(workflow, out) and expandable
     expandable = _check_declarations(workflow, out) and expandable
     if not expandable:
         _check_defaults(workflow, out)
