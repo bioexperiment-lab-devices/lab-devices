@@ -70,7 +70,8 @@ def test_container_children_trace_through():
 def test_parametrized_group_ref_body_traces_into_the_groups_dict():
     wf = {
         "schema_version": 1,
-        "groups": {"service": {"params": ["tube"], "body": [{"wait": {"duration": "{tube}s"}}]}},
+        "groups": {"service": {"params": [{"name": "tube", "kind": "int"}],
+                               "body": [{"wait": {"duration": "{tube}s"}}]}},
         "blocks": [{"group_ref": {"name": "service", "args": {"tube": 1}}}],
     }
     expanded, trace = expand_dict_traced(wf)
@@ -85,7 +86,7 @@ def test_nested_for_each_inside_a_parametrized_group_traces_to_the_group_body():
         "schema_version": 1,
         "groups": {
             "svc": {
-                "params": ["tube"],
+                "params": [{"name": "tube", "kind": "int"}],
                 "body": [
                     {
                         "for_each": {

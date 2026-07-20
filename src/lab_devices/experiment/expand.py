@@ -1,4 +1,4 @@
-"""for_each / parametrized-group expansion (design 2026-07-15 §4)."""
+"""for_each / parametrized-group expansion (design 2026-07-15 §4, 2026-07-20 §3)."""
 
 from __future__ import annotations
 
@@ -12,9 +12,16 @@ from lab_devices.experiment.serialize import (
     workflow_from_dict,
     workflow_to_dict,
 )
-from lab_devices.experiment.workflow import Workflow
+from lab_devices.experiment.workflow import REFERENCE_KINDS, VALUE_KINDS, Workflow
+
+# name -> (kind, value). Reference kinds carry the resolved NAME as a str.
+Env = dict[str, tuple[str, Any]]
 
 _HOLE_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+# Mirrors validate.py:256. Not imported: validate.py imports expand.py, so the dependency
+# would be circular.
+_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+_ALL_KINDS = VALUE_KINDS | REFERENCE_KINDS
 _EXPANSION_CAP = 10_000
 _MAX_DEPTH = 64
 _CHILD_LISTS: dict[str, tuple[str, ...]] = {
@@ -34,17 +41,105 @@ def _fmt(value: Any) -> str:
     return str(value)
 
 
-def _interpolate(text: str, env: dict[str, Any]) -> str:
+def _ident(value: Any) -> bool:
+    return isinstance(value, str) and _IDENT_RE.fullmatch(value) is not None
+
+
+def _kind_ok(kind: str, value: Any) -> bool:
+    """JSON type of `value` against `kind` (design 2026-07-20 §2)."""
+    if kind == "bool":
+        return isinstance(value, bool)
+    if kind == "int":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if kind == "number":
+        return isinstance(value, int | float) and not isinstance(value, bool)
+    return isinstance(value, str)  # "string" and every reference kind carry a str
+
+
+def _decls(raw: Any, where: str) -> list[tuple[str, str]]:
+    """Read a `params`/`vars` list of ParamDecl objects into ordered (name, kind) pairs.
+
+    expand_dict runs on raw JSON, before workflow_from_dict, so it cannot reuse the
+    ParamDecl parsing in serialize.py -- it needs its own tolerant read of the same shape.
+    """
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise WorkflowLoadError(f"{where} must be a list of declarations")
+    out: list[tuple[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise WorkflowLoadError(f"{where} entries must be objects, got {item!r}")
+        name, kind = item.get("name"), item.get("kind")
+        if not isinstance(name, str) or not isinstance(kind, str) or kind not in _ALL_KINDS:
+            raise WorkflowLoadError(f"{where} entry {item!r} needs a 'name' and a valid 'kind'")
+        out.append((name, kind))
+    return out
+
+
+def _bind(decls: list[tuple[str, str]], supplied: dict[str, Any], where: str) -> Env:
+    """Exact-name match plus a per-cell kind check. Shared by group args and for_each rows.
+
+    Checks missing names before extra names: a call site that both omits a declared
+    param and supplies an unrelated one should be told about the declared one it owes,
+    not merely that the unrelated one is unwelcome.
+    """
+    env: Env = {}
+    for name, kind in decls:
+        if name not in supplied:
+            raise WorkflowLoadError(f"{where}: missing {name!r} (kind {kind!r})")
+        value = supplied[name]
+        if not _kind_ok(kind, value):
+            raise WorkflowLoadError(f"{where}: {name!r} expects kind {kind!r}, got {value!r}")
+        env[name] = (kind, value)
+    declared = [n for n, _ in decls]
+    extra = sorted(set(supplied) - set(declared))
+    if extra:
+        raise WorkflowLoadError(f"{where}: unknown name {extra[0]!r}; declared {declared}")
+    return env
+
+
+_IDENT_CHAR_RE = re.compile(r"[A-Za-z0-9_]")
+
+
+def _glued(text: str, m: re.Match[str]) -> bool:
+    """True if a hole abuts identifier text, i.e. it would manufacture a name instead of
+    referring to a declared one. `count({od}, last=5)` is fine -- `(` and `,` delimit it;
+    `od_{od}` and `{od}_raw` are not (design 2026-07-20 §3)."""
+    before = text[m.start() - 1] if m.start() > 0 else ""
+    after = text[m.end()] if m.end() < len(text) else ""
+    return bool(_IDENT_CHAR_RE.match(before) or _IDENT_CHAR_RE.match(after))
+
+
+def _interpolate(text: str, env: Env) -> Any:
+    """Substitute holes in one string (design 2026-07-20 §3). May return a non-string."""
+    whole = _HOLE_RE.fullmatch(text)
+    if whole is not None:
+        name = whole.group(1)
+        if name not in env:
+            return text  # leave for an outer for_each/args pass, or the residual scan
+        kind, value = env[name]
+        if kind in VALUE_KINDS:
+            return value  # typed JSON value: an int stays an int (design §3.1)
+        return value  # reference kinds already carry the resolved name as a str
+
     def sub(m: re.Match[str]) -> str:
         name = m.group(1)
         if name not in env:
-            return m.group(0)  # leave for an outer for_each/args pass, or the residual scan
-        return _fmt(env[name])
+            return m.group(0)  # order-independence: not ours to bind
+        kind, value = env[name]
+        if kind in REFERENCE_KINDS and _glued(text, m):
+            raise WorkflowLoadError(
+                f"{kind} param {name!r} may not be concatenated with adjacent identifier text "
+                f"in {text!r}: a reference must occupy a whole identifier "
+                f"(design 2026-07-20 §3)"
+            )
+        return _fmt(value)
 
     return _HOLE_RE.sub(sub, text)
 
 
-def _substitute(node: Any, env: dict[str, Any]) -> Any:
+def _substitute(node: Any, env: Env) -> Any:
     """Deep-copy a JSON node, interpolating every string against env."""
     if isinstance(node, str):
         return _interpolate(node, env)
@@ -92,19 +187,30 @@ def _type_key(block: Any) -> str | None:
     return keys[0] if len(keys) == 1 else None
 
 
-def _envs(body: dict[str, Any]) -> list[dict[str, Any]]:
+def _infer_kind(value: Any) -> str:
+    """TEMPORARY bridge for the untyped for_each shorthand. Task 6 deletes this with `_envs`."""
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "number"
+    return "string"
+
+
+def _envs(body: dict[str, Any]) -> list[Env]:
     var = body.get("var")
     raw = body.get("in")
     if not isinstance(raw, list) or not raw:
         raise WorkflowLoadError("for_each 'in' must be a non-empty list")
-    out: list[dict[str, Any]] = []
+    out: list[Env] = []
     if var is not None:
         if not isinstance(var, str):
             raise WorkflowLoadError("for_each 'var' must be a string")
         for item in raw:
             if isinstance(item, dict):
                 raise WorkflowLoadError("for_each with 'var' requires scalar items")
-            out.append({var: item})
+            out.append({var: (_infer_kind(item), item)})
         return out
     keyset: set[str] | None = None
     for item in raw:
@@ -114,7 +220,7 @@ def _envs(body: dict[str, Any]) -> list[dict[str, Any]]:
             keyset = set(item)
         elif set(item) != keyset:
             raise WorkflowLoadError("for_each object items must share one key set")
-        out.append(dict(item))
+        out.append({k: (_infer_kind(v), v) for k, v in item.items()})
     return out
 
 
@@ -223,20 +329,18 @@ def _expand_group_ref(
     raw_args = body.get("args")
     args: dict[str, Any] = raw_args if isinstance(raw_args, dict) else {}
     group = groups.get(name) if isinstance(name, str) else None
-    params = list(group.get("params", [])) if isinstance(group, dict) else []
-    if not params and not args:
+    gdict: dict[str, Any] = group if isinstance(group, dict) else {}
+    decls = _decls(gdict.get("params"), f"group {name!r} params")
+    if not decls and not args:
         trace[f"{dst}[{base}]"] = src
         return [block]  # plain group_ref: preserve the node (lazy inline)
     if group is None:
         raise WorkflowLoadError(f"group_ref {name!r}: unknown group")
-    if set(args) != set(params):
-        raise WorkflowLoadError(
-            f"group_ref {name!r}: args {sorted(args)} must match params {sorted(params)}"
-        )
+    env = _bind(decls, args, f"group_ref {name!r} args")
     raw_body = group.get("body", [])
     if not isinstance(raw_body, list):
         raise WorkflowLoadError(f"group {name!r} body must be a list")
-    substituted = [_substitute(b, dict(args)) for b in raw_body]
+    substituted = [_substitute(b, env) for b in raw_body]
     trace[f"{dst}[{base}]"] = src
     inlined = _expand_blocks(
         substituted, groups, counter, depth + 1, trace,
