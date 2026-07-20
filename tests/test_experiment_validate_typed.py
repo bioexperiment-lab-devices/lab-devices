@@ -115,6 +115,15 @@ def test_for_each_rows_matching_the_declaration_are_clean():
     assert validate(w) is None
 
 
+def test_for_each_vars_must_be_non_empty():
+    w = wf2([_fe([], [{}])])
+    d = diags(w)
+    assert any(
+        x.category == "for_each" and "for_each 'vars' must be non-empty" in x.message
+        for x in d
+    )
+
+
 def test_int_param_rejects_a_float_literal():
     w = wf2(
         [{"group_ref": {"name": "svc", "args": {"tube": 1.5}}}],
@@ -299,6 +308,37 @@ def test_hole_arg_role_device_type_must_agree():
                for m in messages(w))
 
 
+def test_int_var_binding_a_number_param_is_clean():
+    # An int IS a number: _value_matches already accepts the literal `2` in a number slot
+    # (see test_number_param_accepts_an_int_literal), so the hole form must widen the same
+    # way -- design ruling 2026-07-20.
+    groups = _svc([{"name": "dose", "kind": "number"}])
+    w = wf2(
+        [_fe([{"name": "t", "kind": "int"}],
+             [{"t": 1}],
+             [{"group_ref": {"name": "svc", "args": {"dose": "{t}"}}}])],
+        groups=groups,
+    )
+    assert validate(w) is None
+
+
+def test_int_var_binding_a_string_param_is_still_diagnosed():
+    # The int -> number widening must not spill over into unrelated kinds.
+    groups = _svc([{"name": "label", "kind": "string"}])
+    w = wf2(
+        [_fe([{"name": "t", "kind": "int"}],
+             [{"t": 1}],
+             [{"group_ref": {"name": "svc", "args": {"label": "{t}"}}}])],
+        groups=groups,
+    )
+    d = diags(w)
+    assert any(
+        x.category == "params"
+        and "int variable 't' cannot bind a string parameter" in x.message
+        for x in d
+    )
+
+
 def test_embedded_hole_in_a_reference_arg_is_rejected():
     groups = _svc([{"name": "od", "kind": "stream"}])
     w = wf2(
@@ -349,6 +389,31 @@ def test_reserved_param_name_is_rejected():
         groups=_svc([{"name": "not", "kind": "int"}]),
     )
     assert any("declared name 'not' is reserved" in m for m in messages(w))
+
+
+def test_non_identifier_param_name_is_rejected():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"9lives": 1}}}],
+        groups=_svc([{"name": "9lives", "kind": "int"}]),
+    )
+    d = diags(w)
+    assert any(
+        x.category == "declaration" and "declared name '9lives' is not an identifier" in x.message
+        for x in d
+    )
+
+
+def test_non_identifier_local_name_is_rejected():
+    groups = {"svc": {
+        "locals": {"9lives": {"kind": "binding", "init": "0"}},
+        "body": [STOP_PUMP],
+    }}
+    w = wf2([{"group_ref": {"name": "svc", "as": "t1"}}], groups=groups)
+    d = diags(w)
+    assert any(
+        x.category == "declaration" and "declared name '9lives' is not an identifier" in x.message
+        for x in d
+    )
 
 
 def test_duplicate_for_each_var_name_is_rejected():

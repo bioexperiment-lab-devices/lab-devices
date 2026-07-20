@@ -81,6 +81,37 @@ def test_plain_group_reused_via_another_plain_group_is_rejected():
     )
 
 
+def test_plain_group_referenced_twice_through_a_parametrized_intermediate_is_rejected():
+    # wash(plain) -> group_ref mid{n:1}; mid(params n) -> group_ref svc as t1; svc(locals c).
+    # Reachability must traverse the PARAMETRIZED "mid" hop, not just plain intermediates:
+    # mid's args are fixed as authored inside wash's single frozen expansion, so the hazard
+    # is identical to a direct plain -> locals-bearing chain.
+    groups = {
+        "wash": {"body": [{"group_ref": {"name": "mid", "args": {"n": 1}}}]},
+        "mid": {
+            "params": [{"name": "n", "kind": "int"}],
+            "body": [{"group_ref": {"name": "svc", "as": "t1", "args": {}}}],
+        },
+        "svc": _LOCALS_BEARING_SVC,
+    }
+    d = diags(wf(
+        [{"group_ref": {"name": "wash"}}, {"group_ref": {"name": "wash"}}],
+        groups=groups,
+    ))
+    assert any(
+        x.category == "group" and "plain group 'wash' is referenced 2 times" in x.message
+        for x in d
+    )
+
+
+def test_plain_group_ref_inside_an_uncalled_group_does_not_inflate_the_count():
+    # "unused" is never referenced from `blocks` or from any group reachable from `blocks`,
+    # so its own group_ref to "wash" must not count toward wash's reuse total.
+    groups = {**_wash_groups(), "unused": {"body": [{"group_ref": {"name": "wash"}}]}}
+    w = wf([{"group_ref": {"name": "wash"}}], groups=groups)
+    assert validate(w) is None
+
+
 def test_a_non_plain_group_may_be_referenced_many_times():
     # A group with params re-substitutes fresh at every call site, so the existing live
     # duplicate-`as` check in expand._open_locals is what guards it, not this check.

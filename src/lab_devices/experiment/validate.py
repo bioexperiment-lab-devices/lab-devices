@@ -121,7 +121,13 @@ def _body_reaches_locals_ref(w: Workflow, blocks: list[B.Block], seen: set[str])
                 continue
             if target.locals:
                 return True
-            if _is_plain(target) and _group_reaches_locals_ref(w, b.name, seen):
+            # Recurse regardless of whether `target` is plain: a PARAMETRIZED
+            # intermediate's body is substituted with fixed args as part of the
+            # enclosing plain group's single eager expansion, so a locals-bearing ref
+            # nested past it is just as much a hazard as one nested past another plain
+            # group (fixed 2026-07-20; previously gated on `_is_plain(target)`, which
+            # missed the plain -> parametrized -> locals-bearing chain entirely).
+            if _group_reaches_locals_ref(w, b.name, seen):
                 return True
         elif isinstance(b, B.ForEach):
             if _body_reaches_locals_ref(w, b.body, seen):
@@ -141,10 +147,10 @@ def _body_reaches_locals_ref(w: Workflow, blocks: list[B.Block], seen: set[str])
 
 
 def _group_reaches_locals_ref(w: Workflow, name: str, seen: set[str]) -> bool:
-    """True if a PLAIN group's body -- transitively, through further plain group_refs it
-    lazily inlines -- reaches a group_ref naming a group that declares locals. `seen`
-    guards a group cycle (already reported by _check_groups) by treating a revisit as
-    False rather than recursing forever."""
+    """True if the group named `name`'s body -- transitively, through further group_refs
+    it contains, whether those name plain or parametrized groups -- reaches a group_ref
+    naming a group that declares locals. `seen` guards a group cycle (already reported by
+    _check_groups) by treating a revisit as False rather than recursing forever."""
     if name in seen:
         return False
     seen.add(name)
@@ -175,6 +181,23 @@ def _ref_count(blocks: list[B.Block], name: str, weight: int) -> int:
     return total
 
 
+def _reachable_groups(w: Workflow) -> set[str]:
+    """Group names reachable from top-level `blocks`, directly or transitively through the
+    body of another reachable group. A group nobody ever calls can never actually alias
+    anything at runtime, so `_check_group_reuse` must not count group_refs that live only
+    inside one (design 2026-07-20 §2.2, §6)."""
+    seen: set[str] = set()
+
+    def visit(blocks: list[B.Block]) -> None:
+        for _, b in _iter_blocks(blocks, ""):
+            if isinstance(b, B.GroupRef) and b.name in w.groups and b.name not in seen:
+                seen.add(b.name)
+                visit(w.groups[b.name].body)
+
+    visit(w.blocks)
+    return seen
+
+
 def _check_group_reuse(w: Workflow, out: list[Diagnostic]) -> bool:
     """A PLAIN group (no params, no locals) is lazily inlined by expand.py: its body is
     expanded exactly ONCE, eagerly, up front -- independent of how many group_refs later
@@ -187,18 +210,28 @@ def _check_group_reuse(w: Workflow, out: list[Diagnostic]) -> bool:
     seed but two executions writing the same qualified names. Rejected here, on the
     authored doc, before expansion (design 2026-07-20 §2.2, §6).
 
-    Scope: counts direct textual group_ref occurrences (weighted by enclosing for_each
-    row counts), not further multiplied through an enclosing group that is itself
-    referenced more than once -- that deeper chain is not the pattern confirmed above,
-    and the diagnostic on the directly-multiply-referenced group is what is actionable.
+    Scope: counts direct textual group_ref occurrences (weighted by enclosing for_each row
+    counts) that live in `blocks` or in the body of a group REACHABLE from `blocks` --
+    reachability is traversed through plain and parametrized intermediates alike, at any
+    depth (fixed 2026-07-20: this previously stopped at the first parametrized hop, and
+    separately counted refs inside groups nobody ever calls). It is NOT further multiplied
+    through an ENCLOSING group that is itself referenced more than once -- e.g. a plain
+    `wash` referenced once inside a PARAMETRIZED `svc`, with `svc` itself referenced twice,
+    is not flagged, even though `svc`'s two calls replay `wash`'s single frozen expansion
+    twice. That deeper chain needs call-graph multiplicity, not just reachability, and the
+    diagnostic on the directly-multiply-referenced group is what is actionable today.
+    Mutually-exclusive `branch` arms (`then` and `else`) are also both counted even though
+    only one ever runs at a time -- conservative but safe, since correcting it needs path
+    analysis this check does not do.
     """
     before = len(out)
+    reachable = _reachable_groups(w)
     for name, group in w.groups.items():
         if not _is_plain(group) or not _group_reaches_locals_ref(w, name, set()):
             continue
         count = _ref_count(w.blocks, name, 1)
         for other_name, other in w.groups.items():
-            if other_name != name:
+            if other_name != name and other_name in reachable:
                 count += _ref_count(other.body, name, 1)
         if count > 1:
             out.append(Diagnostic(
@@ -239,6 +272,30 @@ def _value_matches(kind: str, value: object) -> bool:
     if kind == "int":
         return isinstance(value, int)
     return isinstance(value, (int, float))
+
+
+# One representative value per value kind, used to derive hole-kind agreement FROM
+# `_value_matches` itself (below) rather than hand-writing a second, driftable rule.
+_VALUE_KIND_SAMPLES: dict[str, tuple[object, ...]] = {
+    "bool": (True, False),
+    "string": ("",),
+    "int": (0, 1, -1),
+    "number": (0, 1, 0.5),
+}
+
+
+def _hole_kind_binds(inner: ParamDecl, decl: ParamDecl) -> bool:
+    """May a `{name}` hole declared `inner` (a group param or for_each var) bind a slot
+    declared `decl` (design 2026-07-20 §3)? Reference kinds (role/stream/binding) never
+    widen -- a reference names one specific thing, not a value with a shape -- and `role`
+    additionally requires equal `device_type`. A value kind widens exactly as far as
+    `_value_matches` already accepts the equivalent literal in the same slot: every sample
+    value of `inner`'s kind must be `_value_matches`-legal for `decl`'s kind, e.g. `int`'s
+    samples are all accepted where `number` is declared (an int IS a number), but not
+    where `string` or `int` alone (a `number` sample like `0.5` fails) is declared."""
+    if decl.kind in REFERENCE_KINDS or inner.kind in REFERENCE_KINDS:
+        return inner.kind == decl.kind and inner.device_type == decl.device_type
+    return all(_value_matches(decl.kind, v) for v in _VALUE_KIND_SAMPLES[inner.kind])
 
 
 def _check_role_arg(
@@ -301,7 +358,7 @@ def _check_typed_arg(
             inner = env.get(whole.group(1))
             if inner is None:
                 return  # bound by nothing in scope: the residual-hole scan is the backstop
-            if inner.kind != decl.kind or inner.device_type != decl.device_type:
+            if not _hole_kind_binds(inner, decl):
                 out.append(Diagnostic(
                     "params", ctx,
                     f"{_kind_text(inner)} variable {inner.name!r} cannot bind a "
