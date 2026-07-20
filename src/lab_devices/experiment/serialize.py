@@ -263,7 +263,12 @@ def _group_ref(body: Any, timing: dict[str, Any], roles: dict[str, RoleDecl]) ->
     args = body.get("args", {})
     if not isinstance(args, dict):
         raise WorkflowLoadError("group_ref args must be an object")
-    return B.GroupRef(name=_req(body, "name", "group_ref"), args=dict(args), **timing)
+    as_ = body.get("as")
+    if as_ is not None:
+        as_ = _str(as_, "group_ref as")
+    return B.GroupRef(
+        name=_req(body, "name", "group_ref"), args=dict(args), as_=as_, **timing
+    )
 
 
 def _for_each(body: Any, timing: dict[str, Any], roles: dict[str, RoleDecl]) -> B.Block:
@@ -371,6 +376,8 @@ def _dump_body(b: B.Block) -> tuple[str, dict[str, Any]]:
         return "branch", body
     if isinstance(b, B.GroupRef):
         body = {"name": b.name}
+        if b.as_ is not None:
+            body["as"] = b.as_
         if b.args:
             body["args"] = dict(b.args)
         return "group_ref", body

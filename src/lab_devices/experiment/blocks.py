@@ -96,6 +96,7 @@ class Branch(BlockBase):
 class GroupRef(BlockBase):
     name: str
     args: dict[str, ValueExpr] = field(default_factory=dict)
+    as_: str | None = None  # instance name; required iff the group declares locals (§6)
 
 
 @dataclass(kw_only=True)
