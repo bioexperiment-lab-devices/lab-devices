@@ -9,6 +9,7 @@ from lab_devices.experiment.blocks import Block, Retry
 from lab_devices.experiment.errors import UnknownRoleError
 
 ParamKind = Literal["int", "number", "bool", "string", "role", "stream", "binding"]
+LocalKind = Literal["stream", "binding"]
 
 VALUE_KINDS: frozenset[str] = frozenset({"int", "number", "bool", "string"})
 REFERENCE_KINDS: frozenset[str] = frozenset({"role", "stream", "binding"})
@@ -46,7 +47,7 @@ class ParamDecl:
 class LocalDecl:
     """A stream or binding a group owns (design 2026-07-20 §2.2)."""
 
-    kind: Literal["stream", "binding"]
+    kind: LocalKind
     init: str | None = None          # constant expression; binding-kind only
     units: str | None = None         # stream-kind only
     persistence: str | None = None   # stream-kind only

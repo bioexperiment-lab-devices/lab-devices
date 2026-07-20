@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Callable, Literal, cast
+from typing import Any, Callable, cast
 
 from lab_devices.experiment import blocks as B
 from lab_devices.experiment.durations import parse_duration
@@ -17,6 +17,7 @@ from lab_devices.experiment.workflow import (
     Defaults,
     Group,
     LocalDecl,
+    LocalKind,
     Metadata,
     ParamDecl,
     ParamKind,
@@ -33,6 +34,7 @@ _PARAM_KINDS: frozenset[str] = VALUE_KINDS | REFERENCE_KINDS
 _PARAM_DECL_KEYS = frozenset({"name", "kind", "device_type"})
 _LOCAL_DECL_KEYS = frozenset({"kind", "init", "units", "persistence"})
 _LOCAL_KINDS = ("stream", "binding")
+_ROLE_DECL_KEYS = frozenset({"type", "device"})
 
 
 def _req(body: Any, key: str, ctx: str) -> Any:
@@ -97,6 +99,15 @@ def _checked_duration(value: Any, ctx: str) -> str:
     except ValueError as exc:
         raise WorkflowLoadError(f"{ctx}: {exc}") from exc
     return text
+
+
+def _checked_device_type(value: Any, ctx: str) -> str:
+    dtype = _str(value, ctx)
+    if dtype not in DEVICE_TYPES:
+        raise WorkflowLoadError(
+            f"{ctx}: unknown device type {dtype!r}; known types are {sorted(DEVICE_TYPES)}"
+        )
+    return dtype
 
 
 def _checked_params(body: Any, ctx: str) -> dict[str, Any]:
@@ -424,12 +435,7 @@ def _param_decls(raw: Any, ctx: str) -> list[ParamDecl]:
                 raise WorkflowLoadError(
                     f"{ctx} param {name!r}: kind 'role' requires 'device_type'"
                 )
-            dtype = _str(dtype, f"{ctx} param {name!r} device_type")
-            if dtype not in DEVICE_TYPES:
-                raise WorkflowLoadError(
-                    f"{ctx} param {name!r}: unknown device type {dtype!r}; known types "
-                    f"are {sorted(DEVICE_TYPES)}"
-                )
+            dtype = _checked_device_type(dtype, f"{ctx} param {name!r}")
         elif dtype is not None:
             raise WorkflowLoadError(
                 f"{ctx} param {name!r}: 'device_type' is only allowed on kind 'role'"
@@ -472,7 +478,7 @@ def _local_decls(raw: Any, ctx: str) -> dict[str, LocalDecl]:
             if persistence is not None:
                 persistence = _str(persistence, f"{where} persistence")
         out[name] = LocalDecl(
-            kind=cast("Literal['stream', 'binding']", kind), init=init, units=units,
+            kind=cast(LocalKind, kind), init=init, units=units,
             persistence=persistence,
         )
     return out
@@ -515,16 +521,15 @@ def workflow_from_dict(d: Any) -> Workflow:
     # inside the Workflow(...) call, as blocks were, that type would not exist yet.
     roles: dict[str, RoleDecl] = {}
     for name, rv in _obj(d.get("roles", {}), "roles").items():
-        r = _obj(rv, f"role {name!r}")
-        rtype = _str(_req(r, "type", f"role {name!r}"), f"role {name!r} type")
-        if rtype not in DEVICE_TYPES:
-            raise WorkflowLoadError(
-                f"role {name!r}: unknown device type {rtype!r}; known types are "
-                f"{sorted(DEVICE_TYPES)}"
-            )
+        where = f"role {name!r}"
+        r = _obj(rv, where)
+        unknown = sorted(set(r) - _ROLE_DECL_KEYS)
+        if unknown:
+            raise WorkflowLoadError(f"{where}: unknown key(s) {unknown}")
+        rtype = _checked_device_type(_req(r, "type", where), where)
         device = r.get("device")
         if device is not None:
-            device = _str(device, f"role {name!r} device")
+            device = _str(device, f"{where} device")
         roles[name] = RoleDecl(type=rtype, device=device)
     streams: dict[str, StreamDecl] = {}
     for name, sv in _obj(d.get("streams", {}), "streams").items():

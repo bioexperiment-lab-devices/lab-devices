@@ -92,6 +92,17 @@ def test_unknown_role_device_type_is_a_load_error():
         })
 
 
+def test_role_declaration_with_an_unknown_key_is_a_load_error():
+    """A typo'd plural like 'devices' must not silently drop the device binding -- the
+    same trap _param_decls and _local_decls already guard against."""
+    with pytest.raises(WorkflowLoadError, match="unknown key"):
+        workflow_from_dict({
+            "schema_version": 2,
+            "roles": {"medium_pump": {"type": "pump", "devices": "pump_2"}},
+            "blocks": [],
+        })
+
+
 def test_typed_group_params_parse_in_authoring_order():
     w = workflow_from_dict({
         "schema_version": 2,
