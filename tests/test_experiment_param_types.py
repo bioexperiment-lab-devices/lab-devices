@@ -100,3 +100,16 @@ def test_value_kind_samples_stay_total_over_value_kinds():
 
     assert set(_VALUE_KIND_SAMPLES) == VALUE_KINDS
     assert all(_VALUE_KIND_SAMPLES.values())
+
+
+def test_typed_declaration_model_is_publicly_exported():
+    """The typed-declaration names a programmatic (non-Studio) builder needs are reachable
+    from the package namespace and listed in __all__, like their siblings Group/Workflow/
+    StreamDecl. Group.params is list[ParamDecl], so a user inspecting a loaded Group meets a
+    type they must be able to name publicly."""
+    import lab_devices.experiment as e
+
+    for name in ("ParamDecl", "LocalDecl", "RoleDecl", "UnknownRoleError"):
+        assert hasattr(e, name), f"{name} is not exported from lab_devices.experiment"
+        assert name in e.__all__, f"{name} is missing from __all__"
+    assert issubclass(e.UnknownRoleError, e.WorkflowLoadError)
