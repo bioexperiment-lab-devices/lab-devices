@@ -100,15 +100,24 @@ def _bind(decls: list[tuple[str, str]], supplied: dict[str, Any], where: str) ->
 
 
 _IDENT_CHAR_RE = re.compile(r"[A-Za-z0-9_]")
+# Only used by _glued, which only ever runs on reference-kind holes: there, a neighbouring
+# "{" or "}" is itself glue (see docstring below), so it joins the identifier-char class.
+_IDENT_OR_BRACE_RE = re.compile(r"[A-Za-z0-9_{}]")
 
 
 def _glued(text: str, m: re.Match[str]) -> bool:
     """True if a hole abuts identifier text, i.e. it would manufacture a name instead of
     referring to a declared one. `count({od}, last=5)` is fine -- `(` and `,` delimit it;
-    `od_{od}` and `{od}_raw` are not (design 2026-07-20 §3)."""
+    `od_{od}` and `{od}_raw` are not (design 2026-07-20 §3).
+
+    Only called for reference-kind holes. Adjacency is judged in the AUTHORED text, before
+    substitution -- so a neighbouring hole never shows up as an identifier character, it
+    shows up as `{` or `}`. Left unhandled, `"{od}{other}"` would pass this check and, after
+    both holes are substituted, manufacture `od_1od_2` -- exactly the name-surgery this rule
+    exists to forbid. So for this reference-kind check, `{` and `}` count as glue too."""
     before = text[m.start() - 1] if m.start() > 0 else ""
     after = text[m.end()] if m.end() < len(text) else ""
-    return bool(_IDENT_CHAR_RE.match(before) or _IDENT_CHAR_RE.match(after))
+    return bool(_IDENT_OR_BRACE_RE.match(before) or _IDENT_OR_BRACE_RE.match(after))
 
 
 def _interpolate(text: str, env: Env) -> Any:

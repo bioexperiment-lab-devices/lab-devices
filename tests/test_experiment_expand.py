@@ -39,6 +39,19 @@ def test_reference_hole_glued_to_identifier_text_is_a_load_error():
             _substitute({"into": glued}, env)
 
 
+def test_reference_hole_glued_to_an_adjacent_hole_is_a_load_error():
+    # design 2026-07-20 SS3: adjacency is judged AFTER substitution, not before. In the
+    # authored text the character beside a hole is always "{" or "}", never an identifier
+    # character, so a check that only inspected the authored string would let two adjacent
+    # holes through and manufacture exactly the name this rule forbids, e.g.
+    # "{od}{b}" -> "od_1od_2". For a reference-kind hole, "{" and "}" count as glue too.
+    env = {"od": ("stream", "od_1"), "b": ("stream", "od_2"), "n": ("int", 11),
+           "pre": ("string", "od_")}
+    for glued in ("{od}{b}", "{od}{n}", "{pre}{od}"):
+        with pytest.raises(WorkflowLoadError, match="whole identifier"):
+            _substitute({"into": glued}, env)
+
+
 def test_reference_hole_inside_an_expression_is_legal():
     # The rule forbids CONCATENATION, not embedding: a stream reference legitimately sits
     # inside a larger expression string, which is where most of them live (design §3).

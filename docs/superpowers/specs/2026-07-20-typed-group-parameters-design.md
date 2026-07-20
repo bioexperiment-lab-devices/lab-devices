@@ -177,7 +177,14 @@ eager parsing when `'{' in text` (Increment 7, §4.1) — so this adds no new de
   "count({od}, last=11min) > 0"         legal — delimited by "(" and ","
   "od_{od}"                             load error — glued to a leading "od_"
   "{od}_raw"                            load error — glued to a trailing "_raw"
+  "{od}{other}"                         load error — glued to an adjacent hole
   ```
+
+  **Adjacency is judged after substitution, not before.** A neighbouring hole counts as glue:
+  in the authored text the character beside `{od}` is `{` or `}`, never an identifier character,
+  so a rule that only inspected the authored string would let `"{od}{other}"` through and
+  manufacture `od_1od_2` — precisely the name-surgery this forbids. For a reference-kind hole,
+  treat `{` and `}` as identifier characters too.
 
   Stating the rule as "the entire string" would be wrong: a reference legitimately appears
   *inside* a larger expression string, which is exactly where most stream references live. What
