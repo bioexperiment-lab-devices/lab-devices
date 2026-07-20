@@ -232,22 +232,8 @@ class Answers:
 def load(name: str) -> Any:
     doc = json.loads((EXAMPLES / name).read_text())
     workflow = json.loads(json.dumps(doc["workflow"]))
-    workflow = expand_dict(workflow)  # for_each / service(tube) -> concrete roles
-    _substitute(workflow["blocks"])
+    workflow = expand_dict(workflow)  # for_each / service(tube, od) -> concrete instances
     return doc, workflow_from_dict(workflow)
-
-
-def _substitute(blocks: list[Any]) -> None:
-    """Role name -> device id, mirroring experiment_studio.roles.substitute."""
-    for block in blocks:
-        for key, body in block.items():
-            if key in ("label", "gap_after", "start_offset", "retry", "on_error"):
-                continue
-            if key in ("command", "measure"):
-                body["device"] = MAPPING[body["device"]]
-            for child in ("children", "body", "then", "else"):
-                if isinstance(body.get(child), list):
-                    _substitute(body[child])
 
 
 @pytest.mark.parametrize("name", ["morbidostat.json", "morbidostat-demo-speed.json"])
@@ -255,11 +241,17 @@ def test_example_loads_and_validates(name: str) -> None:
     """Both shipped docs survive engine load + validation (ExperimentRun validates in ctor)."""
     doc, workflow = load(name)
     assert doc["doc_version"] == 1
-    assert set(doc["roles"]) == set(MAPPING)
+    assert doc["workflow"]["schema_version"] == 2
+    assert "roles" not in doc, "roles moved into the workflow (design 2026-07-20 §5.1)"
+    assert set(workflow.roles) == set(MAPPING)
+    assert workflow.role_type("od_meter_1") == "densitometer"
+    assert workflow.role_type("drug_pump") == "pump"
     clock = FakeClock()
     lab = CultureLab(clock, {1: 0.05, 2: 0.05, 3: 0.05})
     client = LabClient("lab", 9000, http=_http(lab))
-    ExperimentRun(client, workflow, options=RunOptions(clock=clock))  # validate() in __init__
+    ExperimentRun(  # validate() in __init__
+        client, workflow, options=RunOptions(clock=clock, role_mapping=MAPPING)
+    )
 
 
 @pytest.mark.parametrize("name", ["morbidostat.json", "morbidostat-demo-speed.json"])
@@ -279,50 +271,97 @@ def test_example_declares_its_fault_tolerance(name: str) -> None:
     assert [b["measure"]["verb"] for b in blanks] == ["measure_blank"] * 3
     assert all("on_error" not in b for b in blanks), "a failed blank must stop the run"
 
-    # after the working-volume compute, one for_each(c_tube/contaminated_tube/alarmed_tube)
-    # seed, and the emergency_stop operator_input
-    ratchet = setup[13]["loop"]
+    # after the working-volume compute and the emergency_stop operator_input. The old
+    # for_each seeding c/contaminated/alarmed is GONE — `locals.init` hoists those nine
+    # computes to the front of blocks (test_group_local_seeds_are_hoisted).
+    ratchet = setup[12]["loop"]
+    assert not any("for_each" in b for b in setup[:12]), "no hand-written seeds survive"
     # The two whole-run aborts (operator emergency_stop; all three tubes contaminated) sit
-    # at the very top of the cycle, before anything else happens this cycle.
+    # at the very top of the cycle, before anything else happens this cycle. The second
+    # reads three group-locals from OUTSIDE the group that owns them: locals are
+    # namespaced, not private (design 2026-07-20 §2.2).
     assert ratchet["body"][0]["abort"]["if"] == "emergency_stop"
-    assert (
-        ratchet["body"][1]["abort"]["if"]
-        == "contaminated_1 and contaminated_2 and contaminated_3"
+    assert ratchet["body"][1]["abort"]["if"] == (
+        "tube_1_contaminated and tube_2_contaminated and tube_3_contaminated"
     )
-    # The OD reads are now ONE for_each lane, spliced to 3 concrete reads at expand time
-    # (already proven equivalent to the old 3-lane parallel by test_morbidostat_closes_the_loop,
-    # which reads od_1/2/3 120*10 times each on the expanded doc).
+    # The OD reads are ONE typed for_each lane, spliced to 3 concrete reads at expand time.
+    # `meter` is a role<densitometer> column — the od_meter_{tube} string surgery is gone,
+    # and each cell is checked against workflow.roles BEFORE expansion (design §4).
     reads_for_each = ratchet["body"][2]["loop"]["body"][0]["parallel"]["children"][0]["for_each"]
-    assert reads_for_each["in"] == [1, 2, 3]
+    assert reads_for_each["vars"] == [
+        {"name": "tube", "kind": "int"},
+        {"name": "meter", "kind": "role", "device_type": "densitometer"},
+        {"name": "od", "kind": "stream"},
+    ]
+    assert reads_for_each["in"] == [
+        {"tube": 1, "meter": "od_meter_1", "od": "od_1"},
+        {"tube": 2, "meter": "od_meter_2", "od": "od_2"},
+        {"tube": 3, "meter": "od_meter_3", "od": "od_3"},
+    ]
     (read,) = reads_for_each["body"]
     assert read["on_error"] == "continue"
-    assert read["measure"] == {
-        "device": "od_meter_{tube}", "verb": "measure", "into": "od_{tube}"
+    assert read["measure"] == {"device": "{meter}", "verb": "measure", "into": "{od}"}
+
+    # The three tube-service branches are one `service(tube, od)` group, called once per tube
+    # by a typed for_each. `as` is required because the group declares locals, and it is an
+    # embedded value-kind hole, which is how ONE call site yields three instances (§6).
+    service_call = ratchet["body"][3]["for_each"]
+    assert service_call["vars"] == [
+        {"name": "tube", "kind": "int"},
+        {"name": "od", "kind": "stream"},
+    ]
+    assert service_call["in"] == [
+        {"tube": 1, "od": "od_1"},
+        {"tube": 2, "od": "od_2"},
+        {"tube": 3, "od": "od_3"},
+    ]
+    (call,) = service_call["body"]
+    assert call["group_ref"] == {
+        "name": "service",
+        "as": "tube_{tube}",
+        "args": {"tube": "{tube}", "od": "{od}"},
     }
 
-    # The three tube-service branches are now one `service(tube)` group, called once per tube
-    # by a for_each. Short-circuit guard: no FRESH reading, no decision — and no empty-window
-    # EvaluationError. The window is what makes it a freshness guard: the whole-stream
-    # form `count(od_N) > 0` latches true forever over an append-only stream, and a
-    # latched guard is an open-loop drug injector (test_a_dead_sensor_does_not_latch).
-    service_call = ratchet["body"][3]["for_each"]
-    assert service_call["in"] == [1, 2, 3]
-    (call,) = service_call["body"]
-    assert call["group_ref"] == {"name": "service", "args": {"tube": "{tube}"}}
+    # The group's four kinds of thing, each now typed: a borrowed stream (`od`) and an int
+    # index as params; the five bindings and two streams it OWNS as locals. Three of the
+    # bindings carry the constant `init` that replaces the deleted seeding for_each.
+    group = doc["workflow"]["groups"]["service"]
+    assert group["params"] == [
+        {"name": "tube", "kind": "int"},
+        {"name": "od", "kind": "stream"},
+    ]
+    assert group["locals"] == {
+        "c": {"kind": "binding", "init": "0"},
+        "contaminated": {"kind": "binding", "init": "false"},
+        "alarmed": {"kind": "binding", "init": "false"},
+        "r": {"kind": "binding"},
+        "od_high": {"kind": "binding"},
+        "c_series": {"kind": "stream", "units": "x_MIC"},
+        "r_series": {"kind": "stream", "units": "per_hour"},
+    }
+    # c_series/r_series are no longer hand-declared per tube: the expander emits them from
+    # the local declarations, so only borrowed (od_N) and setup (blank_N) streams remain.
+    assert set(doc["workflow"]["streams"]) == {
+        "od_1", "od_2", "od_3", "blank_1", "blank_2", "blank_3",
+    }
 
-    # The service group now leads with contamination bookkeeping (freshness-guarded OD-high
+    # The service group leads with contamination bookkeeping (freshness-guarded OD-high
     # latch, sticky `contaminated` latch, fire-once alarm, sticky `alarmed` latch) and only
     # THEN the pre-existing freshness branch, now wrapped so a contaminated tube is dropped.
+    # Every reference is a hole — including inside expression strings (design §3).
     window = FRESHNESS[name]
-    service_body = doc["workflow"]["groups"]["service"]["body"]
-    assert service_body[0]["compute"]["into"] == "od_high_{tube}"
-    assert service_body[1]["compute"]["into"] == "contaminated_{tube}"
-    assert service_body[2]["alarm"]["if"] == "contaminated_{tube} and not alarmed_{tube}"
-    assert service_body[3]["compute"]["into"] == "alarmed_{tube}"
+    service_body = group["body"]
+    assert service_body[0]["compute"]["into"] == "{od_high}"
+    assert service_body[0]["compute"]["value"] == (
+        f"count({{od}}, last={window}) > 0 and mean({{od}}, last={window}) > 2.0"
+    )
+    assert service_body[1]["compute"]["into"] == "{contaminated}"
+    assert service_body[2]["alarm"]["if"] == "{contaminated} and not {alarmed}"
+    assert service_body[3]["compute"]["into"] == "{alarmed}"
     drop_branch = service_body[4]["branch"]
-    assert drop_branch["if"] == "not contaminated_{tube}"
+    assert drop_branch["if"] == "not {contaminated}"
     group_guard = drop_branch["then"][0]["branch"]["if"]
-    assert group_guard.startswith(f"count(od_{{tube}}, last={window}) > 0 and ")
+    assert group_guard.startswith(f"count({{od}}, last={window}) > 0 and ")
 
     # The thermostat setup is parallel again; retry is what makes that safe on a roster whose
     # devices share a serial (docs/experiment-engine-limitations.md, final section). Six
@@ -338,9 +377,10 @@ def test_example_declares_its_fault_tolerance(name: str) -> None:
     group_blocks = [
         b for g in doc["workflow"].get("groups", {}).values() for b in _walk(g["body"])
     ]
+    roles = doc["workflow"]["roles"]
     assert not any(
         "retry" in b for b in _walk(doc["workflow"]["blocks"]) + group_blocks if "command" in b
-        and doc["roles"].get(b["command"]["device"], {}).get("type") == "pump"
+        and roles.get(b["command"]["device"], {}).get("type") == "pump"
     )
 
 
@@ -381,6 +421,7 @@ async def test_morbidostat_closes_the_loop(tmp_path: Path) -> None:
             clock=clock,
             input_provider=answers,
             output_dir=tmp_path,  # the docs declare disk persistence (Studio forces it per-run)
+            role_mapping=MAPPING,
             job_poll_interval=0.05,
             job_poll_max=0.2,
         ),
@@ -432,15 +473,15 @@ async def test_morbidostat_closes_the_loop(tmp_path: Path) -> None:
     # floating-point — the sawtooth is no longer reconstructed offline, it is a first-class
     # stream. r_series carries the named growth rate the decision now reads. ---
     for t, culture in ((1, t1), (3, t3)):
-        c_series = report.state.streams[f"c_series_{t}"].samples
-        r_series = report.state.streams[f"r_series_{t}"].samples
+        c_series = report.state.streams[f"tube_{t}_c_series"].samples
+        r_series = report.state.streams[f"tube_{t}_r_series"].samples
         assert len(c_series) == 120 and len(r_series) == 120, f"tube {t}: a serviced cycle records"
         assert abs(c_series[-1].value - culture.drug) < 1e-9, (
             f"tube {t}: recorded c {c_series[-1].value:.6f} != simulated drug {culture.drug:.6f}"
         )
     # Tube 2 (NOTHING arm on its early cycles) records only the cycles it was serviced on.
-    assert 0 < len(report.state.streams["c_series_2"].samples) < 120
-    assert abs(report.state.streams["c_series_2"].samples[-1].value - t2.drug) < 1e-9
+    assert 0 < len(report.state.streams["tube_2_c_series"].samples) < 120
+    assert abs(report.state.streams["tube_2_c_series"].samples[-1].value - t2.drug) < 1e-9
 
     # --- valves were left parked closed at the end of every cycle ---
     assert lab.valve_pos == {"valve_1": 0, "valve_2": 0, "valve_3": 0}
@@ -470,6 +511,7 @@ async def test_morbidostat_survives_a_transient_device_fault(tmp_path: Path) -> 
             clock=clock,
             input_provider=Answers(),
             output_dir=tmp_path,
+            role_mapping=MAPPING,
             job_poll_interval=0.05,
             job_poll_max=0.2,
         ),
@@ -489,7 +531,7 @@ async def test_morbidostat_survives_a_transient_device_fault(tmp_path: Path) -> 
     assert len(report.state.streams["od_2"]) == 25 * 10
 
     # --- and the run says so: a run that dropped 10 samples must not look like a clean one ---
-    od_3_read = "blocks[0].children[21].body[2].body[0].children[2]"
+    od_3_read = "blocks[9].children[12].body[2].body[0].children[2]"
     assert [t.block_id for t in report.tolerated_errors] == [od_3_read] * 10
     assert all(FLAKE in t.error for t in report.tolerated_errors)
 
@@ -529,6 +571,7 @@ async def test_a_dead_sensor_does_not_latch_an_open_loop_injector(tmp_path: Path
             clock=clock,
             input_provider=Answers(),
             output_dir=tmp_path,
+            role_mapping=MAPPING,
             job_poll_interval=0.05,
             job_poll_max=0.2,
         ),
@@ -560,7 +603,7 @@ async def test_a_dead_sensor_does_not_latch_an_open_loop_injector(tmp_path: Path
         assert 0.2 <= rate <= 0.6, f"tube {t}: growth rate {rate:.3f} not pinned near r_dil"
 
     # --- the abandonment is loud, not silent: every lost read is in the report ---
-    od_3_read = "blocks[0].children[21].body[2].body[0].children[2]"
+    od_3_read = "blocks[9].children[12].body[2].body[0].children[2]"
     assert [t.block_id for t in report.tolerated_errors] == [od_3_read] * (119 * 10)
 
 
@@ -582,6 +625,7 @@ async def test_operator_emergency_stop_aborts_and_finalizes(tmp_path: Path) -> N
             clock=clock,
             input_provider=Answers({"emergency_stop": True}),
             output_dir=tmp_path,
+            role_mapping=MAPPING,
             job_poll_interval=0.05,
             job_poll_max=0.2,
             log_sink=InMemoryRunLog(),  # override the doc's disk log sink to inspect events
@@ -630,6 +674,7 @@ async def test_contaminated_tube_is_alarmed_and_dropped_from_service(tmp_path: P
             clock=clock,
             input_provider=Answers(),
             output_dir=tmp_path,
+            role_mapping=MAPPING,
             job_poll_interval=0.05,
             job_poll_max=0.2,
         ),
@@ -646,12 +691,12 @@ async def test_contaminated_tube_is_alarmed_and_dropped_from_service(tmp_path: P
     # --- tube 3 is dropped from service partway through, and never dosed again ---
     assert 0 < len(t3.injections) < 120, "tube 3 must be serviced for a while, then dropped"
     assert set(t3.injections) == {"drug"}, "tube 3 never dipped below od_thr, so only DRUG fired"
-    assert report.state.bindings["contaminated_3"] is True
-    assert report.state.bindings["contaminated_1"] is False
-    assert report.state.bindings["contaminated_2"] is False
+    assert report.state.bindings["tube_3_contaminated"] is True
+    assert report.state.bindings["tube_1_contaminated"] is False
+    assert report.state.bindings["tube_2_contaminated"] is False
 
     # --- one c_series sample per serviced cycle: recording stops exactly when service does ---
-    assert len(report.state.streams["c_series_3"].samples) == len(t3.injections)
+    assert len(report.state.streams["tube_3_c_series"].samples) == len(t3.injections)
 
     # --- fired once (latched), and only for the contaminated tube ---
     msgs = [a.message for a in report.alarms]
@@ -659,3 +704,42 @@ async def test_contaminated_tube_is_alarmed_and_dropped_from_service(tmp_path: P
     assert len(tube_3_msgs) == 1, "the alarm must latch, not refire every remaining cycle"
     assert "contaminated" in tube_3_msgs[0] and "dropped from service" in tube_3_msgs[0]
     assert not any("tube 1" in m or "tube 2" in m for m in msgs), "healthy tubes never alarm"
+
+
+@pytest.mark.parametrize("name", ["morbidostat.json", "morbidostat-demo-speed.json"])
+def test_group_local_seeds_are_hoisted(name: str) -> None:
+    """`locals.init` replaces the hand-written seeding for_each (design 2026-07-20 §2.3).
+
+    Nine constant computes — three initialized locals x three instances — land at the FRONT
+    of blocks in instance-then-declaration order, before the setup serial that used to be
+    blocks[0]. Order is what makes them safe: a hoisted initializer runs before every other
+    block, so `init` is restricted to constant expressions and the hoist is total.
+    """
+    doc = json.loads((EXAMPLES / name).read_text())
+    expanded = expand_dict(json.loads(json.dumps(doc["workflow"])))
+
+    seeds = expanded["blocks"][:9]
+    assert [b["compute"]["into"] for b in seeds] == [
+        "tube_1_c", "tube_1_contaminated", "tube_1_alarmed",
+        "tube_2_c", "tube_2_contaminated", "tube_2_alarmed",
+        "tube_3_c", "tube_3_contaminated", "tube_3_alarmed",
+    ]
+    assert [b["compute"]["value"] for b in seeds] == ["0", "false", "false"] * 3
+    assert expanded["blocks"][9]["serial"], "the authored tree follows the hoisted seeds"
+    assert len(expanded["blocks"]) == 10
+
+    # The two stream locals are emitted as real declarations, units carried across.
+    assert expanded["streams"]["tube_1_c_series"] == {"units": "x_MIC"}
+    assert expanded["streams"]["tube_3_r_series"] == {"units": "per_hour"}
+    assert "c_series_1" not in expanded["streams"], "the old hand-written names are gone"
+
+    # `position: "{tube}"` is a whole-string hole of an int param, so it substitutes as the
+    # JSON integer — not the string "1" that only worked because validate re-parsed it.
+    drug_valve = _walk(expanded["blocks"])
+    positions = [
+        b["command"]["params"]["position"]
+        for b in drug_valve
+        if "command" in b and b["command"]["verb"] == "set_position"
+    ]
+    assert all(isinstance(p, int) for p in positions), f"untyped position survived: {positions}"
+    assert set(positions) == {0, 1, 2, 3}
