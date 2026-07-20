@@ -260,3 +260,64 @@ def test_stream_arg_may_not_name_another_groups_local_by_hand():
         groups=groups,
     )
     assert any("names undeclared stream 'tube_1_c_series'" in m for m in messages(w))
+
+
+def test_hole_arg_of_the_same_kind_is_clean():
+    groups = _svc([{"name": "od", "kind": "stream"}])
+    w = wf2(
+        [_fe([{"name": "od", "kind": "stream"}],
+             [{"od": "od_1"}],
+             [{"group_ref": {"name": "svc", "args": {"od": "{od}"}}}])],
+        streams=["od_1"],
+        groups=groups,
+    )
+    assert validate(w) is None
+
+
+def test_hole_arg_of_the_wrong_kind_is_diagnosed():
+    groups = _svc([{"name": "od", "kind": "stream"}])
+    w = wf2(
+        [_fe([{"name": "t", "kind": "int"}],
+             [{"t": 1}],
+             [{"group_ref": {"name": "svc", "args": {"od": "{t}"}}}])],
+        streams=["od_1"],
+        groups=groups,
+    )
+    assert any("int variable 't' cannot bind a stream parameter" in m
+               for m in messages(w))
+
+
+def test_hole_arg_role_device_type_must_agree():
+    groups = _svc([{"name": "meter", "kind": "role", "device_type": "densitometer"}])
+    w = wf2(
+        [_fe([{"name": "p", "kind": "role", "device_type": "pump"}],
+             [{"p": "pump_1"}],
+             [{"group_ref": {"name": "svc", "args": {"meter": "{p}"}}}])],
+        groups=groups,
+    )
+    assert any("role<pump> variable 'p' cannot bind a role<densitometer> parameter" in m
+               for m in messages(w))
+
+
+def test_embedded_hole_in_a_reference_arg_is_rejected():
+    groups = _svc([{"name": "od", "kind": "stream"}])
+    w = wf2(
+        [_fe([{"name": "t", "kind": "int"}],
+             [{"t": 1}],
+             [{"group_ref": {"name": "svc", "args": {"od": "od_{t}"}}}])],
+        streams=["od_1"],
+        groups=groups,
+    )
+    assert any("must be a whole name or a whole hole" in m for m in messages(w))
+
+
+def test_embedded_hole_in_a_value_arg_is_fine():
+    groups = _svc([{"name": "label", "kind": "string"}])
+    w = wf2(
+        [_fe([{"name": "t", "kind": "int"}],
+             [{"t": 1}],
+             [{"group_ref": {"name": "svc", "args": {"label": "tube {t}: service"}}}])],
+        streams=[],
+        groups=groups,
+    )
+    assert validate(w) is None

@@ -172,6 +172,10 @@ def _check_binding_arg(value: str, ctx: str, w: Workflow, out: list[Diagnostic])
         ))
 
 
+def _kind_text(decl: ParamDecl) -> str:
+    return f"role<{decl.device_type}>" if decl.kind == "role" else decl.kind
+
+
 def _check_typed_arg(
     decl: ParamDecl,
     value: object,
@@ -182,6 +186,26 @@ def _check_typed_arg(
 ) -> None:
     """One `group_ref` arg or one `for_each` cell against its declaration. Reference
     kinds resolve against the DECLARED sections only -- see the scope note above."""
+    if isinstance(value, str):
+        whole = _WHOLE_HOLE_RE.fullmatch(value)
+        if whole is not None:
+            inner = env.get(whole.group(1))
+            if inner is None:
+                return  # bound by nothing in scope: the residual-hole scan is the backstop
+            if inner.kind != decl.kind or inner.device_type != decl.device_type:
+                out.append(Diagnostic(
+                    "params", ctx,
+                    f"{_kind_text(inner)} variable {inner.name!r} cannot bind a "
+                    f"{_kind_text(decl)} parameter",
+                ))
+            return
+        if decl.kind in REFERENCE_KINDS and _HOLE_RE.search(value) is not None:
+            out.append(Diagnostic(
+                "params", ctx,
+                f"{decl.kind} argument {value!r} embeds a hole; a reference argument must "
+                f"be a whole name or a whole hole (design 2026-07-20 §3)",
+            ))
+            return
     if decl.kind in REFERENCE_KINDS:
         if not isinstance(value, str):
             out.append(Diagnostic(
@@ -293,6 +317,8 @@ def _walk_decls(
         if isinstance(b, B.ForEach):
             _check_for_each(b, path, w, env, out)
             inner = dict(env)
+            for v in b.vars:
+                inner[v.name] = v
             _walk_decls(b.body, f"{path}.body", w, inner, out)
             continue
         if isinstance(b, B.GroupRef):
@@ -421,6 +447,8 @@ def _check_action(
 
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _RESERVED_NAMES = frozenset({"and", "or", "not", "true", "false"})
+_HOLE_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_WHOLE_HOLE_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}\Z")
 
 
 def _check_streams_declared(text: str, ctx: str, w: Workflow, out: list[Diagnostic]) -> None:
