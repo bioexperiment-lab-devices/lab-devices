@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.10.0...v0.11.0) (2026-07-19)
+
+
+### Features
+
+* **studio:** persist the in-progress experiment and put UI state in the URL (W16) ([#46](https://github.com/bioexperiment-lab-devices/lab-devices/issues/46)) ([15d05d1](https://github.com/bioexperiment-lab-devices/lab-devices/commit/15d05d1d586ecc0075fb3168428866971560a606))
+
 ## [0.10.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.9.0...v0.10.0) (2026-07-18)
 
 
