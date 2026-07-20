@@ -219,3 +219,45 @@ async def test_occupancy_slots_key_on_the_role_name(fake_client):
         await task
     except BaseException:
         pass
+
+
+_FEED_DISPENSE = [{"command": {"device": "feed", "verb": "dispense", "params": {"volume_ml": 1.0}}}]
+
+
+async def test_control_seams_translate_physical_id_under_a_non_identity_mapping(fake_client):
+    """The §9 control-plane seams on ExperimentRun (is_device_busy/wire_lock/busy_devices)
+    take PHYSICAL device ids -- that is Console's contract (control.py) and it must not
+    change. Occupancy and ctx.lock now key on ROLE names (§5.2/Task 8). Under a non-identity
+    mapping (role 'feed' -> device 'pump_2', exactly how Studio drives the engine) the seams
+    must translate id<->role at the boundary, or Console.disconnect/device_ping/device_status
+    silently stop serializing against the run that is actually using the hardware."""
+    fake, client = fake_client
+    add_standard_devices(fake)
+    fake.hold_job("dispense")
+    w = make_workflow(_FEED_DISPENSE, roles={"feed": {"type": "pump"}})
+    clock = FakeClock()
+    options = RunOptions(clock=clock, role_mapping={"feed": "pump_2"})
+    run = ExperimentRun(client, w, options=options)
+    task = asyncio.ensure_future(run.execute())
+    await clock.settle()  # dispense in flight: role "feed" / physical device "pump_2"
+
+    # 1. is_device_busy takes the physical id an operator/Console would type.
+    assert run.is_device_busy("pump_2") is True
+    # "feed" is a role name, not a device id in this run -- no role maps TO device "feed",
+    # so the seam correctly reports it as not-busy (this run isn't using that "device").
+    assert run.is_device_busy("feed") is False
+
+    # 2. wire_lock("pump_2") must be the SAME lock object the executor holds for role "feed" --
+    # otherwise Console introspection and the in-flight dispense serialize on different locks,
+    # breaking the D2 wire-serialization guarantee.
+    lock = run.wire_lock("pump_2")
+    assert run.wire_lock("pump_2") is lock  # stable across calls
+    assert lock is run._ctx.lock("feed")  # the actual lock the executor awaits
+
+    # 3. busy_devices() must report physical ids (what Console._refuse_if_any_busy shows the
+    # operator and what disconnect() compares device_id against), not role names.
+    assert run.busy_devices() == {"pump_2"}
+
+    fake.held_jobs.discard("dispense")
+    report = await drive(clock, task)
+    assert report.status == "completed"

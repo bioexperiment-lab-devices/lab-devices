@@ -68,12 +68,15 @@ def _resolve_roles(workflow: Workflow, mapping: dict[str, str]) -> dict[str, str
 
     `options.role_mapping` overrides a role's own `device:`; a role bound by neither is an
     error. The result is INJECTIVE by construction. That is load-bearing, not hygiene: the
-    affinity and mode analyses intersect raw device strings and `Occupancy._slots` keys them,
-    so two roles aliasing one device would pass every static check and then collide at run
-    time on one (device, channel) slot — raising an InvariantViolationError that `_NEVER_RETRY`
-    refuses to retry and `_tolerable` refuses to absorb. A statically clean workflow would die
-    mid-run, unrecoverably. With injectivity, role names and device ids are in bijection and
-    the static proof is sound by construction (§5.4).
+    affinity and mode analyses intersect raw device strings, reasoning about which roles can
+    physically collide on the same hardware. `Occupancy._slots` and `ctx.lock` key on the
+    ROLE name, not the device id, so two roles aliasing one device would NOT collide there —
+    they'd get independent slots and independent locks on hardware that is actually shared,
+    silently invalidating the static affinity/mode proof (two "unrelated" roles dispatching
+    concurrently onto one physical device with no shared lock to serialize them). Rejecting
+    the non-injective mapping here, at run start, is the SOLE guard against that: with
+    injectivity, role names and device ids are in bijection and the static proof is sound by
+    construction (§5.4).
     """
     for role in mapping:
         if role not in workflow.roles:
@@ -179,15 +182,38 @@ class ExperimentRun:
                 pass
 
     # ---- control-plane seams for Console (design 5 §9) ----
+    # Console (control.py) speaks PHYSICAL device ids -- what client.list_devices() returns
+    # and what a recovery operator types. Occupancy and ctx.lock key on ROLE names (§5.2).
+    # These three seams keep the physical-id contract and translate at the boundary via
+    # `_role_for_device`, so Console never has to know the engine's internal key is a role.
+    def _role_for_device(self, device_id: str) -> str | None:
+        """Physical device id -> the role this run maps it to, or None if no role does
+        (role_devices is injective by construction -- see `_resolve_roles` -- so the
+        inverse lookup is well-defined; a linear scan is fine, these are rare control-plane
+        calls)."""
+        for role, device in self._ctx.role_devices.items():
+            if device == device_id:
+                return role
+        return None
+
     def is_device_busy(self, device_id: str) -> bool:
-        return self._ctx.occupancy.is_busy(device_id)
+        role = self._role_for_device(device_id)
+        if role is None:  # this run doesn't use device_id at all -> can't be busy on it
+            return False
+        return self._ctx.occupancy.is_busy(role)
 
     def busy_devices(self) -> set[str]:
-        return self._ctx.occupancy.busy_devices()
+        # occupancy reports roles; translate back to physical ids for Console/the operator.
+        return {self._ctx.role_devices[role] for role in self._ctx.occupancy.busy_devices()}
 
     def wire_lock(self, device_id: str) -> asyncio.Lock:
         """The per-device wire lock (D2); introspection serializes on it during a live run."""
-        return self._ctx.lock(device_id)
+        role = self._role_for_device(device_id)
+        if role is None:
+            # This run never does wire calls to device_id, so a fresh, run-unused lock
+            # (keyed by the raw id, disjoint from every role name) is a harmless fallback.
+            return self._ctx.lock(device_id)
+        return self._ctx.lock(role)
 
     # ---- lifecycle (design §3, §11-12) ----
     async def execute(self) -> RunReport:
