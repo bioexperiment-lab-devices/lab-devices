@@ -184,3 +184,87 @@ def test_malformed_group_ref_body_traces_after_a_splice():
     expanded, trace = expand_dict_traced(wf)
     assert len(expanded["blocks"]) == 3
     assert trace["blocks[2]"] == "blocks[1]"
+
+
+def test_hoisted_seeds_shift_block_trace_keys_and_trace_to_their_local_decl():
+    wf = {
+        "schema_version": 2,
+        "groups": {
+            "svc": {
+                "params": [{"name": "tube", "kind": "int"}],
+                "locals": {"c": {"kind": "binding", "init": "0"},
+                           "hits": {"kind": "binding", "init": "1"}},
+                "body": [{"compute": {"into": "{c}", "value": "{c} + {tube}"}}],
+            }
+        },
+        "blocks": [
+            {"group_ref": {"name": "svc", "as": "t1", "args": {"tube": 1}}},
+            {"wait": {"duration": "9s"}},
+        ],
+    }
+    expanded, trace = expand_dict_traced(wf)
+    assert [next(iter(b)) for b in expanded["blocks"]] == [
+        "compute", "compute", "serial", "wait"]
+    assert expanded["blocks"][0]["compute"] == {"into": "t1_c", "value": "0"}
+    assert expanded["blocks"][1]["compute"] == {"into": "t1_hits", "value": "1"}
+    # Seeds trace to the declaration the author can edit, not to a block they never wrote.
+    assert trace["blocks[0]"] == "groups['svc'].locals['c']"
+    assert trace["blocks[1]"] == "groups['svc'].locals['hits']"
+    # Everything the author DID write shifts right by the seed count.
+    assert trace["blocks[2]"] == "blocks[0]"
+    assert trace["blocks[3]"] == "blocks[1]"
+    assert trace["blocks[2].children[0]"] == "groups['svc'].body[0]"
+
+
+def test_seed_shift_composes_with_a_for_each_splice():
+    wf = {
+        "schema_version": 2,
+        "groups": {
+            "svc": {
+                "params": [{"name": "tube", "kind": "int"}],
+                "locals": {"c": {"kind": "binding", "init": "0"}},
+                "body": [{"compute": {"into": "{c}", "value": "{tube}"}}],
+            }
+        },
+        "blocks": [
+            {"for_each": {"var": "t", "in": [1, 2], "body": [
+                {"group_ref": {"name": "svc", "as": "tube_{t}", "args": {"tube": "{t}"}}}]}},
+            {"wait": {"duration": "9s"}},
+        ],
+    }
+    expanded, trace = expand_dict_traced(wf)
+    # 2 seeds + 2 spliced serials + the trailing wait.
+    assert len(expanded["blocks"]) == 5
+    assert trace["blocks[0]"] == "groups['svc'].locals['c']"
+    assert trace["blocks[1]"] == "groups['svc'].locals['c']"
+    for i in (2, 3):
+        assert trace[f"blocks[{i}]"] == "blocks[0].body[0]"
+    assert trace["blocks[4]"] == "blocks[1]"
+
+
+def test_seed_shift_leaves_group_body_trace_keys_alone():
+    # Seeds prepend to top-level blocks only; `groups['x'].body[...]` keys must not move.
+    wf = {
+        "schema_version": 2,
+        "groups": {
+            "wash": {"body": [
+                {"for_each": {"var": "i", "in": [1, 2],
+                              "body": [{"wait": {"duration": "{i}s"}}]}},
+                {"wait": {"duration": "9s"}},
+            ]},
+            "svc": {
+                "params": [{"name": "tube", "kind": "int"}],
+                "locals": {"c": {"kind": "binding", "init": "0"}},
+                "body": [{"compute": {"into": "{c}", "value": "{tube}"}}],
+            },
+        },
+        "blocks": [
+            {"group_ref": {"name": "wash"}},
+            {"group_ref": {"name": "svc", "as": "t1", "args": {"tube": 1}}},
+        ],
+    }
+    expanded, trace = expand_dict_traced(wf)
+    assert len(expanded["blocks"]) == 3  # 1 seed + 2 authored
+    assert trace["groups['wash'].body[2]"] == "groups['wash'].body[1]"  # unshifted
+    assert trace["blocks[1]"] == "blocks[0]"
+    assert trace["blocks[2]"] == "blocks[1]"
