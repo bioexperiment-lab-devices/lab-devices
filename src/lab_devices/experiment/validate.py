@@ -165,6 +165,25 @@ def _check_for_each(
         out.append(Diagnostic("for_each", path, "for_each 'in' must be non-empty"))
     if not b.vars:
         out.append(Diagnostic("for_each", path, "for_each 'vars' must be non-empty"))
+    declared = {v.name: v for v in b.vars}
+    for r, row in enumerate(b.items):
+        if not isinstance(row, dict):
+            out.append(Diagnostic(
+                "for_each", path,
+                f"for_each 'in' row {r} must be an object mapping every declared var to a "
+                f"value, got {row!r}",
+            ))
+            continue
+        for name in declared:
+            if name not in row:
+                out.append(Diagnostic(
+                    "for_each", path, f"for_each 'in' row {r} is missing {name!r}"
+                ))
+        for name in row:
+            if name not in declared:
+                out.append(Diagnostic(
+                    "for_each", path, f"for_each 'in' row {r} has no variable {name!r}"
+                ))
 
 
 def _walk_decls(

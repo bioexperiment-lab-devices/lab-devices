@@ -1,8 +1,10 @@
 import pytest
 
+from lab_devices.experiment import blocks as B
 from lab_devices.experiment.errors import ValidationError
 from lab_devices.experiment.serialize import workflow_from_dict
 from lab_devices.experiment.validate import validate
+from lab_devices.experiment.workflow import ParamDecl, RoleDecl, Workflow
 
 # Role names must survive the legacy_device_type id->type bridge (rsplit on the last "_",
 # keep the prefix) until Task 8 threads roles all the way through -- see the brief's known
@@ -75,3 +77,39 @@ def test_for_each_block_level_fields_still_rejected():
                            "in": [{"t": 1}], "body": [STOP_PUMP]},
               "gap_after": "1s"}])
     assert any("may not carry block-level 'gap_after'" in m for m in messages(w))
+
+
+def _fe(vars_, rows, body=None):
+    return {"for_each": {"vars": vars_, "in": rows, "body": body or [STOP_PUMP]}}
+
+
+def test_for_each_row_missing_a_declared_var():
+    w = wf2([_fe([{"name": "t", "kind": "int"}, {"name": "d", "kind": "number"}],
+                 [{"t": 1, "d": 0.5}, {"t": 2}])])
+    assert any("'in' row 1 is missing 't'" not in m and "row 1 is missing 'd'" in m
+               for m in messages(w))
+
+
+def test_for_each_row_with_an_extra_key():
+    w = wf2([_fe([{"name": "t", "kind": "int"}], [{"t": 1, "ghost": 9}])])
+    assert any("'in' row 0 has no variable 'ghost'" in m for m in messages(w))
+
+
+def test_for_each_row_must_be_an_object():
+    # Unreachable via wf2/workflow_from_dict: serialize._for_each's _obj() already
+    # rejects a non-dict row at PARSE time, so a JSON-authored doc can never carry one
+    # this far. This is defense-in-depth for a ForEach built directly through the
+    # Python API (the pattern _check_groups's `isinstance(b.name, str)` also guards
+    # against), so it is exercised by constructing the AST directly.
+    fe = B.ForEach(
+        vars=[ParamDecl(name="t", kind="int")],
+        items=[{"t": 1}, 2],  # type: ignore[list-item]
+        body=[B.Command(device="pump_1", verb="stop")],
+    )
+    w = Workflow(schema_version=2, roles={"pump_1": RoleDecl(type="pump")}, blocks=[fe])
+    assert any("'in' row 1 must be an object" in m for m in messages(w))
+
+
+def test_for_each_rows_matching_the_declaration_are_clean():
+    w = wf2([_fe([{"name": "t", "kind": "int"}], [{"t": 1}, {"t": 2}])])
+    assert validate(w) is None
