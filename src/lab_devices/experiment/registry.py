@@ -197,18 +197,17 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
 }
 
 
-def device_type(device_id: str) -> str:
-    """Mirror the core's Device.type derivation."""
-    return device_id.rsplit("_", 1)[0]
+DEVICE_TYPES: frozenset[str] = frozenset(dtype for dtype, _verb in _REGISTRY)
 
 
-def lookup(device_id: str, verb: str) -> Trait:
-    key = (device_type(device_id), verb)
+def lookup(dtype: str, verb: str) -> Trait:
+    """Trait for a (device TYPE, verb) pair. The caller supplies the type -- read it from
+    `workflow.roles[name].type` (design 2026-07-20 §5.2)."""
     try:
-        return _REGISTRY[key]
+        return _REGISTRY[(dtype, verb)]
     except KeyError:
         raise UnknownVerbError(
-            f"no registry entry for device-type {key[0]!r} verb {verb!r}"
+            f"no registry entry for device-type {dtype!r} verb {verb!r}"
         ) from None
 
 
@@ -233,14 +232,13 @@ def _params_match(teardown: Teardown, params: Mapping[str, object]) -> bool:
     return True
 
 
-def mode_action(device_id: str, verb: str, params: Mapping[str, object]) -> ModeAction | None:
+def mode_action(dtype: str, verb: str, params: Mapping[str, object]) -> ModeAction | None:
     """Classify a command instance as a mode-open, a mode-close, or neither (design §12).
 
     Conservative: any params that do not literally equal the teardown's (including
     expression strings) classify a mode verb as an open.
     """
-    dtype = device_type(device_id)
-    trait = lookup(device_id, verb)
+    trait = lookup(dtype, verb)
     if trait.state_effect == "mode":
         assert trait.teardown is not None  # every mode entry declares its teardown
         if trait.teardown.verb == verb and _params_match(trait.teardown, params):

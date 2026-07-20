@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from lab_devices.experiment import blocks as B
+from lab_devices.experiment._legacy_ids import legacy_device_type
 from lab_devices.experiment.analyze import (
     BindingType,
     ExprType,
@@ -237,7 +238,7 @@ def _check_action(
     out: list[Diagnostic],
 ) -> None:
     try:
-        trait = lookup(b.device, b.verb)
+        trait = lookup(legacy_device_type(b.device), b.verb)
     except UnknownVerbError as exc:
         out.append(Diagnostic("registry", path, str(exc)))
         return
@@ -375,7 +376,7 @@ def _check_record(
 
 def _check_measure(b: B.Measure, path: str, w: Workflow, out: list[Diagnostic]) -> None:
     try:
-        trait = lookup(b.device, b.verb)
+        trait = lookup(legacy_device_type(b.device), b.verb)
     except UnknownVerbError:
         return  # already diagnosed by _check_action
     if not trait.measurement:
@@ -491,7 +492,7 @@ def _check_retry(block: B.Block, path: str, out: list[Diagnostic]) -> None:
         ))
         return
     try:
-        trait = lookup(block.device, block.verb)
+        trait = lookup(legacy_device_type(block.device), block.verb)
     except UnknownVerbError:
         return  # already diagnosed by _check_action
     if not trait.retry_safe and not retry.allow_repeat:
@@ -720,7 +721,7 @@ def _durable_guard_proof(condition: str) -> set[str]:
 
 def _visit_action(b: B.Command | B.Measure, path: str, state: _PathState, c: _Ctx) -> None:
     try:
-        trait = lookup(b.device, b.verb)
+        trait = lookup(legacy_device_type(b.device), b.verb)
     except UnknownVerbError:
         return  # already diagnosed globally; nothing to analyze against
     specs = {s.name: s for s in trait.params}
@@ -728,7 +729,7 @@ def _visit_action(b: B.Command | B.Measure, path: str, state: _PathState, c: _Ct
         spec = specs.get(name)
         if spec is not None and spec.kind != "string":
             _expr_reads(value, f"{path} param {name!r}", state, c)
-    action = mode_action(b.device, b.verb, b.params)
+    action = mode_action(legacy_device_type(b.device), b.verb, b.params)
     if action is not None and action.kind == "close":
         # A matching close is always legal: closes if open, no-ops if not (design §12).
         state.modes.pop((b.device, action.mode_verb), None)
@@ -736,7 +737,7 @@ def _visit_action(b: B.Command | B.Measure, path: str, state: _PathState, c: _Ct
         for (device, mode_verb), status in sorted(state.modes.items()):
             if device != b.device:
                 continue
-            if lookup(device, mode_verb).channels & trait.channels:
+            if lookup(legacy_device_type(device), mode_verb).channels & trait.channels:
                 word = "open" if status == "open" else "possibly open"
                 c.emit(
                     "mode", path,
@@ -791,7 +792,7 @@ def _footprint(root: B.Block, w: Workflow) -> set[tuple[str, str]]:
         b = stack.pop()
         if isinstance(b, (B.Command, B.Measure)):
             try:
-                trait = lookup(b.device, b.verb)
+                trait = lookup(legacy_device_type(b.device), b.verb)
             except UnknownVerbError:
                 continue
             found.update((b.device, ch) for ch in trait.channels)

@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from lab_devices.experiment._legacy_ids import legacy_device_type
 from lab_devices.experiment.context import RunContext
-from lab_devices.experiment.registry import device_type
 
 _SWEEP: dict[str, tuple[tuple[str, dict[str, Any]], ...]] = {
     "pump": (("stop", {}),),
@@ -55,7 +55,7 @@ async def run_finalizer(ctx: RunContext) -> list[BaseException]:
             ctx.occupancy.register_close(mode.device, mode.mode_verb)
     # 3. Unconditional idempotent safe-state sweep over every touched device.
     for device_id in ctx.touched:
-        for verb, params in _SWEEP.get(device_type(device_id), ()):
+        for verb, params in _SWEEP.get(legacy_device_type(device_id), ()):
             await _issue(ctx, device_id, verb, dict(params), "sweep_command", errors)
     _emit(ctx, "finalize_finished", errors=len(errors))
     return errors

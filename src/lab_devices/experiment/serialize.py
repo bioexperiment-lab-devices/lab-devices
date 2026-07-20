@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from lab_devices.experiment import blocks as B
+from lab_devices.experiment._legacy_ids import legacy_device_type
 from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import ExpressionError, WorkflowLoadError
 from lab_devices.experiment.expr import parse_expression
@@ -129,7 +130,7 @@ def _command(body: Any, timing: dict[str, Any]) -> B.Block:
     device = _str(_req(body, "device", "command"), "command device")
     verb = _req(body, "verb", "command")
     if "{" not in device:
-        lookup(device, verb)
+        lookup(legacy_device_type(device), verb)
     return B.Command(device=device, verb=verb, params=_checked_params(body, "command"), **timing)
 
 
@@ -137,7 +138,7 @@ def _measure(body: Any, timing: dict[str, Any]) -> B.Block:
     device = _str(_req(body, "device", "measure"), "measure device")
     verb = body.get("verb", "measure")
     if "{" not in device:
-        lookup(device, verb)
+        lookup(legacy_device_type(device), verb)
     return B.Measure(
         device=device, verb=verb, into=_req(body, "into", "measure"),
         params=_checked_params(body, "measure"), **timing,
