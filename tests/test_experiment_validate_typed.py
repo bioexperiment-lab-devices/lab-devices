@@ -4,7 +4,7 @@ from lab_devices.experiment import blocks as B
 from lab_devices.experiment.errors import ValidationError
 from lab_devices.experiment.serialize import workflow_from_dict
 from lab_devices.experiment.validate import validate
-from lab_devices.experiment.workflow import ParamDecl, RoleDecl, Workflow
+from lab_devices.experiment.workflow import Group, LocalDecl, ParamDecl, RoleDecl, Workflow
 
 # Role names must survive the legacy_device_type id->type bridge (rsplit on the last "_",
 # keep the prefix) until Task 8 threads roles all the way through -- see the brief's known
@@ -399,3 +399,56 @@ def test_distinct_nested_var_names_are_clean():
     inner = _fe([{"name": "u", "kind": "int"}], [{"u": 9}])
     w = wf2([_fe([{"name": "t", "kind": "int"}], [{"t": 1}], [inner])])
     assert validate(w) is None
+
+
+def _local_group(init):
+    return {"svc": {
+        "locals": {"c": {"kind": "binding", "init": init}},
+        "body": [{"compute": {"into": "{c}", "value": "{c} + 1"}}],
+    }}
+
+
+def test_local_init_may_not_reference_a_binding():
+    w = wf2([{"group_ref": {"name": "svc", "as": "t1"}}],
+            groups=_local_group("seed + 1"))
+    msgs = messages(w)
+    assert any("init must be a constant expression, but reads 'seed'" in m for m in msgs)
+
+
+def test_local_init_may_not_call_a_stat():
+    w = wf2([{"group_ref": {"name": "svc", "as": "t1"}}],
+            streams=["od_1"],
+            groups=_local_group("mean(od_1, last=5min)"))
+    assert any("init must be a constant expression, but reads 'od_1'" in m
+               for m in messages(w))
+
+
+def test_local_init_may_not_count_a_stream():
+    w = wf2([{"group_ref": {"name": "svc", "as": "t1"}}],
+            streams=["od_1"],
+            groups=_local_group("count(od_1) > 0"))
+    assert any("init must be a constant expression, but reads 'od_1'" in m
+               for m in messages(w))
+
+
+def test_local_init_with_a_bad_expression_is_diagnosed():
+    # Unreachable via wf2/workflow_from_dict for a hole-free init: serialize._local_decls
+    # already parses and rejects it at LOAD time (_checked_expr), so a JSON-authored doc
+    # can never carry a syntactically-bad init this far. Same defense-in-depth pattern as
+    # test_for_each_row_must_be_an_object -- exercised by constructing the AST directly.
+    group = Group(
+        name="svc", locals={"c": LocalDecl(kind="binding", init="0 +")},
+        body=[B.Compute(into="{c}", value="{c} + 1")],
+    )
+    w = Workflow(
+        schema_version=2, roles={"pump_1": RoleDecl(type="pump")}, groups={"svc": group},
+        blocks=[B.GroupRef(name="svc", as_="t1")],
+    )
+    assert any("invalid init expression" in m for m in messages(w))
+
+
+def test_constant_local_inits_are_clean():
+    for init in ("0", "false", "2 * 3 + 1", "true and not false"):
+        w = wf2([{"group_ref": {"name": "svc", "as": "t1"}}],
+                groups=_local_group(init))
+        assert validate(w) is None, init

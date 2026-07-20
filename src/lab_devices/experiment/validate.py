@@ -107,7 +107,10 @@ def _check_groups(w: Workflow, out: list[Diagnostic]) -> bool:
 
 
 def _uses_macros(w: Workflow) -> bool:
-    if any(g.params for g in w.groups.values()):
+    # `locals` alone (no `params`) still needs expansion: the body's `{name}` holes are
+    # qualified names (design 2026-07-20 §2.2), not substituted by anything the legacy,
+    # expansion-free path does.
+    if any(g.params or g.locals for g in w.groups.values()):
         return True
     for _, b in _iter_all_blocks(w):
         if isinstance(b, B.ForEach):
@@ -384,6 +387,39 @@ def _walk_decls(
                 _walk_decls(b.else_, f"{path}.else", w, env, out)
 
 
+def _check_local_init(
+    name: str, local: LocalDecl, where: str, out: list[Diagnostic]
+) -> None:
+    """`init` must be a CONSTANT expression: literals and operators over them, with no
+    stat calls, no stream references and no binding references (design 2026-07-20 §2.3).
+    The initializer is hoisted ahead of every block in the document, so any data
+    dependency it could express is guaranteed unwritten when it runs.
+
+    Task 5's parser already rejects `init` on a stream-kinded local, so only the
+    binding case reaches here. Its expression syntax is ALSO already checked at load
+    time by serialize._local_decls's `_checked_expr` (unless it embeds a hole), so the
+    ExpressionError branch below is defense-in-depth for a LocalDecl built directly
+    through the Python API -- not reachable via workflow_from_dict for a hole-free
+    `init`, mirroring _check_for_each's row-must-be-an-object check."""
+    if local.init is None:
+        return
+    try:
+        expr = parse_expression(local.init)
+    except ExpressionError as exc:
+        out.append(Diagnostic("declaration", where, f"invalid init expression: {exc}"))
+        return
+    refs = references(expr)
+    named = sorted(refs.bindings | refs.streams_windowed | refs.streams_counted)
+    if named:
+        reads = ", ".join(repr(n) for n in named)
+        out.append(Diagnostic(
+            "declaration", where,
+            f"local {name!r} init must be a constant expression, but reads {reads}; the "
+            f"initializer is hoisted ahead of every block, so nothing it could read is "
+            f"written yet (design 2026-07-20 §2.3)",
+        ))
+
+
 def _check_declarations(w: Workflow, out: list[Diagnostic]) -> bool:
     """Every typed-declaration rule, on the authored doc (design 2026-07-20 §2, §4).
     True iff nothing new was found, i.e. the doc is safe to hand to the expander."""
@@ -392,6 +428,10 @@ def _check_declarations(w: Workflow, out: list[Diagnostic]) -> bool:
     for name, group in w.groups.items():
         where = f"groups[{name!r}]"
         env = _check_decl_names(group.params, group.locals, where, {}, out)
+        for local_name, local in group.locals.items():
+            _check_local_init(
+                local_name, local, f"{where}.locals[{local_name!r}]", out
+            )
         _walk_decls(group.body, f"{where}.body", w, env, out)
     return len(out) == before
 
