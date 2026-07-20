@@ -302,6 +302,50 @@ def _check_for_each(
                 )
 
 
+def _check_decl_names(
+    decls: list[ParamDecl],
+    locals_: Mapping[str, LocalDecl],
+    where: str,
+    env: Mapping[str, ParamDecl],
+    out: list[Diagnostic],
+) -> dict[str, ParamDecl]:
+    """One binder's names (design 2026-07-20 §2.4). Params and locals share ONE
+    namespace: both become `{name}` holes in the same body, so a collision has no
+    meaningful resolution. Returns the names this binder introduces."""
+    introduced: dict[str, ParamDecl] = {}
+    for decl in decls:
+        if _IDENT_RE.fullmatch(decl.name) is None:
+            out.append(Diagnostic(
+                "declaration", where, f"declared name {decl.name!r} is not an identifier"
+            ))
+        elif decl.name in _RESERVED_NAMES:
+            out.append(Diagnostic(
+                "declaration", where, f"declared name {decl.name!r} is reserved"
+            ))
+        if decl.name in introduced:
+            out.append(Diagnostic(
+                "declaration", where, f"duplicate parameter name {decl.name!r}"
+            ))
+        introduced[decl.name] = decl
+    for name, local in locals_.items():
+        if _IDENT_RE.fullmatch(name) is None:
+            out.append(Diagnostic(
+                "declaration", where, f"declared name {name!r} is not an identifier"
+            ))
+        elif name in _RESERVED_NAMES:
+            out.append(Diagnostic(
+                "declaration", where, f"declared name {name!r} is reserved"
+            ))
+        if name in introduced:
+            out.append(Diagnostic(
+                "declaration", where,
+                f"{name!r} is declared as both a parameter and a local; params and locals "
+                f"share one namespace (design 2026-07-20 §2.4)",
+            ))
+        introduced[name] = ParamDecl(name=name, kind=local.kind)
+    return introduced
+
+
 def _walk_decls(
     blocks: list[B.Block],
     prefix: str,
@@ -317,8 +361,7 @@ def _walk_decls(
         if isinstance(b, B.ForEach):
             _check_for_each(b, path, w, env, out)
             inner = dict(env)
-            for v in b.vars:
-                inner[v.name] = v
+            inner.update(_check_decl_names(b.vars, {}, path, env, out))
             _walk_decls(b.body, f"{path}.body", w, inner, out)
             continue
         if isinstance(b, B.GroupRef):
@@ -340,7 +383,7 @@ def _check_declarations(w: Workflow, out: list[Diagnostic]) -> bool:
     _walk_decls(w.blocks, "blocks", w, {}, out)
     for name, group in w.groups.items():
         where = f"groups[{name!r}]"
-        env = {p.name: p for p in group.params}
+        env = _check_decl_names(group.params, group.locals, where, {}, out)
         _walk_decls(group.body, f"{where}.body", w, env, out)
     return len(out) == before
 

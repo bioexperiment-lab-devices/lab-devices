@@ -321,3 +321,48 @@ def test_embedded_hole_in_a_value_arg_is_fine():
         groups=groups,
     )
     assert validate(w) is None
+
+
+def test_param_and_local_name_collision_is_rejected():
+    groups = {"svc": {
+        "params": [{"name": "c", "kind": "int"}],
+        "locals": {"c": {"kind": "binding"}},
+        "body": [STOP_PUMP],
+    }}
+    w = wf2([{"group_ref": {"name": "svc", "as": "t1", "args": {"c": 1}}}],
+            groups=groups)
+    assert any("'c' is declared as both a parameter and a local" in m
+               for m in messages(w))
+
+
+def test_duplicate_param_name_is_rejected():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"t": 1}}}],
+        groups=_svc([{"name": "t", "kind": "int"}, {"name": "t", "kind": "number"}]),
+    )
+    assert any("duplicate parameter name 't'" in m for m in messages(w))
+
+
+def test_reserved_param_name_is_rejected():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"not": 1}}}],
+        groups=_svc([{"name": "not", "kind": "int"}]),
+    )
+    assert any("declared name 'not' is reserved" in m for m in messages(w))
+
+
+def test_duplicate_for_each_var_name_is_rejected():
+    w = wf2([_fe([{"name": "t", "kind": "int"}, {"name": "t", "kind": "int"}],
+                 [{"t": 1}])])
+    assert any("duplicate parameter name 't'" in m for m in messages(w))
+
+
+def test_distinct_param_and_local_names_are_clean():
+    groups = {"svc": {
+        "params": [{"name": "tube", "kind": "int"}],
+        "locals": {"c": {"kind": "binding", "init": "0"}},
+        "body": [{"compute": {"into": "{c}", "value": "{c} + {tube}"}}],
+    }}
+    w = wf2([{"group_ref": {"name": "svc", "as": "t1", "args": {"tube": 1}}}],
+            groups=groups)
+    assert validate(w) is None
