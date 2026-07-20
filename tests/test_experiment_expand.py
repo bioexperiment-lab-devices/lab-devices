@@ -120,7 +120,8 @@ def test_extra_group_arg_is_reported_per_param():
 def test_for_each_scalar_splices_into_serial():
     out = expand_dict(_wf([
         {"serial": {"children": [
-            {"for_each": {"var": "t", "in": [1, 2, 3],
+            {"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                          "in": [{"t": 1}, {"t": 2}, {"t": 3}],
                           "body": [{"wait": {"duration": "{t}s"}}]}}
         ]}}
     ]))
@@ -131,7 +132,8 @@ def test_for_each_scalar_splices_into_serial():
 def test_for_each_in_parallel_yields_lanes():
     out = expand_dict(_wf([
         {"parallel": {"children": [
-            {"for_each": {"var": "t", "in": [1, 2],
+            {"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                          "in": [{"t": 1}, {"t": 2}],
                           "body": [{"measure": {"device": "densitometer_{t}",
                                                 "verb": "measure", "into": "od_{t}"}}]}}
         ]}}
@@ -143,7 +145,8 @@ def test_for_each_in_parallel_yields_lanes():
 
 def test_object_items_multi_field():
     out = expand_dict(_wf([
-        {"for_each": {"in": [{"t": 1, "p": 7}, {"t": 2, "p": 8}],
+        {"for_each": {"vars": [{"name": "t", "kind": "int"}, {"name": "p", "kind": "int"}],
+                      "in": [{"t": 1, "p": 7}, {"t": 2, "p": 8}],
                       "body": [{"command": {"device": "valve_{t}", "verb": "set_position",
                                             "params": {"position": "{p}"}}}]}}
     ]))
@@ -177,7 +180,8 @@ def test_plain_group_ref_left_as_node_and_group_kept():
 
 def test_for_each_over_group_ref_composition():
     out = expand_dict(_wf(
-        [{"for_each": {"var": "t", "in": [1, 2, 3],
+        [{"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                       "in": [{"t": 1}, {"t": 2}, {"t": 3}],
                        "body": [{"group_ref": {"name": "svc", "args": {"t": "{t}"}}}]}}],
         groups={"svc": {"params": [{"name": "t", "kind": "int"}],
                         "body": [{"measure": {"device": "densitometer_{t}",
@@ -189,7 +193,8 @@ def test_for_each_over_group_ref_composition():
 
 def test_unbound_hole_raises():
     with pytest.raises(WorkflowLoadError, match="hole"):
-        expand_dict(_wf([{"for_each": {"var": "t", "in": [1],
+        expand_dict(_wf([{"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                                       "in": [{"t": 1}],
                                        "body": [{"wait": {"duration": "{nope}s"}}]}}]))
 
 
@@ -200,15 +205,10 @@ def test_arity_mismatch_raises():
                                         "body": []}}))
 
 
-def test_var_with_object_items_raises():
-    with pytest.raises(WorkflowLoadError, match="scalar items"):
-        expand_dict(_wf([{"for_each": {"var": "t", "in": [{"t": 1}],
-                                       "body": [{"wait": {"duration": "1s"}}]}}]))
-
-
 def test_forbidden_block_key_on_for_each_raises():
     with pytest.raises(WorkflowLoadError, match="block-level"):
-        expand_dict(_wf([{"for_each": {"var": "t", "in": [1],
+        expand_dict(_wf([{"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                                       "in": [{"t": 1}],
                                        "body": [{"wait": {"duration": "1s"}}]},
                           "on_error": "continue"}]))
 
@@ -216,18 +216,21 @@ def test_forbidden_block_key_on_for_each_raises():
 def test_expansion_cap_trips():
     with pytest.raises(WorkflowLoadError, match="exceeds"):
         expand_dict(_wf([{"for_each": {
-            "var": "a", "in": list(range(200)),
-            "body": [{"for_each": {"var": "b", "in": list(range(200)),
+            "vars": [{"name": "a", "kind": "int"}],
+            "in": [{"a": i} for i in range(200)],
+            "body": [{"for_each": {"vars": [{"name": "b", "kind": "int"}],
+                                   "in": [{"b": i} for i in range(200)],
                                    "body": [{"wait": {"duration": "1s"}}]}}]}}]))
 
 
 def test_parametrized_group_body_may_contain_for_each():
     inner_cmd = {"command": {"device": "valve_{valve}", "verb": "set_position",
-                              "params": {"position": "{valve}", "ml": "{volume}"}}}
+                             "params": {"position": "{valve}", "ml": "{volume}"}}}
     out = expand_dict(_wf(
         [{"group_ref": {"name": "dose", "args": {"volume": 5}}}],
         groups={"dose": {"params": [{"name": "volume", "kind": "int"}],
-                         "body": [{"for_each": {"var": "valve", "in": [1, 2],
+                         "body": [{"for_each": {"vars": [{"name": "valve", "kind": "int"}],
+                                                "in": [{"valve": 1}, {"valve": 2}],
                                                 "body": [inner_cmd]}}]}},
     ))
     cmds = out["blocks"][0]["serial"]["children"]
@@ -238,5 +241,6 @@ def test_parametrized_group_body_may_contain_for_each():
 
 def test_residual_hole_after_expansion_raises():
     with pytest.raises(WorkflowLoadError, match="unbound hole"):
-        expand_dict(_wf([{"for_each": {"var": "t", "in": [1],
-                          "body": [{"wait": {"duration": "{nope}s"}}]}}]))
+        expand_dict(_wf([{"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                                       "in": [{"t": 1}],
+                                       "body": [{"wait": {"duration": "{nope}s"}}]}}]))

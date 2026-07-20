@@ -269,14 +269,19 @@ def _group_ref(body: Any, timing: dict[str, Any], roles: dict[str, RoleDecl]) ->
 def _for_each(body: Any, timing: dict[str, Any], roles: dict[str, RoleDecl]) -> B.Block:
     if not isinstance(body, dict):
         raise WorkflowLoadError("for_each requires an object body")
-    items = _req(body, "in", "for_each")
-    if not isinstance(items, list):
+    if "var" in body:
+        raise WorkflowLoadError(
+            "for_each 'var' + scalar 'in' shorthand was removed in schema_version 2; declare "
+            "'vars': [{'name': ..., 'kind': ...}] and give 'in' object rows "
+            "(design 2026-07-20 §4)"
+        )
+    var_decls = _param_decls(body.get("vars", []), "for_each", label="vars")
+    raw_rows = _req(body, "in", "for_each")
+    if not isinstance(raw_rows, list):
         raise WorkflowLoadError("for_each 'in' must be a list")
+    rows = [dict(_obj(row, f"for_each 'in' row {i}")) for i, row in enumerate(raw_rows)]
     children = _children(_req(body, "body", "for_each"), "for_each.body", roles)
-    var = body.get("var")
-    if var is not None and not isinstance(var, str):
-        raise WorkflowLoadError(f"for_each 'var' must be a string, got {var!r}")
-    return B.ForEach(var=var, items=items, body=children, **timing)
+    return B.ForEach(vars=var_decls, items=rows, body=children, **timing)
 
 
 _BUILDERS: dict[str, Callable[[Any, dict[str, Any], dict[str, RoleDecl]], B.Block]] = {
@@ -371,9 +376,9 @@ def _dump_body(b: B.Block) -> tuple[str, dict[str, Any]]:
         return "group_ref", body
     if isinstance(b, B.ForEach):
         body = {}
-        if b.var is not None:
-            body["var"] = b.var
-        body["in"] = list(b.items)
+        if b.vars:
+            body["vars"] = [_param_decl_to_dict(p) for p in b.vars]
+        body["in"] = [dict(row) for row in b.items]
         body["body"] = [block_to_dict(c) for c in b.body]
         return "for_each", body
     if isinstance(b, B.Compute):
@@ -411,13 +416,14 @@ def block_to_dict(b: B.Block) -> dict[str, Any]:
     return out
 
 
-def _param_decls(raw: Any, ctx: str) -> list[ParamDecl]:
-    """`params` is an ORDERED list of typed objects (design 2026-07-20 §2.1)."""
+def _param_decls(raw: Any, ctx: str, label: str = "params") -> list[ParamDecl]:
+    """`params`/`vars` is an ORDERED list of typed objects (design 2026-07-20 §2.1, §4)."""
     if not isinstance(raw, list):
-        raise WorkflowLoadError(f"{ctx} params must be a list of objects")
+        raise WorkflowLoadError(f"{ctx} {label} must be a list of objects")
+    singular = label[:-1] if label.endswith("s") else label  # "params" -> "param"
     out: list[ParamDecl] = []
     for i, item in enumerate(raw):
-        where = f"{ctx} params[{i}]"
+        where = f"{ctx} {label}[{i}]"
         p = _obj(item, where)
         unknown = sorted(set(p) - _PARAM_DECL_KEYS)
         if unknown:
@@ -426,19 +432,19 @@ def _param_decls(raw: Any, ctx: str) -> list[ParamDecl]:
         kind = _str(_req(p, "kind", where), f"{where} kind")
         if kind not in _PARAM_KINDS:
             raise WorkflowLoadError(
-                f"{ctx} param {name!r}: unknown kind {kind!r}; expected one of "
+                f"{ctx} {singular} {name!r}: unknown kind {kind!r}; expected one of "
                 f"{sorted(_PARAM_KINDS)}"
             )
         dtype = p.get("device_type")
         if kind == "role":
             if dtype is None:
                 raise WorkflowLoadError(
-                    f"{ctx} param {name!r}: kind 'role' requires 'device_type'"
+                    f"{ctx} {singular} {name!r}: kind 'role' requires 'device_type'"
                 )
-            dtype = _checked_device_type(dtype, f"{ctx} param {name!r}")
+            dtype = _checked_device_type(dtype, f"{ctx} {singular} {name!r}")
         elif dtype is not None:
             raise WorkflowLoadError(
-                f"{ctx} param {name!r}: 'device_type' is only allowed on kind 'role'"
+                f"{ctx} {singular} {name!r}: 'device_type' is only allowed on kind 'role'"
             )
         out.append(ParamDecl(name=name, kind=cast(ParamKind, kind), device_type=dtype))
     return out

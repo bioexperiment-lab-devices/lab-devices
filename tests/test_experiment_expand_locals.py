@@ -30,7 +30,8 @@ def test_as_interpolates_from_the_call_site_env():
         "schema_version": 2,
         "groups": {"svc": _svc({"c": {"kind": "binding"}},
                                [{"compute": {"into": "{c}", "value": "{tube}"}}])},
-        "blocks": [{"for_each": {"var": "t", "in": [1, 2], "body": [
+        "blocks": [{"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                                 "in": [{"t": 1}, {"t": 2}], "body": [
             {"group_ref": {"name": "svc", "as": "tube_{t}", "args": {"tube": "{t}"}}}]}}],
     })
     intos = [b["serial"]["children"][0]["compute"]["into"] for b in out["blocks"]]
@@ -60,7 +61,8 @@ def test_init_seeds_hoist_to_the_front_of_blocks_in_expansion_order():
              "r": {"kind": "binding"}},
             [{"compute": {"into": "{r}", "value": "{c} + {tube}"}}],
         )},
-        "blocks": [{"for_each": {"var": "t", "in": [1, 2], "body": [
+        "blocks": [{"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                                 "in": [{"t": 1}, {"t": 2}], "body": [
             {"group_ref": {"name": "svc", "as": "tube_{t}", "args": {"tube": "{t}"}}}]}}],
     })
     seeds = [b["compute"] for b in out["blocks"][:4]]
@@ -102,7 +104,8 @@ def test_a_bare_value_hole_as_is_not_an_identifier():
             "schema_version": 2,
             "groups": {"svc": _svc({"c": {"kind": "binding"}},
                                    [{"compute": {"into": "{c}", "value": "1"}}])},
-            "blocks": [{"for_each": {"var": "t", "in": [1], "body": [
+            "blocks": [{"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                                     "in": [{"t": 1}], "body": [
                 {"group_ref": {"name": "svc", "as": "{t}", "args": {"tube": "{t}"}}}]}}],
         })
 
@@ -191,7 +194,8 @@ def test_an_escaping_local_is_readable_from_a_top_level_expression():
         "groups": {"svc": _svc({"contaminated": {"kind": "binding", "init": "false"}},
                                [{"compute": {"into": "{contaminated}", "value": "true"}}])},
         "blocks": [
-            {"for_each": {"var": "t", "in": [1, 2], "body": [
+            {"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                          "in": [{"t": 1}, {"t": 2}], "body": [
                 {"group_ref": {"name": "svc", "as": "tube_{t}", "args": {"tube": "{t}"}}}]}},
             {"abort": {"if": "tube_1_contaminated and tube_2_contaminated", "message": "x"}},
         ],

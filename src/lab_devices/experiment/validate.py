@@ -131,16 +131,6 @@ def _check_for_each_and_arity(w: Workflow, out: list[Diagnostic]) -> bool:
             if not b.items:
                 out.append(Diagnostic("for_each", path, "for_each 'in' must be non-empty"))
                 ok = False
-            scalar = [i for i in b.items if not isinstance(i, dict)]
-            objects = [i for i in b.items if isinstance(i, dict)]
-            if b.var is not None and objects:
-                out.append(Diagnostic(
-                    "for_each", path, "for_each with 'var' requires scalar items"))
-                ok = False
-            if b.var is None and scalar:
-                out.append(Diagnostic(
-                    "for_each", path, "for_each without 'var' requires object items"))
-                ok = False
         elif isinstance(b, B.GroupRef):
             group = w.groups.get(b.name)
             # Group.params is list[ParamDecl] as of the typed-declaration data model

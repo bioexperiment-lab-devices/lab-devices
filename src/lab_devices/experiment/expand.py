@@ -227,40 +227,27 @@ def _type_key(block: Any) -> str | None:
     return keys[0] if len(keys) == 1 else None
 
 
-def _infer_kind(value: Any) -> str:
-    """TEMPORARY bridge for the untyped for_each shorthand. Task 6 deletes this with `_envs`."""
-    if isinstance(value, bool):
-        return "bool"
-    if isinstance(value, int):
-        return "int"
-    if isinstance(value, float):
-        return "number"
-    return "string"
-
-
 def _envs(body: dict[str, Any]) -> list[Env]:
-    var = body.get("var")
+    """One Env per `in` row, bound against the declared `vars` (design 2026-07-20 §4).
+
+    Replaces the untyped check that `in` object items merely shared one key set: rows are now
+    checked against a declaration, so a missing or extra key is named rather than inferred.
+    """
+    if "var" in body:
+        raise WorkflowLoadError(
+            "for_each 'var' + scalar 'in' shorthand was removed in schema_version 2; declare "
+            "'vars': [{'name': ..., 'kind': ...}] and give 'in' object rows "
+            "(design 2026-07-20 §4)"
+        )
+    decls = _decls(body.get("vars"), "for_each 'vars'")
     raw = body.get("in")
     if not isinstance(raw, list) or not raw:
         raise WorkflowLoadError("for_each 'in' must be a non-empty list")
     out: list[Env] = []
-    if var is not None:
-        if not isinstance(var, str):
-            raise WorkflowLoadError("for_each 'var' must be a string")
-        for item in raw:
-            if isinstance(item, dict):
-                raise WorkflowLoadError("for_each with 'var' requires scalar items")
-            out.append({var: (_infer_kind(item), item)})
-        return out
-    keyset: set[str] | None = None
-    for item in raw:
-        if not isinstance(item, dict):
-            raise WorkflowLoadError("for_each without 'var' requires object items")
-        if keyset is None:
-            keyset = set(item)
-        elif set(item) != keyset:
-            raise WorkflowLoadError("for_each object items must share one key set")
-        out.append({k: (_infer_kind(v), v) for k, v in item.items()})
+    for r, row in enumerate(raw):
+        if not isinstance(row, dict):
+            raise WorkflowLoadError(f"for_each 'in' row {r} must be an object, got {row!r}")
+        out.append(_bind(decls, row, f"for_each 'in' row {r}"))
     return out
 
 

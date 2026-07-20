@@ -188,7 +188,8 @@ def test_abort_guarded_window_clean():
 
 def test_for_each_abort_expands_per_tube():
     validate(wf([
-        {"for_each": {"var": "tube", "in": [1, 2],
+        {"for_each": {"vars": [{"name": "tube", "kind": "int"}],
+            "in": [{"tube": 1}, {"tube": 2}],
             "body": [{"abort": {
                 "if": "count(od_{tube}, last=1min) > 0 and last(od_{tube}) > 5",
                 "message": "tube {tube} lost"}}]}},

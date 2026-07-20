@@ -7,7 +7,9 @@ def test_traced_output_matches_untraced():
     wf = {
         "schema_version": 1,
         "blocks": [
-            {"for_each": {"var": "t", "in": [1, 2], "body": [{"wait": {"duration": "1s"}}]}}
+            {"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                          "in": [{"t": 1}, {"t": 2}],
+                          "body": [{"wait": {"duration": "1s"}}]}}
         ],
     }
     expanded, _ = expand_dict_traced(wf)
@@ -18,7 +20,9 @@ def test_for_each_copies_all_trace_to_the_one_authored_body_block():
     wf = {
         "schema_version": 1,
         "blocks": [
-            {"for_each": {"var": "t", "in": [1, 2, 3], "body": [{"wait": {"duration": "{t}s"}}]}}
+            {"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                          "in": [{"t": 1}, {"t": 2}, {"t": 3}],
+                          "body": [{"wait": {"duration": "{t}s"}}]}}
         ],
     }
     expanded, trace = expand_dict_traced(wf)
@@ -31,7 +35,9 @@ def test_blocks_after_a_splice_trace_to_their_shifted_authored_index():
     wf = {
         "schema_version": 1,
         "blocks": [
-            {"for_each": {"var": "t", "in": [1, 2], "body": [{"wait": {"duration": "{t}s"}}]}},
+            {"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                          "in": [{"t": 1}, {"t": 2}],
+                          "body": [{"wait": {"duration": "{t}s"}}]}},
             {"wait": {"duration": "9s"}},
         ],
     }
@@ -50,7 +56,8 @@ def test_container_children_trace_through():
                     "children": [
                         {
                             "for_each": {
-                                "var": "t", "in": [1, 2],
+                                "vars": [{"name": "t", "kind": "int"}],
+                                "in": [{"t": 1}, {"t": 2}],
                                 "body": [{"wait": {"duration": "{t}s"}}],
                             }
                         }
@@ -90,7 +97,8 @@ def test_nested_for_each_inside_a_parametrized_group_traces_to_the_group_body():
                 "body": [
                     {
                         "for_each": {
-                            "var": "i", "in": [1, 2],
+                            "vars": [{"name": "i", "kind": "int"}],
+                            "in": [{"i": 1}, {"i": 2}],
                             "body": [{"wait": {"duration": "{i}s"}}],
                         }
                     }
@@ -114,7 +122,8 @@ def test_plain_group_body_indices_shift_when_a_for_each_inside_it_splices():
                 "body": [
                     {
                         "for_each": {
-                            "var": "i", "in": [1, 2],
+                            "vars": [{"name": "i", "kind": "int"}],
+                            "in": [{"i": 1}, {"i": 2}],
                             "body": [{"wait": {"duration": "{i}s"}}],
                         }
                     },
@@ -146,7 +155,9 @@ def test_plain_group_ref_traces_itself_after_a_splice():
         "schema_version": 1,
         "groups": {"wash": {"body": [{"wait": {"duration": "9s"}}]}},
         "blocks": [
-            {"for_each": {"var": "t", "in": [1, 2], "body": [{"wait": {"duration": "{t}s"}}]}},
+            {"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                          "in": [{"t": 1}, {"t": 2}],
+                          "body": [{"wait": {"duration": "{t}s"}}]}},
             {"group_ref": {"name": "wash"}},
         ],
     }
@@ -162,7 +173,9 @@ def test_malformed_block_traces_after_a_splice_and_does_not_raise():
     wf = {
         "schema_version": 1,
         "blocks": [
-            {"for_each": {"var": "t", "in": [1, 2], "body": [{"wait": {"duration": "{t}s"}}]}},
+            {"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                          "in": [{"t": 1}, {"t": 2}],
+                          "body": [{"wait": {"duration": "{t}s"}}]}},
             {"wait": {"duration": "1s"}, "nonsense": {"extra": True}},  # two type keys
         ],
     }
@@ -177,7 +190,9 @@ def test_malformed_group_ref_body_traces_after_a_splice():
     wf = {
         "schema_version": 1,
         "blocks": [
-            {"for_each": {"var": "t", "in": [1, 2], "body": [{"wait": {"duration": "{t}s"}}]}},
+            {"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                          "in": [{"t": 1}, {"t": 2}],
+                          "body": [{"wait": {"duration": "{t}s"}}]}},
             {"group_ref": "wash"},  # string body, not an object
         ],
     }
@@ -227,7 +242,8 @@ def test_seed_shift_composes_with_a_for_each_splice():
             }
         },
         "blocks": [
-            {"for_each": {"var": "t", "in": [1, 2], "body": [
+            {"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                          "in": [{"t": 1}, {"t": 2}], "body": [
                 {"group_ref": {"name": "svc", "as": "tube_{t}", "args": {"tube": "{t}"}}}]}},
             {"wait": {"duration": "9s"}},
         ],
@@ -248,7 +264,7 @@ def test_seed_shift_leaves_group_body_trace_keys_alone():
         "schema_version": 2,
         "groups": {
             "wash": {"body": [
-                {"for_each": {"var": "i", "in": [1, 2],
+                {"for_each": {"vars": [{"name": "i", "kind": "int"}], "in": [{"i": 1}, {"i": 2}],
                               "body": [{"wait": {"duration": "{i}s"}}]}},
                 {"wait": {"duration": "9s"}},
             ]},

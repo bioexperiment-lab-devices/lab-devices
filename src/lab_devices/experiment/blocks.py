@@ -1,8 +1,15 @@
-"""Typed AST for experiment workflows. See design §5."""
+"""Typed AST for experiment workflows. See design §5; typed for_each design 2026-07-20 §4."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Deferred: workflow.py imports Block/Retry from this module, so a real import here
+    # would be circular. ParamDecl only ever appears in a (string, future-annotations)
+    # field type below -- never evaluated at runtime -- so this is type-checking only.
+    from lab_devices.experiment.workflow import ParamDecl
 
 # A scalar slot: a literal, or an infix-expression string (parsed in Increment 2).
 ValueExpr = str | int | float | bool
@@ -117,9 +124,13 @@ class Alarm(BlockBase):
 
 @dataclass(kw_only=True)
 class ForEach(BlockBase):
+    """`vars` declares the typed columns; `items` is the `in` table, one row per iteration
+    (design 2026-07-20 §4). The old scalar `var` + bare-value `in` shorthand is removed --
+    every row is an object naming every declared var."""
+
     body: list[Block] = field(default_factory=list)
-    var: str | None = None
-    items: list[ValueExpr | dict[str, ValueExpr]] = field(default_factory=list)
+    vars: list[ParamDecl] = field(default_factory=list)
+    items: list[dict[str, ValueExpr]] = field(default_factory=list)
 
 
 Block = (
