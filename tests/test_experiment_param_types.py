@@ -88,3 +88,15 @@ def test_role_type_raises_unknown_role_error_naming_the_declared_roles():
 def test_unknown_role_error_is_a_workflow_load_error():
     """Existing callers catch WorkflowLoadError; an undeclared role must not escape them."""
     assert issubclass(UnknownRoleError, WorkflowLoadError)
+
+
+def test_value_kind_samples_stay_total_over_value_kinds():
+    """_hole_kind_binds derives hole-kind agreement from _value_matches by probing this
+    sample table, so consistency with the literal rule is only as good as the table's
+    coverage. A missing kind raises KeyError mid-validation instead of emitting a
+    diagnostic; an empty sample tuple makes `all(...)` vacuously true, silently widening
+    the check to accept everything (design 2026-07-20 §2.1)."""
+    from lab_devices.experiment.validate import _VALUE_KIND_SAMPLES
+
+    assert set(_VALUE_KIND_SAMPLES) == VALUE_KINDS
+    assert all(_VALUE_KIND_SAMPLES.values())
