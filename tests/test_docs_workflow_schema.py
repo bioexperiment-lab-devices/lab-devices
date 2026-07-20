@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from lab_devices.experiment.errors import WorkflowLoadError
 from lab_devices.experiment.expand import expand_dict
 from lab_devices.experiment.serialize import workflow_from_dict
 
@@ -68,3 +69,22 @@ def test_documented_fragment_is_valid_json(line: int, src: str) -> None:
     """Fragments are not whole documents, but they are still real JSON objects."""
     value: Any = json.loads(src)
     assert isinstance(value, dict), f"line {line}: write fragments as objects, not bare keys"
+
+
+_V1_FRAGMENTS = [(line, src) for line, src in FRAGMENTS
+                 if json.loads(src).get("schema_version") == 1]
+
+
+def test_the_v1_snippet_the_schema_break_narrative_shows_is_really_rejected() -> None:
+    """§7's whole story is 'a v1 document is rejected at load'. The doc SHOWS such a snippet;
+    without this, the anti-rot suite would keep passing even if the loader silently started
+    accepting v1 again, turning the reference into a lie. Every fragment the doc presents as
+    v1 must actually raise."""
+    assert _V1_FRAGMENTS, "the schema-break section must show at least one v1 document"
+    for line, src in _V1_FRAGMENTS:
+        # Pin the VERSION message, not merely WorkflowLoadError: a v1 snippet also uses the
+        # removed params/for_each shapes, so it would raise for those reasons too even if the
+        # version gate were dropped. Matching the version text is what makes this catch a
+        # loader that silently started accepting v1 again.
+        with pytest.raises(WorkflowLoadError, match="unsupported schema_version 1"):
+            workflow_from_dict(json.loads(src))
