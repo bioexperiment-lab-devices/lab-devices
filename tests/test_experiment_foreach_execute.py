@@ -21,7 +21,8 @@ async def test_for_each_drives_three_distinct_devices(fake_client):
         fake.add_device(f"densitometer_{i}", "densitometer")
     workflow = workflow_from_dict({
         "schema_version": 2,
-        "roles": {f"densitometer_{i}": {"type": "densitometer"} for i in (1, 2, 3)},
+        "roles": {f"densitometer_{i}": {"type": "densitometer",
+                                        "device": f"densitometer_{i}"} for i in (1, 2, 3)},
         "streams": {"od_1": {}, "od_2": {}, "od_3": {}},
         "blocks": [{"parallel": {"children": [
             {"for_each": {"vars": [{"name": "t", "kind": "int"}],
@@ -70,7 +71,8 @@ async def test_expanded_block_ids_are_positional_and_stable(fake_client):
         fake.add_device(f"densitometer_{i}", "densitometer")
     workflow = workflow_from_dict({
         "schema_version": 2,
-        "roles": {f"densitometer_{i}": {"type": "densitometer"} for i in (1, 2)},
+        "roles": {f"densitometer_{i}": {"type": "densitometer",
+                                        "device": f"densitometer_{i}"} for i in (1, 2)},
         "streams": {"od_1": {}, "od_2": {}},
         "blocks": [{"serial": {"children": [
             {"for_each": {"vars": [{"name": "t", "kind": "int"}],

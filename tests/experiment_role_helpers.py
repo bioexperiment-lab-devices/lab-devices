@@ -8,9 +8,10 @@ from lab_devices.experiment.registry import DEVICE_TYPES
 
 
 def auto_roles(doc: Any) -> dict[str, dict[str, str]]:
-    """Declare a role for every literal `device` name in `doc`, typed by its id suffix.
-    Names whose suffix is not a known device type are skipped, so negative tests that
-    target an unknown type still reach the diagnostic they were written for."""
+    """Declare a role for every literal `device` name in `doc`, typed by its id suffix and
+    bound to the identically-named physical device. Names whose suffix is not a known device
+    type are skipped, so negative tests that target an unknown type still reach the
+    diagnostic they were written for."""
     found: dict[str, dict[str, str]] = {}
 
     def walk(node: Any) -> None:
@@ -19,7 +20,7 @@ def auto_roles(doc: Any) -> dict[str, dict[str, str]]:
             if isinstance(device, str) and "{" not in device:
                 dtype = device.rsplit("_", 1)[0]
                 if dtype in DEVICE_TYPES:
-                    found[device] = {"type": dtype}
+                    found[device] = {"type": dtype, "device": device}
             for value in node.values():
                 walk(value)
         elif isinstance(node, list):

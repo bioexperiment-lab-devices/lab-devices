@@ -39,6 +39,9 @@ class RunOptions:
     # not on the block's `Retry` because polling is a pure read of job state — always safe to
     # repeat, even for a non-idempotent verb with no retry policy at all, so it must not be
     # gated by one. It tunes the same loop as job_poll_interval / job_poll_max / job_timeout.
+    role_mapping: dict[str, str] = field(default_factory=dict)
+    # Role -> physical device id for THIS run (design 2026-07-20 §5.2). Overrides a role's
+    # own `device:`. Resolved and checked for injectivity once, in run._resolve_roles.
 
 
 def _running_gate() -> asyncio.Event:
@@ -57,6 +60,7 @@ class RunContext:
     options: RunOptions
     occupancy: Occupancy = field(default_factory=Occupancy)
     devices: dict[str, Device] = field(default_factory=dict)
+    role_devices: dict[str, str] = field(default_factory=dict)
     locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     touched: dict[str, None] = field(default_factory=dict)
     in_flight: dict[str, tuple[str, Job]] = field(default_factory=dict)
@@ -79,17 +83,22 @@ class RunContext:
     def inputs(self) -> OperatorInputProvider:
         return self.options.input_provider
 
-    def device(self, device_id: str) -> Device:
-        if device_id not in self.devices:
-            self.devices[device_id] = self.client.device(device_id)
-        return self.devices[device_id]
+    def device(self, role: str) -> Device:
+        """Resolve a ROLE to its LabClient handle. The one place in the engine where a
+        physical device id is used — the wire boundary (design 2026-07-20 §5.2). Every
+        other structure (locks, occupancy, touched, in_flight, events) keys on the role
+        name, which injectivity (§5.4) makes equivalent and which is what the author
+        wrote."""
+        if role not in self.devices:
+            self.devices[role] = self.client.device(self.role_devices[role])
+        return self.devices[role]
 
-    def lock(self, device_id: str) -> asyncio.Lock:
+    def lock(self, role: str) -> asyncio.Lock:
         """Wire-serialization lock (D2): held only across one HTTP call, never across
-        a job wait or a mode scope."""
-        if device_id not in self.locks:
-            self.locks[device_id] = asyncio.Lock()
-        return self.locks[device_id]
+        a job wait or a mode scope. Keyed by ROLE, like every other engine structure."""
+        if role not in self.locks:
+            self.locks[role] = asyncio.Lock()
+        return self.locks[role]
 
     def emit(self, kind: str, block_id: str | None = None, **data: Any) -> None:
         self.log_sink.emit(RunEvent(self.clock.now(), kind, block_id, dict(data)))

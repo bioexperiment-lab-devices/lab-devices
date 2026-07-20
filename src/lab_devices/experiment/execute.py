@@ -10,7 +10,6 @@ from typing import Any
 
 from lab_devices import errors as core_errors
 from lab_devices.experiment import blocks as B
-from lab_devices.experiment._legacy_ids import legacy_device_type
 from lab_devices.experiment.context import RunContext
 from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import (
@@ -207,7 +206,9 @@ async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
     """Retry envelope around the dispatch pipeline (design 2026-07-14 §3.2). Each attempt
     re-resolves params against fresh state and re-acquires occupancy — a retry is a fresh
     dispatch, and this is what a fresh dispatch does."""
-    policy = _effective_retry(block, lookup(legacy_device_type(block.device), block.verb), ctx)
+    policy = _effective_retry(
+        block, lookup(ctx.workflow.role_type(block.device), block.verb), ctx
+    )
     attempts = 1 if policy is None else policy.attempts
     backoff = 0.0 if policy is None else parse_duration(policy.backoff)
     for attempt in range(1, attempts + 1):
@@ -256,7 +257,7 @@ def _refuse_retry(exc: Exception, reason: str) -> bool:
 
 
 def _modes_a_stop_would_close(device: str, ctx: RunContext) -> tuple[OpenMode, ...]:
-    """The open modes a `stop` on this device would silently kill.
+    """The open modes a `stop` on this role's device would silently kill.
 
     `Job.cancel()` IS `device.stop()` (jobs.py) — device-wide, not job-scoped. The
     densitometer is the one device whose channel groups are disjoint (optics vs thermal), so
@@ -265,7 +266,9 @@ def _modes_a_stop_would_close(device: str, ctx: RunContext) -> tuple[OpenMode, .
     A device type that declares no `stop` verb has an undeclared blast radius: assume the
     worst rather than the best."""
     try:
-        stop_channels: frozenset[str] | None = lookup(legacy_device_type(device), "stop").channels
+        stop_channels: frozenset[str] | None = lookup(
+            ctx.workflow.role_type(device), "stop"
+        ).channels
     except UnknownVerbError:
         stop_channels = None
     modes = ctx.occupancy.open_modes(device)
@@ -366,11 +369,12 @@ async def _dispatch_action(
     """The dispatch pipeline (design 4-exec §7): resolve -> classify -> occupy ->
     invoke -> complete. The occupancy check-and-mark is synchronous (no interleave
     window); the wire lock spans exactly one HTTP call (D2)."""
-    trait = lookup(legacy_device_type(block.device), block.verb)
+    # Bound ONCE: the trait and the mode action must agree on the device type, and deriving
+    # it twice is what would make disagreement expressible.
+    dtype = ctx.workflow.role_type(block.device)
+    trait = lookup(dtype, block.verb)
     params = _resolve_params(block, trait, ctx)
-    action = mode_action(  # on RESOLVED values (D7)
-        legacy_device_type(block.device), block.verb, params
-    )
+    action = mode_action(dtype, block.verb, params)  # on RESOLVED values (D7)
     closes = action.mode_verb if action is not None and action.kind == "close" else None
     block_id = str(block.id)
     ctx.touched.setdefault(block.device)
@@ -630,7 +634,9 @@ async def _execute_inner(block: B.Block, ctx: RunContext) -> None:
 async def _run_measure(block: B.Measure, ctx: RunContext) -> None:
     """Run the measurement job and stamp (clock.now(), scalar) into the stream (§8)."""
     result = await _run_action(block, ctx)
-    field_name = lookup(legacy_device_type(block.device), block.verb).result_field
+    field_name = lookup(
+        ctx.workflow.role_type(block.device), block.verb
+    ).result_field
     if field_name is None:  # unreachable for validated workflows
         raise EvaluationError(f"verb {block.verb!r} yields no measurement scalar")
     if isinstance(result, dict):

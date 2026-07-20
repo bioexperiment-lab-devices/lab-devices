@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from lab_devices.experiment import blocks as B
-from lab_devices.experiment._legacy_ids import legacy_device_type
 from lab_devices.experiment.analyze import (
     BindingType,
     ExprType,
@@ -673,6 +672,15 @@ def _check_param_value(
             out.append(Diagnostic("params", ctx, f"expected a number, got {value!r}"))
 
 
+def _role_type(w: Workflow, device: str) -> str | None:
+    """Declared device type behind a `device:` field (design 2026-07-20 §5.2), or None when
+    it cannot be known here: an unexpanded `{hole}` is not a role name yet, and an undeclared
+    role is diagnosed once by `_check_action` rather than by every analysis that walks past
+    it. A role name is not a device id and was never decodable into one."""
+    decl = w.roles.get(device)
+    return None if decl is None else decl.type
+
+
 def _check_action(
     b: B.Command | B.Measure,
     path: str,
@@ -680,8 +688,17 @@ def _check_action(
     binding_types: Mapping[str, BindingType],
     out: list[Diagnostic],
 ) -> None:
+    dtype = _role_type(w, b.device)
+    if dtype is None:
+        if "{" not in b.device:  # a hole defers; a name that is not a role never resolves
+            out.append(Diagnostic(
+                "declaration", path,
+                f"device {b.device!r} is not a declared role; declare it under the "
+                f"workflow's 'roles' section. Declared roles: {sorted(w.roles)}",
+            ))
+        return
     try:
-        trait = lookup(legacy_device_type(b.device), b.verb)
+        trait = lookup(dtype, b.verb)
     except UnknownVerbError as exc:
         out.append(Diagnostic("registry", path, str(exc)))
         return
@@ -820,8 +837,11 @@ def _check_record(
 
 
 def _check_measure(b: B.Measure, path: str, w: Workflow, out: list[Diagnostic]) -> None:
+    dtype = _role_type(w, b.device)
+    if dtype is None:
+        return  # already diagnosed by _check_action
     try:
-        trait = lookup(legacy_device_type(b.device), b.verb)
+        trait = lookup(dtype, b.verb)
     except UnknownVerbError:
         return  # already diagnosed by _check_action
     if not trait.measurement:
@@ -919,7 +939,7 @@ def _check_on_error(block: B.Block, path: str, out: list[Diagnostic]) -> None:
         ))
 
 
-def _check_retry(block: B.Block, path: str, out: list[Diagnostic]) -> None:
+def _check_retry(block: B.Block, path: str, w: Workflow, out: list[Diagnostic]) -> None:
     """retry is command/measure only, and a non-idempotent verb needs an explicit
     in-document opt-in (design 2026-07-14 §4)."""
     retry = block.retry
@@ -936,8 +956,11 @@ def _check_retry(block: B.Block, path: str, out: list[Diagnostic]) -> None:
             "block", path, "retry is only valid on command and measure blocks"
         ))
         return
+    dtype = _role_type(w, block.device)
+    if dtype is None:
+        return  # already diagnosed by _check_action
     try:
-        trait = lookup(legacy_device_type(block.device), block.verb)
+        trait = lookup(dtype, block.verb)
     except UnknownVerbError:
         return  # already diagnosed by _check_action
     if not trait.retry_safe and not retry.allow_repeat:
@@ -1011,7 +1034,7 @@ def _check_block(
     # Unconditional: legal on every block type, including Serial/Parallel/Wait/GroupRef,
     # which reach none of the type-specific checks below.
     _check_on_error(block, path, out)
-    _check_retry(block, path, out)
+    _check_retry(block, path, w, out)
     if isinstance(block, (B.Command, B.Measure)):
         _check_action(block, path, w, binding_types, out)
     if isinstance(block, B.Measure):
@@ -1165,8 +1188,11 @@ def _durable_guard_proof(condition: str) -> set[str]:
 
 
 def _visit_action(b: B.Command | B.Measure, path: str, state: _PathState, c: _Ctx) -> None:
+    dtype = _role_type(c.workflow, b.device)
+    if dtype is None:
+        return  # already diagnosed globally; nothing to analyze against
     try:
-        trait = lookup(legacy_device_type(b.device), b.verb)
+        trait = lookup(dtype, b.verb)
     except UnknownVerbError:
         return  # already diagnosed globally; nothing to analyze against
     specs = {s.name: s for s in trait.params}
@@ -1174,7 +1200,7 @@ def _visit_action(b: B.Command | B.Measure, path: str, state: _PathState, c: _Ct
         spec = specs.get(name)
         if spec is not None and spec.kind != "string":
             _expr_reads(value, f"{path} param {name!r}", state, c)
-    action = mode_action(legacy_device_type(b.device), b.verb, b.params)
+    action = mode_action(dtype, b.verb, b.params)
     if action is not None and action.kind == "close":
         # A matching close is always legal: closes if open, no-ops if not (design §12).
         state.modes.pop((b.device, action.mode_verb), None)
@@ -1182,7 +1208,7 @@ def _visit_action(b: B.Command | B.Measure, path: str, state: _PathState, c: _Ct
         for (device, mode_verb), status in sorted(state.modes.items()):
             if device != b.device:
                 continue
-            if lookup(legacy_device_type(device), mode_verb).channels & trait.channels:
+            if lookup(dtype, mode_verb).channels & trait.channels:
                 word = "open" if status == "open" else "possibly open"
                 c.emit(
                     "mode", path,
@@ -1236,10 +1262,15 @@ def _footprint(root: B.Block, w: Workflow) -> set[tuple[str, str]]:
     while stack:
         b = stack.pop()
         if isinstance(b, (B.Command, B.Measure)):
+            dtype = _role_type(w, b.device)
+            if dtype is None:
+                continue
             try:
-                trait = lookup(legacy_device_type(b.device), b.verb)
+                trait = lookup(dtype, b.verb)
             except UnknownVerbError:
                 continue
+            # Keyed by ROLE NAME, not by device id. Injectivity (design §5.4) makes the two
+            # intersections provably equivalent; the role name is what the author wrote.
             found.update((b.device, ch) for ch in trait.channels)
         elif isinstance(b, (B.Serial, B.Parallel)):
             stack.extend(b.children)

@@ -6,15 +6,17 @@ from lab_devices.experiment.serialize import workflow_from_dict
 from lab_devices.experiment.validate import validate
 from lab_devices.experiment.workflow import Group, LocalDecl, ParamDecl, RoleDecl, Workflow
 
-# Role names must survive the legacy_device_type id->type bridge (rsplit on the last "_",
-# keep the prefix) until Task 8 threads roles all the way through -- see the brief's known
-# limitation note. "od_meter_1"/"medium_pump" as used verbatim in the brief do NOT survive
-# it ("od_meter_1" -> "od_meter", "medium_pump" -> "medium"), so every role name here is
-# renamed to <device_type>_<n>, which the bridge decodes correctly.
+# A role name encodes nothing: its type comes from the declaration and only from there
+# (design 2026-07-20 5.2). "od_meter_1" and "medium_pump" are deliberately NOT of the form
+# <device_type>_<n>, so the deleted rsplit("_", 1) bridge would have decoded them to the
+# non-types 'od_meter' and 'medium'. The role-argument tests below use them for exactly
+# that reason -- they cannot pass unless the type is read from the declaration.
 DEFAULT_ROLES = {
     "densitometer_1": {"type": "densitometer"},
     "densitometer_2": {"type": "densitometer"},
     "pump_1": {"type": "pump"},
+    "od_meter_1": {"type": "densitometer"},
+    "medium_pump": {"type": "pump"},
 }
 
 
@@ -180,12 +182,12 @@ def test_role_arg_must_name_a_declared_role():
 
 def test_role_arg_device_type_must_match_the_declaration():
     w = wf2(
-        [{"group_ref": {"name": "svc", "args": {"meter": "pump_1"}}}],
+        [{"group_ref": {"name": "svc", "args": {"meter": "medium_pump"}}}],
         groups=_svc([{"name": "meter", "kind": "role",
                       "device_type": "densitometer"}]),
     )
     assert any(
-        "role 'pump_1' has type 'pump', but parameter 'meter' requires "
+        "role 'medium_pump' has type 'pump', but parameter 'meter' requires "
         "'densitometer'" in m
         for m in messages(w)
     )
@@ -193,7 +195,7 @@ def test_role_arg_device_type_must_match_the_declaration():
 
 def test_role_arg_naming_a_matching_role_is_clean():
     w = wf2(
-        [{"group_ref": {"name": "svc", "args": {"meter": "densitometer_1"}}}],
+        [{"group_ref": {"name": "svc", "args": {"meter": "od_meter_1"}}}],
         groups=_svc([{"name": "meter", "kind": "role",
                       "device_type": "densitometer"}]),
     )
@@ -300,7 +302,7 @@ def test_hole_arg_role_device_type_must_agree():
     groups = _svc([{"name": "meter", "kind": "role", "device_type": "densitometer"}])
     w = wf2(
         [_fe([{"name": "p", "kind": "role", "device_type": "pump"}],
-             [{"p": "pump_1"}],
+             [{"p": "medium_pump"}],
              [{"group_ref": {"name": "svc", "args": {"meter": "{p}"}}}])],
         groups=groups,
     )

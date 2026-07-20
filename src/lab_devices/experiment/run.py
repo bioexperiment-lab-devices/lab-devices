@@ -4,7 +4,7 @@ See design 4-exec §3, §10-12."""
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from lab_devices.client import LabClient
 from lab_devices.experiment import blocks as B
@@ -17,6 +17,8 @@ from lab_devices.experiment.errors import (
     PersistenceError,
     RunAbortedError,
     ToleratedError,
+    UnknownRoleError,
+    WorkflowLoadError,
 )
 from lab_devices.experiment.execute import execute_blocks
 from lab_devices.experiment.expand import expand_workflow
@@ -61,6 +63,43 @@ def _contains_abort(exc: BaseException) -> bool:
     return False
 
 
+def _resolve_roles(workflow: Workflow, mapping: dict[str, str]) -> dict[str, str]:
+    """Role -> physical device id for one run (design 2026-07-20 §5.2, §5.4).
+
+    `options.role_mapping` overrides a role's own `device:`; a role bound by neither is an
+    error. The result is INJECTIVE by construction. That is load-bearing, not hygiene: the
+    affinity and mode analyses intersect raw device strings and `Occupancy._slots` keys them,
+    so two roles aliasing one device would pass every static check and then collide at run
+    time on one (device, channel) slot — raising an InvariantViolationError that `_NEVER_RETRY`
+    refuses to retry and `_tolerable` refuses to absorb. A statically clean workflow would die
+    mid-run, unrecoverably. With injectivity, role names and device ids are in bijection and
+    the static proof is sound by construction (§5.4).
+    """
+    for role in mapping:
+        if role not in workflow.roles:
+            raise UnknownRoleError(
+                f"role_mapping names {role!r}, which is not a declared role; the workflow "
+                f"declares {sorted(workflow.roles)}"
+            )
+    resolved: dict[str, str] = {}
+    owner: dict[str, str] = {}
+    for role, decl in workflow.roles.items():
+        device = mapping.get(role, decl.device)
+        if device is None:
+            raise WorkflowLoadError(
+                f"role {role!r} is not bound to a device: give it a 'device' in the "
+                f"workflow's roles section, or supply one in RunOptions.role_mapping"
+            )
+        if device in owner:
+            raise WorkflowLoadError(
+                f"roles {owner[device]!r} and {role!r} both map to device {device!r}; the "
+                f"role->device mapping must be injective (design 2026-07-20 §5.4)"
+            )
+        owner[device] = role
+        resolved[role] = device
+    return resolved
+
+
 @dataclass
 class RunReport:
     """Outcome of one execution (design 4-exec §12); set before execute() raises."""
@@ -76,6 +115,9 @@ class RunReport:
     # Declared last, with a default: the failure path above constructs RunReport positionally.
     tolerated_errors: tuple[ToleratedError, ...] = ()
     alarms: tuple[AlarmRecord, ...] = ()  # alarm blocks that fired (design 2026-07-16 §4.4)
+    role_devices: dict[str, str] = field(default_factory=dict)
+    # The role -> physical device id mapping this run used, recorded ONCE (design §5.2).
+    # Events carry role names; this is where a reader turns one into hardware.
 
 
 class ExperimentRun:
@@ -84,16 +126,20 @@ class ExperimentRun:
     def __init__(
         self, client: LabClient, workflow: Workflow, options: RunOptions | None = None
     ) -> None:
+        self._options = options or RunOptions()
+        # Resolution FIRST: a bad mapping is a fact about this run, not about the document,
+        # and reporting it before the (slower, noisier) static pass keeps the two separable.
+        role_devices = _resolve_roles(workflow, self._options.role_mapping)
         validate(workflow)  # the runtime's safety model IS the static proof (D6)
         workflow = expand_workflow(workflow)  # run the concrete tree (design 2026-07-15 §4.4)
         assign_block_ids(workflow)
         self._workflow = workflow
-        self._options = options or RunOptions()
         state = RunState()
         for stream_name in workflow.streams:
             state.streams[stream_name] = Stream()  # pre-created: count()==0 (§3)
         self._ctx = RunContext(
-            client=client, workflow=workflow, state=state, options=self._options
+            client=client, workflow=workflow, state=state, options=self._options,
+            role_devices=role_devices,
         )
         self._task: asyncio.Task[object] | None = None
         self._started = False
@@ -156,7 +202,10 @@ class ExperimentRun:
         except PersistenceError as exc:
             # RunReport.log is the resolved sink (§5): ctx.log_sink already holds the
             # injected/default sink from RunContext.__post_init__ (NEW-3).
-            self.report = RunReport("failed", exc, (), ctx.state, ctx.log_sink)
+            self.report = RunReport(
+                "failed", exc, (), ctx.state, ctx.log_sink,
+                role_devices=dict(ctx.role_devices),
+            )
             raise
         self._sinks = sinks
         ctx.log_sink = sinks.log_sink
@@ -209,6 +258,7 @@ class ExperimentRun:
             persistence_errors=sinks.persistence_errors(),
             tolerated_errors=tuple(ctx.tolerated),
             alarms=tuple(ctx.alarms),
+            role_devices=dict(ctx.role_devices),
         )
         if cancelled:
             assert error is not None  # isinstance check above guarantees this (mypy narrowing)

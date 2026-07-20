@@ -5,7 +5,12 @@ from lab_devices.experiment.errors import BlockFailedError
 from lab_devices.experiment.execute import execute_blocks
 from lab_devices.experiment.run import ExperimentRun
 from lab_devices.experiment.state import RunState, Stream
-from tests.experiment_run_helpers import add_standard_devices, make_workflow, verbs
+from tests.experiment_run_helpers import (
+    add_standard_devices,
+    make_workflow,
+    role_devices,
+    verbs,
+)
 from tests.fakeclock import FakeClock, drive
 
 
@@ -14,7 +19,8 @@ def make_ctx(client, workflow, *, clock=None):
     for name in workflow.streams:
         state.streams[name] = Stream()
     return RunContext(client=client, workflow=workflow, state=state,
-                      options=RunOptions(clock=clock or FakeClock()))
+                      options=RunOptions(clock=clock or FakeClock()),
+                      role_devices=role_devices(workflow))
 
 
 async def run_blocks(ctx):

@@ -6,14 +6,21 @@ from lab_devices.experiment.context import RunContext, RunOptions
 from lab_devices.experiment.execute import _run_action, execute_blocks
 from lab_devices.experiment.finalize import run_finalizer
 from lab_devices.experiment.state import RunState
-from tests.experiment_run_helpers import add_standard_devices, make_workflow, verbs
+from tests.experiment_run_helpers import (
+    STANDARD_ROLES,
+    add_standard_devices,
+    make_workflow,
+    role_devices,
+    verbs,
+)
 from tests.fakeclock import FakeClock, drive
 
 
 def make_ctx(client, workflow=None, *, clock=None):
-    wf = workflow if workflow is not None else make_workflow([])
+    wf = workflow if workflow is not None else make_workflow([], roles=STANDARD_ROLES)
     return RunContext(client=client, workflow=wf, state=RunState(),
-                      options=RunOptions(clock=clock or FakeClock()))
+                      options=RunOptions(clock=clock or FakeClock()),
+                      role_devices=role_devices(wf))
 
 
 async def test_untouched_run_sweeps_nothing(fake_client):

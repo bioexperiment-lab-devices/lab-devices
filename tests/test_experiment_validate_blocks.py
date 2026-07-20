@@ -1,6 +1,6 @@
 from lab_devices.experiment.blocks import Loop, Measure
 from lab_devices.experiment.validate import validate
-from lab_devices.experiment.workflow import Workflow
+from lab_devices.experiment.workflow import RoleDecl, Workflow
 from tests.experiment_validate_helpers import MEASURE_OD, cmd, diags, wf
 
 
@@ -117,9 +117,10 @@ def test_measure_requires_measurement_verb():
 
 
 def test_measure_into_non_string():
-    w = Workflow(schema_version=1, blocks=[
-        Measure(device="densitometer_1", verb="measure", into=5),
-    ])
+    w = Workflow(schema_version=2,
+                 roles={"densitometer_1": RoleDecl(type="densitometer",
+                                                   device="densitometer_1")},
+                 blocks=[Measure(device="densitometer_1", verb="measure", into=5)])
     assert any(x.category == "block" and "into" in x.message for x in diags(w))
 
 

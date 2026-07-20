@@ -5,14 +5,21 @@ from lab_devices.experiment.context import RunContext, RunOptions
 from lab_devices.experiment.runlog import InMemoryRunLog
 from lab_devices.experiment.state import RunState
 from lab_devices.experiment.workflow import Workflow
-from tests.experiment_run_helpers import add_standard_devices, make_workflow
+from tests.experiment_run_helpers import (
+    STANDARD_ROLES,
+    add_standard_devices,
+    make_workflow,
+    role_devices,
+)
 from tests.fakeclock import FakeClock
 
 
 def _ctx(client, **opt):
     options = RunOptions(clock=FakeClock(start=100.0), **opt)
+    workflow = make_workflow([], roles=STANDARD_ROLES)
     return RunContext(
-        client=client, workflow=make_workflow([]), state=RunState(), options=options
+        client=client, workflow=workflow, state=RunState(), options=options,
+        role_devices=role_devices(workflow),
     )
 
 
