@@ -343,6 +343,14 @@ def _check_decl_names(
                 f"share one namespace (design 2026-07-20 §2.4)",
             ))
         introduced[name] = ParamDecl(name=name, kind=local.kind)
+    for name in introduced:
+        if name in env:
+            out.append(Diagnostic(
+                "declaration", where,
+                f"{name!r} shadows an enclosing group parameter or for_each variable of the "
+                f"same name; the outer binding substitutes first and the inner one never "
+                f"takes effect (design 2026-07-20 §2.4)",
+            ))
     return introduced
 
 

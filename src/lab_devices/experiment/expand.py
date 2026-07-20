@@ -412,8 +412,8 @@ def _expand_group_ref(
     dst: str,
     base: int,
 ) -> list[Any]:
-    # Caveat: a group `param` name must not collide with an inner for_each `var` —
-    # the param would shadow the loop var (no enforcement here).
+    # A group param / local shadowing an inner for_each var is DIAGNOSED by
+    # validate._check_decl_names (design 2026-07-20 §2.4); it is no longer a silent hazard.
     body = block["group_ref"]
     if not isinstance(body, dict):
         trace[f"{dst}[{base}]"] = src

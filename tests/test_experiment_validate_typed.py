@@ -366,3 +366,36 @@ def test_distinct_param_and_local_names_are_clean():
     w = wf2([{"group_ref": {"name": "svc", "as": "t1", "args": {"tube": 1}}}],
             groups=groups)
     assert validate(w) is None
+
+
+def test_for_each_var_shadowing_a_group_param_is_diagnosed():
+    groups = {"svc": {
+        "params": [{"name": "t", "kind": "int"}],
+        "body": [_fe([{"name": "t", "kind": "int"}], [{"t": 1}, {"t": 2}])],
+    }}
+    w = wf2([{"group_ref": {"name": "svc", "args": {"t": 1}}}], groups=groups)
+    assert any("'t' shadows an enclosing group parameter or for_each variable" in m
+               for m in messages(w))
+
+
+def test_for_each_var_shadowing_a_group_local_is_diagnosed():
+    groups = {"svc": {
+        "locals": {"c": {"kind": "binding", "init": "0"}},
+        "body": [_fe([{"name": "c", "kind": "int"}], [{"c": 1}])],
+    }}
+    w = wf2([{"group_ref": {"name": "svc", "as": "t1"}}], groups=groups)
+    assert any("'c' shadows an enclosing group parameter or for_each variable" in m
+               for m in messages(w))
+
+
+def test_nested_for_each_var_shadowing_is_diagnosed():
+    inner = _fe([{"name": "t", "kind": "int"}], [{"t": 9}])
+    w = wf2([_fe([{"name": "t", "kind": "int"}], [{"t": 1}], [inner])])
+    assert any("'t' shadows an enclosing group parameter or for_each variable" in m
+               for m in messages(w))
+
+
+def test_distinct_nested_var_names_are_clean():
+    inner = _fe([{"name": "u", "kind": "int"}], [{"u": 9}])
+    w = wf2([_fe([{"name": "t", "kind": "int"}], [{"t": 1}], [inner])])
+    assert validate(w) is None
