@@ -117,6 +117,36 @@ def _uses_macros(w: Workflow) -> bool:
     return False
 
 
+def _value_matches(kind: str, value: object) -> bool:
+    """JSON type agreement for a value kind (design 2026-07-20 §2). `bool` is checked
+    before `int` throughout: in Python `True` IS an `int`, and an author who wrote
+    `true` in an int slot made a real mistake."""
+    if kind == "bool":
+        return isinstance(value, bool)
+    if kind == "string":
+        return isinstance(value, str)
+    if isinstance(value, bool):
+        return False
+    if kind == "int":
+        return isinstance(value, int)
+    return isinstance(value, (int, float))
+
+
+def _check_typed_arg(
+    decl: ParamDecl,
+    value: object,
+    ctx: str,
+    w: Workflow,
+    env: Mapping[str, ParamDecl],
+    out: list[Diagnostic],
+) -> None:
+    """One `group_ref` arg or one `for_each` cell against its declaration."""
+    if not _value_matches(decl.kind, value):
+        out.append(Diagnostic(
+            "params", ctx, f"expected {decl.kind} for parameter {decl.name!r}, got {value!r}"
+        ))
+
+
 def _check_group_args(
     b: B.GroupRef,
     path: str,
@@ -137,6 +167,8 @@ def _check_group_args(
                 "group", path,
                 f"group_ref {b.name!r} is missing argument {name!r} ({decl.kind})",
             ))
+        else:
+            _check_typed_arg(decl, b.args[name], f"{path} arg {name!r}", w, env, out)
     for name in b.args:
         if name not in declared:
             out.append(Diagnostic(
@@ -184,6 +216,11 @@ def _check_for_each(
                 out.append(Diagnostic(
                     "for_each", path, f"for_each 'in' row {r} has no variable {name!r}"
                 ))
+        for name, decl in declared.items():
+            if name in row:
+                _check_typed_arg(
+                    decl, row[name], f"{path} in[{r}] {name!r}", w, env, out
+                )
 
 
 def _walk_decls(

@@ -113,3 +113,48 @@ def test_for_each_row_must_be_an_object():
 def test_for_each_rows_matching_the_declaration_are_clean():
     w = wf2([_fe([{"name": "t", "kind": "int"}], [{"t": 1}, {"t": 2}])])
     assert validate(w) is None
+
+
+def test_int_param_rejects_a_float_literal():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"tube": 1.5}}}],
+        groups=_svc([{"name": "tube", "kind": "int"}]),
+    )
+    assert any("expected int for parameter 'tube', got 1.5" in m for m in messages(w))
+
+
+def test_int_param_rejects_a_bool_literal():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"tube": True}}}],
+        groups=_svc([{"name": "tube", "kind": "int"}]),
+    )
+    assert any("expected int for parameter 'tube', got True" in m for m in messages(w))
+
+
+def test_bool_param_rejects_an_int_literal():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"flag": 1}}}],
+        groups=_svc([{"name": "flag", "kind": "bool"}]),
+    )
+    assert any("expected bool for parameter 'flag', got 1" in m for m in messages(w))
+
+
+def test_string_param_rejects_a_number():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"label": 3}}}],
+        groups=_svc([{"name": "label", "kind": "string"}]),
+    )
+    assert any("expected string for parameter 'label', got 3" in m for m in messages(w))
+
+
+def test_number_param_accepts_an_int_literal():
+    w = wf2(
+        [{"group_ref": {"name": "svc", "args": {"dose": 2}}}],
+        groups=_svc([{"name": "dose", "kind": "number"}]),
+    )
+    assert validate(w) is None
+
+
+def test_for_each_cell_kind_is_checked_too():
+    w = wf2([_fe([{"name": "t", "kind": "int"}], [{"t": 1}, {"t": "two"}])])
+    assert any("expected int for parameter 't', got 'two'" in m for m in messages(w))
