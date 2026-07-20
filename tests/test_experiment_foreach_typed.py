@@ -92,3 +92,23 @@ def test_empty_in_is_still_rejected():
     with pytest.raises(WorkflowLoadError, match="'in' must be a non-empty list"):
         expand_dict(_wf({"vars": [{"name": "t", "kind": "int"}], "in": [],
                          "body": [{"wait": {"duration": "{t}s"}}]}))
+
+
+def test_a_role_var_without_device_type_is_a_load_error():
+    # expand_dict runs on raw JSON before workflow_from_dict, and had its own tolerant
+    # _decls reader that checked 'name'/'kind' but never 'device_type' -- so a role decl
+    # missing it silently passed expand_dict while serialize._param_decls (used by
+    # workflow_from_dict on the very same document) already rejects it. Closes that gap.
+    with pytest.raises(WorkflowLoadError, match="kind 'role' requires 'device_type'"):
+        expand_dict(_wf({"vars": [{"name": "meter", "kind": "role"}],
+                         "in": [{"meter": "densitometer_1"}],
+                         "body": [{"wait": {"duration": "1s"}}]}))
+
+
+def test_a_non_role_var_with_device_type_is_a_load_error():
+    with pytest.raises(WorkflowLoadError, match="'device_type' is only allowed on kind 'role'"):
+        expand_dict(_wf({
+            "vars": [{"name": "t", "kind": "int", "device_type": "pump"}],
+            "in": [{"t": 1}],
+            "body": [{"wait": {"duration": "{t}s"}}],
+        }))

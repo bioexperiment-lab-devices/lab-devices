@@ -61,6 +61,9 @@ def _decls(raw: Any, where: str) -> list[tuple[str, str]]:
 
     expand_dict runs on raw JSON, before workflow_from_dict, so it cannot reuse the
     ParamDecl parsing in serialize.py -- it needs its own tolerant read of the same shape.
+    `device_type` presence is still checked to mirror serialize._param_decls (design
+    2026-07-20 §2.1): without this, expand_dict silently accepted a `role` decl with no
+    `device_type` on a raw doc that workflow_from_dict would refuse on the same doc.
     """
     if raw is None:
         return []
@@ -73,6 +76,17 @@ def _decls(raw: Any, where: str) -> list[tuple[str, str]]:
         name, kind = item.get("name"), item.get("kind")
         if not isinstance(name, str) or not isinstance(kind, str) or kind not in _ALL_KINDS:
             raise WorkflowLoadError(f"{where} entry {item!r} needs a 'name' and a valid 'kind'")
+        device_type = item.get("device_type")
+        if kind == "role" and device_type is None:
+            raise WorkflowLoadError(
+                f"{where} entry {item!r}: kind 'role' requires 'device_type' "
+                f"(design 2026-07-20 §2.1)"
+            )
+        if kind != "role" and device_type is not None:
+            raise WorkflowLoadError(
+                f"{where} entry {item!r}: 'device_type' is only allowed on kind 'role' "
+                f"(design 2026-07-20 §2.1)"
+            )
         out.append((name, kind))
     return out
 
