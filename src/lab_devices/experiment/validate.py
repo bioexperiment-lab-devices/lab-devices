@@ -12,6 +12,7 @@ from lab_devices.experiment.analyze import (
     BindingType,
     ExprType,
     ProvenWindows,
+    assignable,
     conjoin_proofs,
     infer_type,
     proof_covers,
@@ -601,7 +602,7 @@ def _check_declarations(w: Workflow, out: list[Diagnostic]) -> bool:
 _INPUT_TYPES: dict[str, BindingType] = {
     "float": "number",
     "int": "number",
-    "bool": "boolean",
+    "bool": "bool",
     "enum": "string",
 }
 
@@ -636,7 +637,7 @@ def _check_expr_type(
     report = infer_type(expr, binding_types)
     for problem in report.problems:
         out.append(Diagnostic("type", ctx, problem))
-    if report.type not in (expected, "unknown"):
+    if report.type != "unknown" and not assignable(report.type, expected):
         out.append(Diagnostic(
             "type", ctx, f"expected a {expected} expression, got {report.type}"
         ))
@@ -657,7 +658,7 @@ def _check_param_value(
             out.append(Diagnostic("params", ctx, f"expected a string literal, got {value!r}"))
         return
     if isinstance(value, str):
-        expected: ExprType = "boolean" if spec.kind == "bool" else "number"
+        expected: ExprType = "bool" if spec.kind == "bool" else "number"
         _check_expr_type(value, expected, ctx, binding_types, out)
         _check_streams_declared(value, ctx, w, out)
         return
@@ -747,7 +748,7 @@ def _check_condition(
             "type", ctx, f"condition must be an expression string, got {text!r}"
         ))
         return
-    _check_expr_type(text, "boolean", ctx, binding_types, out)
+    _check_expr_type(text, "bool", ctx, binding_types, out)
     _check_streams_declared(text, ctx, w, out)
 
 

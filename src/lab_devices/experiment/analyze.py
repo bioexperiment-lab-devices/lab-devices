@@ -18,11 +18,38 @@ from lab_devices.experiment.expr import (
     Window,
 )
 
-BindingType = Literal["number", "boolean", "string", "unknown"]
-ExprType = Literal["number", "boolean", "unknown"]
+# One scalar type vocabulary for the whole DSL (design 2026-07-21 §3). `int <: number`;
+# `bool`/`string` are invariant; `unknown` is the transient inference state. `BindingType`
+# and `ExprType` are kept as aliases so existing imports keep working.
+Type = Literal["int", "number", "bool", "string", "unknown"]
+BindingType = Type
+ExprType = Type
 
 _ARITH_OPS = frozenset({"+", "-", "*", "/"})
 _ORDER_OPS = frozenset({"<", "<=", ">", ">="})
+_NUMERIC: frozenset[str] = frozenset({"int", "number"})
+
+
+def assignable(got: Type, expected: Type) -> bool:
+    """Is a value of type `got` acceptable where `expected` is wanted (design §3.1)?
+
+    `int <: number` at the base; every other base is invariant. `unknown` is leniently
+    assignable in either direction — it is the transient inference state, and strictness is
+    enforced at slot level (`validate._check_expr_type`), not here.
+    """
+    if got == "unknown" or expected == "unknown":
+        return True
+    if got == expected:
+        return True
+    return got == "int" and expected == "number"
+
+
+def _describe(e: Expr, t: Type) -> str:
+    """Render an operand's type for a diagnostic, naming a bare binding so the author knows
+    which name is mistyped (e.g. `mode * 2` -> "string (binding 'mode')")."""
+    if isinstance(e, BindingRef):
+        return f"{t} (binding {e.name!r})"
+    return t
 
 
 @dataclass(frozen=True)
@@ -64,53 +91,69 @@ class TypeReport:
 
 
 def infer_type(expr: Expr, binding_types: Mapping[str, BindingType]) -> TypeReport:
-    """Lenient bottom-up type inference; 'unknown' never produces a problem —
-    the runtime evaluator (fail-safe rule, design §6) is the backstop."""
+    """Bottom-up type inference over the scalar lattice (design 2026-07-21 §3, §5).
+
+    A `string` binding *flows* as `string` (no problem at the reference); a problem is raised
+    only when it is used in a non-string position (arithmetic, ordering, mixed comparison).
+    `unknown` operands never produce a problem here — that leniency is the fail-safe rule
+    (design §6); slot-level strictness lives in `validate._check_expr_type`.
+    """
     problems: list[str] = []
 
-    def expect(e: Expr, expected: ExprType, ctx: str) -> None:
+    def expect(e: Expr, expected: Type, ctx: str) -> None:
         got = infer(e)
-        if got not in (expected, "unknown"):
-            problems.append(f"{ctx} requires a {expected} operand, got {got}")
+        if not assignable(got, expected):
+            problems.append(f"{ctx} requires a {expected} operand, got {_describe(e, got)}")
 
-    def infer(e: Expr) -> ExprType:
-        if isinstance(e, Const):
-            return "boolean" if isinstance(e.value, bool) else "number"
-        if isinstance(e, BindingRef):
-            bound = binding_types.get(e.name, "unknown")
-            if bound == "string":
-                problems.append(
-                    f"binding {e.name!r} holds a string (enum operator input); "
-                    "expressions evaluate numbers and booleans"
-                )
-                return "unknown"
-            if bound == "number" or bound == "boolean":
-                return bound
-            return "unknown"
-        if isinstance(e, StatCall):
+    def numeric(e: Expr, ctx: str) -> Type:
+        got = infer(e)
+        if got not in _NUMERIC and got != "unknown":
+            problems.append(f"{ctx} requires a number operand, got {_describe(e, got)}")
             return "number"
+        return got
+
+    def equality(e: BinaryOp) -> Type:
+        left, right = infer(e.left), infer(e.right)
+        if "unknown" not in (left, right):
+            both_numeric = left in _NUMERIC and right in _NUMERIC
+            if not (both_numeric or left == right):
+                problems.append(
+                    f"operator {e.op!r} cannot compare "
+                    f"{_describe(e.left, left)} with {_describe(e.right, right)}"
+                )
+        return "bool"
+
+    def infer(e: Expr) -> Type:
+        if isinstance(e, Const):
+            if isinstance(e.value, bool):
+                return "bool"
+            if isinstance(e.value, str):
+                return "string"
+            return "int" if isinstance(e.value, int) else "number"
+        if isinstance(e, BindingRef):
+            return binding_types.get(e.name, "unknown")
+        if isinstance(e, StatCall):
+            return "int" if e.fn == "count" else "number"
         if isinstance(e, UnaryOp):
             if e.op == "not":
-                expect(e.operand, "boolean", "'not'")
-                return "boolean"
-            expect(e.operand, "number", "unary '-'")
-            return "number"
+                expect(e.operand, "bool", "'not'")
+                return "bool"
+            return numeric(e.operand, "unary '-'")
         if e.op in ("and", "or"):
-            expect(e.left, "boolean", f"{e.op!r}")
-            expect(e.right, "boolean", f"{e.op!r}")
-            return "boolean"
+            expect(e.left, "bool", f"{e.op!r}")
+            expect(e.right, "bool", f"{e.op!r}")
+            return "bool"
         if e.op in _ARITH_OPS:
-            expect(e.left, "number", f"operator {e.op!r}")
-            expect(e.right, "number", f"operator {e.op!r}")
-            return "number"
+            lt = numeric(e.left, f"operator {e.op!r}")
+            rt = numeric(e.right, f"operator {e.op!r}")
+            if e.op == "/":
+                return "number"
+            return "int" if lt == "int" and rt == "int" else "number"
         if e.op in _ORDER_OPS:
-            expect(e.left, "number", f"operator {e.op!r}")
-            expect(e.right, "number", f"operator {e.op!r}")
-            return "boolean"
-        left, right = infer(e.left), infer(e.right)  # == / !=
-        if "unknown" not in (left, right) and left != right:
-            problems.append(f"operator {e.op!r} cannot compare a boolean with a number")
-        return "boolean"
+            numeric(e.left, f"operator {e.op!r}")
+            numeric(e.right, f"operator {e.op!r}")
+            return "bool"
+        return equality(e)  # == / !=
 
     top = infer(expr)
     return TypeReport(top, tuple(problems))

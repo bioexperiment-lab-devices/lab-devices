@@ -47,17 +47,18 @@ def test_references_unary_and_nesting():
 
 def test_infer_const_and_stat_types():
     assert report("1 + 2.5").type == "number"
-    assert report("true").type == "boolean"
-    assert report("1 < 2").type == "boolean"
-    assert report("not (1 < 2)").type == "boolean"
-    assert report("-(3 * 2)").type == "number"
+    assert report("true").type == "bool"
+    assert report("1 < 2").type == "bool"
+    assert report("not (1 < 2)").type == "bool"
+    assert report("-(3 * 2)").type == "int"  # int arithmetic + unary minus stays int
     assert report("mean(OD)").type == "number"
-    assert report("count(OD) >= 3").type == "boolean"
+    assert report("count(OD)").type == "int"  # count is a sample count
+    assert report("count(OD) >= 3").type == "bool"
 
 
 def test_infer_binding_types():
     assert report("x + 1", {"x": "number"}) == TypeReport("number", ())
-    assert report("flag and true", {"flag": "boolean"}) == TypeReport("boolean", ())
+    assert report("flag and true", {"flag": "bool"}) == TypeReport("bool", ())
     assert report("x", {}).type == "unknown"
     assert report("x + 1").type == "number"  # unknown operand: no false positive
 
@@ -77,13 +78,13 @@ def test_boolean_number_mixes_are_problems():
 
 
 def test_equality_same_kind_ok():
-    assert report("(1 < 2) == (3 < 4)") == TypeReport("boolean", ())
-    assert report("1 == 2") == TypeReport("boolean", ())
+    assert report("(1 < 2) == (3 < 4)") == TypeReport("bool", ())
+    assert report("1 == 2") == TypeReport("bool", ())
 
 
 def test_unknown_propagates_without_problems():
     rep = report("x + 1 > 0 and y", {})
-    assert rep.type == "boolean"
+    assert rep.type == "bool"
     assert rep.problems == ()
 
 
