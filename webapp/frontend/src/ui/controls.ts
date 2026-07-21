@@ -67,15 +67,24 @@ export function textAreaClass(opts: { mono?: boolean; fillParent?: boolean } = {
  * height rule (see frontend/CLAUDE.md) still has exactly one home: a caller that needs a
  * non-24px button asks for it by name, and there is no silent `h-6`/`self-stretch` clash. */
 export function inlineButtonClass(
-  opts: { subtle?: boolean; width?: string; stretch?: boolean } = {},
+  opts: { subtle?: boolean; danger?: boolean; active?: boolean; width?: string; stretch?: boolean } = {},
 ): string {
   return (
     `${opts.stretch ? 'self-stretch' : CONTROL_H} ${opts.width ? opts.width + ' ' : ''}` +
     'inline-flex shrink-0 items-center justify-center rounded border px-2 text-xs ' +
     'disabled:opacity-40 ' +
+    // Each variant SELECTS a whole border/bg set rather than appending one (the cascade
+    // reasoning behind `width`): appending `border-blue-500` onto a baked `border-slate-300`
+    // loses to compiled-order, not string-order. `active` is blue (selection state); `danger`
+    // is red on hover only (the destructive pattern IconButton uses — red is an error-state
+    // colour, not a resting fill).
     (opts.subtle
       ? 'border-dashed border-slate-300 text-caption hover:border-slate-400 hover:text-slate-700'
-      : 'border-slate-300 bg-white hover:bg-slate-100 disabled:hover:bg-white')
+      : opts.active
+        ? 'border-blue-500 bg-blue-50 text-blue-700 hover:bg-blue-100'
+        : opts.danger
+          ? 'border-slate-300 bg-white hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:hover:bg-white'
+          : 'border-slate-300 bg-white hover:bg-slate-100 disabled:hover:bg-white')
   ).trim()
 }
 
