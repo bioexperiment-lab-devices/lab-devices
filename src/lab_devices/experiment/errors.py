@@ -27,6 +27,10 @@ class ExpressionError(WorkflowLoadError):
     """An expression string is syntactically invalid (design §6, §15)."""
 
 
+class UnitError(WorkflowLoadError):
+    """A unit annotation is malformed (design 2026-07-21 §5)."""
+
+
 class EvaluationError(ExperimentError):
     """An expression could not produce a value at runtime (fail-safe rule, design §6):
     empty stream window, unbound binding, divide-by-zero, or a type mismatch."""
