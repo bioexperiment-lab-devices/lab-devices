@@ -6,8 +6,14 @@ import { useDismissable } from '../ui/useDismissable'
 /** Picker over declared streams + inline "+ new stream…" creation (audit F15: one
  * affordance for Measure AND Record — record.into stays a picker, never free text,
  * per the W8-settled decision). */
-export function StreamIntoPicker(props: { value: string; onPick: (name: string) => void }) {
-  const { value, onPick } = props
+export function StreamIntoPicker(props: {
+  value: string
+  onPick: (name: string) => void
+  /** Extra option names offered below the declared streams — the active group's stream {holes}
+   * when a Measure/Record sits inside that group's body (design 2026-07-21). */
+  extraOptions?: string[]
+}) {
+  const { value, onPick, extraOptions } = props
   const streams = useDocStore((s) => s.streams)
   const addStream = useDocStore((s) => s.addStream)
   const [adding, setAdding] = useState(false)
@@ -58,6 +64,13 @@ export function StreamIntoPicker(props: { value: string; onPick: (name: string) 
             {n}
           </option>
         ))}
+        {(extraOptions ?? [])
+          .filter((h) => !names.includes(h))
+          .map((h) => (
+            <option key={h} value={h}>
+              {h}
+            </option>
+          ))}
         <option value="__new__">+ new stream…</option>
       </select>
       {adding && (
