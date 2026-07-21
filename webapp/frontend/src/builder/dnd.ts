@@ -5,7 +5,7 @@ import type { PaletteKind, SlotRef } from './tree'
 export type DragPayload =
   | { source: 'palette-block'; kind: PaletteKind }
   | { source: 'palette-group'; name: string }
-  | { source: 'palette-verb'; role: string; verb: string; verbKind: 'command' | 'measure' }
+  | { source: 'palette-verb'; role: string; verb: string; verbKind: 'command' | 'measure'; deviceType: string }
   | { source: 'canvas'; uid: string }
 
 const ROOT = '~root'
