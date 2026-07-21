@@ -65,12 +65,12 @@ export function blockSummaryParts(node: BlockNode): SummarySegment[] {
           seg(` → ${node.into || '?'}`, 'detail'),
         ]
       case 'wait':
-        return [seg('wait', 'verb'), seg(` ${node.duration}`, 'detail')]
+        return [seg('wait', 'verb'), seg(` ${node.duration || '…'}`, 'detail')]
       case 'operator_input':
         return [
           seg('input', 'verb'),
           seg(' ', 'detail'),
-          seg(node.name, 'subject'),
+          seg(node.name || '…', 'subject'),
           seg(` (${node.inputType})`, 'detail'),
         ]
       case 'serial':
@@ -79,7 +79,7 @@ export function blockSummaryParts(node: BlockNode): SummarySegment[] {
         return [seg('Parallel', 'verb'), seg(` · ${node.children.length} lanes`, 'detail')]
       case 'loop':
         return node.mode === 'count'
-          ? [seg('Loop', 'verb'), seg(` ×${node.count}`, 'detail')]
+          ? [seg('Loop', 'verb'), seg(` ×${node.count === '' ? '…' : node.count}`, 'detail')]
           : [seg('Loop until', 'verb'), seg(` ${node.until || '…'}`, 'detail')]
       case 'branch':
         return [seg('If', 'verb'), seg(` ${node.condition || '…'}`, 'detail')]

@@ -1063,7 +1063,7 @@ function LoopForm({ node }: { node: LoopNode }) {
             onCommit={(t) => {
               const trimmed = t.trim()
               patchBlock(node.uid, {
-                count: trimmed === '' ? 1 : /^\d+$/.test(trimmed) ? Number(trimmed) : trimmed,
+                count: trimmed === '' ? '' : /^\d+$/.test(trimmed) ? Number(trimmed) : trimmed,
               })
             }}
           />

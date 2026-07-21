@@ -141,9 +141,9 @@ describe('tree ops', () => {
     expect(parallel.children.every((lane) => lane.kind === 'serial')).toBe(true)
     const branch = newPaletteNode('branch')
     expect(branch).toMatchObject({ condition: '', else: [] })
-    expect(newPaletteNode('wait')).toMatchObject({ duration: '1s' })
+    expect(newPaletteNode('wait')).toMatchObject({ duration: '' })
     const l = newPaletteNode('loop')
-    expect(l).toMatchObject({ mode: 'count', count: 2, check: 'after' })
+    expect(l).toMatchObject({ mode: 'count', count: '', check: 'after' })
   })
 
   it('builds command vs measure nodes from the verb spec kind', () => {
@@ -206,8 +206,8 @@ describe('tree ops', () => {
   it('gives for_each a body child slot so the tree ops reach into it', () => {
     const node = newPaletteNode('for_each') as ForEachNode
     expect(node.kind).toBe('for_each')
-    expect(node.vars).toEqual([{ name: 'tube', kind: 'int' }])
-    expect(node.rows).toEqual([{ tube: 1 }, { tube: 2 }, { tube: 3 }])
+    expect(node.vars).toEqual([])
+    expect(node.rows).toEqual([])
     expect(childSlots(node).map(([slot]) => slot)).toEqual(['body'])
     const wait = newPaletteNode('wait')
     const withChild = replaceSlot(node, 'body', [wait]) as ForEachNode
@@ -220,6 +220,26 @@ describe('tree ops', () => {
     expect(node.kind).toBe('group_ref')
     expect(node).toMatchObject({ name: '', as: null, args: {} })
     expect(childSlots(node)).toEqual([])
+  })
+})
+
+describe('newPaletteNode seeds', () => {
+  it('seeds for_each empty — no fabricated variable or rows', () => {
+    const n = newPaletteNode('for_each')
+    expect(n.kind === 'for_each' && n.vars).toEqual([])
+    expect(n.kind === 'for_each' && n.rows).toEqual([])
+  })
+  it('seeds wait, loop, and operator_input empty', () => {
+    const w = newPaletteNode('wait')
+    expect(w.kind === 'wait' && w.duration).toBe('')
+    const l = newPaletteNode('loop')
+    expect(l.kind === 'loop' && l.count).toBe('')
+    const o = newPaletteNode('operator_input')
+    expect(o.kind === 'operator_input' && o.name).toBe('')
+  })
+  it('keeps parallel structural seed: two empty serial lanes', () => {
+    const p = newPaletteNode('parallel')
+    expect(p.kind === 'parallel' && p.children.map((c) => c.kind)).toEqual(['serial', 'serial'])
   })
 })
 

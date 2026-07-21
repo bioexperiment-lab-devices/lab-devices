@@ -3,7 +3,6 @@ import { X } from 'lucide-react'
 import { useActiveTree, useDocStore } from '../stores/docStore'
 import { streamSources } from './refs'
 import { groupStreamRefs, useScopeRefs } from './scopeRefs'
-import { filterStreamNames } from './streamFilter'
 import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 
@@ -24,7 +23,6 @@ export function StreamsPanel() {
   const cancelled = useRef(false)
   const [newName, setNewName] = useState('')
   const [newUnits, setNewUnits] = useState('')
-  const [query, setQuery] = useState('')
 
   const commitRename = (from: string) => {
     const err = draft && draft !== from ? renameStream(from, draft) : null
@@ -42,7 +40,7 @@ export function StreamsPanel() {
     }
   }
 
-  const matches = filterStreamNames(Object.keys(streams), query)
+  const matches = Object.keys(streams)
 
   // The active group's own stream refs (params + locals, as {holes}), shown read-only below the
   // top-level list while editing that group — authored in the group's Params/Locals panels, not
@@ -52,21 +50,11 @@ export function StreamsPanel() {
   const activeTree = useActiveTree()
   const groupSources = streamSources(activeTree)
   const groupRefs = groupStreamRefs(group)
-  const visibleGroupRefs = new Set(filterStreamNames(groupRefs.map((r) => r.ref), query))
-  const shownGroupRefs = groupRefs.filter((r) => visibleGroupRefs.has(r.ref))
+  const shownGroupRefs = groupRefs
 
   return (
     <div className="space-y-1">
-      <input
-        value={query}
-        placeholder="filter streams…"
-        onChange={(e) => setQuery(e.target.value)}
-        className={controlClass()}
-      />
       <ul className="space-y-1">
-        {query.trim() !== '' && matches.length === 0 && (
-          <li className="text-xs text-hint">no streams match</li>
-        )}
         {matches.map((name) => {
           const s = streams[name]
           return (
@@ -106,6 +94,12 @@ export function StreamsPanel() {
                 {name}
               </button>
             )}
+            <input
+              value={s.units ?? ''}
+              placeholder="units"
+              onChange={(e) => setStreamUnits(name, e.target.value || null)}
+              className={controlClass({ width: 'w-14' })}
+            />
             <span
               title={
                 sources[name] === undefined
@@ -113,23 +107,18 @@ export function StreamsPanel() {
                   : `Written by a ${sources[name]} block`
               }
               className={
-                'flex h-6 shrink-0 items-center rounded px-1 text-xs ' +
-                (sources[name] === undefined ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600')
+                'ml-auto flex h-6 shrink-0 items-center text-xs ' +
+                (sources[name] === undefined
+                  ? 'text-hint'
+                  : 'rounded bg-slate-100 px-1 text-caption')
               }
             >
               {sources[name] ?? 'unused'}
             </span>
-            <input
-              value={s.units ?? ''}
-              placeholder="units"
-              onChange={(e) => setStreamUnits(name, e.target.value || null)}
-              className={controlClass({ width: 'w-14' })}
-            />
             <IconButton
               icon={X}
               label="Delete stream"
               destructive
-              className="ml-auto"
               onClick={() => setError(removeStream(name))}
             />
           </li>
@@ -177,10 +166,10 @@ export function StreamsPanel() {
                       : `Written by a ${groupSources[r.ref]} block`
                   }
                   className={
-                    'flex h-6 shrink-0 items-center rounded px-1 text-xs ' +
+                    'ml-auto flex h-6 shrink-0 items-center text-xs ' +
                     (groupSources[r.ref] === undefined
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'bg-slate-200 text-slate-600')
+                      ? 'text-hint'
+                      : 'rounded bg-slate-100 px-1 text-caption')
                   }
                 >
                   {groupSources[r.ref] ?? 'unused'}
