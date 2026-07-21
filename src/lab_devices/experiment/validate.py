@@ -635,6 +635,25 @@ def _collect_binding_types(w: Workflow) -> dict[str, BindingType]:
     return types
 
 
+def _flag_ambiguous_refs(
+    expr: Expr,
+    ctx: str,
+    binding_types: Mapping[str, BindingType],
+    out: list[Diagnostic],
+) -> None:
+    """Strictness (design 2026-07-21 §3, §4.1): a reference to a binding that is *present but
+    ambiguous* — written with conflicting, non-widening types on different paths, so its join
+    is 'unknown' — is a load error. A binding that is merely *absent* (never written) is the
+    separate `data-flow` "read before written" diagnostic, so it is not double-reported here."""
+    for name in sorted(references(expr).bindings):
+        if binding_types.get(name) == "unknown":
+            out.append(Diagnostic(
+                "type", ctx,
+                f"binding {name!r} has no single inferable type — it is written with "
+                f"conflicting types on different paths; give it one consistent type",
+            ))
+
+
 def _check_expr_type(
     text: str,
     expected: ExprType,
@@ -650,6 +669,7 @@ def _check_expr_type(
     report = infer_type(expr, binding_types)
     for problem in report.problems:
         out.append(Diagnostic("type", ctx, problem))
+    _flag_ambiguous_refs(expr, ctx, binding_types, out)
     if report.type != "unknown" and not assignable(report.type, expected):
         out.append(Diagnostic(
             "type", ctx, f"expected a {expected} expression, got {report.type}"
@@ -671,7 +691,12 @@ def _check_param_value(
             out.append(Diagnostic("params", ctx, f"expected a string literal, got {value!r}"))
         return
     if isinstance(value, str):
-        expected: ExprType = "bool" if spec.kind == "bool" else "number"
+        if spec.kind == "bool":
+            expected: ExprType = "bool"
+        elif spec.kind == "int":
+            expected = "int"
+        else:
+            expected = "number"
         _check_expr_type(value, expected, ctx, binding_types, out)
         _check_streams_declared(value, ctx, w, out)
         return
@@ -790,8 +815,14 @@ def _check_compute_value(
     except ExpressionError as exc:
         out.append(Diagnostic("type", ctx, f"invalid expression: {exc}"))
         return
-    for problem in infer_type(expr, binding_types).problems:
+    report = infer_type(expr, binding_types)
+    for problem in report.problems:
         out.append(Diagnostic("type", ctx, problem))
+    if report.type == "string":
+        out.append(Diagnostic(
+            "type", ctx, "compute stores a number or a boolean, not a string"
+        ))
+    _flag_ambiguous_refs(expr, ctx, binding_types, out)
     _check_streams_declared(value, ctx, w, out)
 
 
