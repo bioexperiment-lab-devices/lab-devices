@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.14.0...v1.0.0) (2026-07-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **experiment:** opaque units and schema v3 (Increment 10, Engine B) ([#57](https://github.com/bioexperiment-lab-devices/lab-devices/issues/57))
+
+### Features
+
+* **experiment:** expressions in duration/count slots (Increment 10, Engine C) ([#58](https://github.com/bioexperiment-lab-devices/lab-devices/issues/58)) ([590e5b7](https://github.com/bioexperiment-lab-devices/lab-devices/commit/590e5b72c7c7daf3cb80b708611edc11536f4e7a))
+* **experiment:** opaque units and schema v3 (Increment 10, Engine B) ([#57](https://github.com/bioexperiment-lab-devices/lab-devices/issues/57)) ([9531fdb](https://github.com/bioexperiment-lab-devices/lab-devices/commit/9531fdbd3dd7611461640f480b42c299b3538c36))
+* **experiment:** static type lattice for the DSL (Increment 10, Engine A) ([#55](https://github.com/bioexperiment-lab-devices/lab-devices/issues/55)) ([2313812](https://github.com/bioexperiment-lab-devices/lab-devices/commit/23138121f76b39821f7537441d9dc6b039af1183))
+* **studio:** editable as unit-cast field on compute/record (Increment 10, Studio) ([#59](https://github.com/bioexperiment-lab-devices/lab-devices/issues/59)) ([dddf32a](https://github.com/bioexperiment-lab-devices/lab-devices/commit/dddf32ac38647ab547f2d58c3f8d6e53a8278600))
+
 ## [0.14.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.13.0...v0.14.0) (2026-07-21)
 
 
