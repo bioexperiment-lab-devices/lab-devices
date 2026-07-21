@@ -319,7 +319,10 @@ export function nodeToBlock(node: BlockNode): BlockJson {
     case 'loop': {
       const body: LoopBody = { body: node.body.map(nodeToBlock) }
       if (node.mode === 'count') {
-        body.count = node.count
+        // Canonicalize: a numeric-string count (typed into the expression editor) emits as
+        // a JSON number, so literal counts keep one spelling across save/load round-trips.
+        const c = node.count
+        body.count = typeof c === 'string' && /^\d+$/.test(c.trim()) ? Number(c.trim()) : c
       } else {
         body.until = node.until
         body.check = node.check

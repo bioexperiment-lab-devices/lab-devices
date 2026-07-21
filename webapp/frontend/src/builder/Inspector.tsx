@@ -16,6 +16,7 @@ import {
   timingFields,
   timingSummary,
 } from './inspectorRules'
+import { ExpressionEditor } from './ExpressionEditor'
 import { fieldDiagnostics, unclaimedDiagnostics } from './paths'
 import { InspectorSection } from './InspectorSection'
 import { coerceParamInput, coerceValueInput, paramInputText } from './params'
@@ -1051,12 +1052,18 @@ function LoopForm({ node }: { node: LoopNode }) {
       </FieldRow>
       {node.mode === 'count' ? (
         <FieldRow label="Count" required>
-          <NumberField
-            value={node.count}
-            integer
-            min={1}
-            onCommit={(v) => patchBlock(node.uid, { count: v ?? 1 })}
+          <ExpressionEditor
+            value={typeof node.count === 'number' ? String(node.count) : node.count}
+            expected="int"
+            placeholder="3, or an expression"
+            onCommit={(t) => {
+              const trimmed = t.trim()
+              patchBlock(node.uid, {
+                count: trimmed === '' ? 1 : /^\d+$/.test(trimmed) ? Number(trimmed) : trimmed,
+              })
+            }}
           />
+          <FieldDiags uid={node.uid} fields={['loop count']} />
         </FieldRow>
       ) : (
         <>
