@@ -5,6 +5,7 @@ import { useDocStore } from '../stores/docStore'
 import { useRoleColorStore } from '../stores/roleColorStore'
 import type { Catalog } from '../types/catalog'
 import { effectiveSelection, roleGroups, type RoleTypeGroup } from './roleGroups'
+import { useScopeRefs } from './scopeRefs'
 import { ROLE_SWATCH_CLASSES, ROLE_SWATCH_LABELS, roleColorKey } from './roleColors'
 import { Chip } from './Chip'
 import { KindIcon } from '../ui/icons'
@@ -19,7 +20,10 @@ import { useDismissable } from '../ui/useDismissable'
  * separate "Manage roles" section. */
 export function RolesSection() {
   const catalog = useCatalogStore((s) => s.catalog)
-  const roles = useDocStore((s) => s.roles)
+  // Scope-aware: at the workflow scope this is exactly `s.roles`; inside a group's body it also
+  // carries that group's role-kind params as {hole} entries, so they group under their device
+  // type and their verb chips become draggable (design 2026-07-21).
+  const { roles, roleParamNames } = useScopeRefs()
   const groups = roleGroups(roles, catalog)
   return (
     <div className="space-y-2">
@@ -34,13 +38,23 @@ export function RolesSection() {
       {groups.length === 0 ? (
         <p className="px-1 text-xs text-hint">no device types in the catalog yet</p>
       ) : (
-        groups.map((g) => <RoleTypeBlock key={g.type} group={g} catalog={catalog} />)
+        groups.map((g) => (
+          <RoleTypeBlock key={g.type} group={g} catalog={catalog} paramNames={roleParamNames} />
+        ))
       )}
     </div>
   )
 }
 
-function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Catalog | null }) {
+function RoleTypeBlock({
+  group,
+  catalog,
+  paramNames,
+}: {
+  group: RoleTypeGroup
+  catalog: Catalog | null
+  paramNames: Set<string>
+}) {
   const renameRole = useDocStore((s) => s.renameRole)
   const removeRole = useDocStore((s) => s.removeRole)
   const focusedRole = useDocStore((s) => s.focusedRole)
@@ -50,6 +64,12 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
   const [error, setError] = useState<string | null>(null)
   const cancelled = useRef(false)
   const selected = effectiveSelection(group.roles, picked)
+  // A group role param ({hole}) is a read-only reference here — authored in the group's Params
+  // panel — so it never enters the rename input and the rename/delete/colour cluster is hidden
+  // while one is selected (renameRole/removeRole act on `s.roles`, which has no {hole} key).
+  const selectedIsParam = selected !== null && paramNames.has(selected)
+  const topRoles = group.roles.filter((r) => !paramNames.has(r))
+  const groupParams = group.roles.filter((r) => paramNames.has(r))
   const isFocusedHere = focusedRole !== null && group.roles.includes(focusedRole)
 
   // A Problems-row click names a role (docStore.focusedRole). When it is one of ours, make
@@ -81,6 +101,55 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
     }
   }
 
+  // One badge renderer shared by the top-level and this-group rows. `title` rides the
+  // truncating span (not the button) so the ellipsis element carries its own hover text — the
+  // probe's truncate-without-title rule checks exactly that. A group param is rendered font-mono
+  // to read as the {hole} it is, and never swaps into the rename input (isParam guard).
+  const badge = (name: string) => {
+    const isParam = paramNames.has(name)
+    return editing && name === selected && !isParam ? (
+      <input
+        key={name}
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (cancelled.current) {
+            cancelled.current = false
+            return
+          }
+          commitRename()
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commitRename()
+          if (e.key === 'Escape') {
+            cancelled.current = true
+            setEditing(false)
+          }
+        }}
+        className={controlClass({ mono: true, width: 'w-28' })}
+      />
+    ) : (
+      <button
+        key={name}
+        id={`role-${name}`}
+        onClick={() => {
+          setPicked(name)
+          setEditing(false)
+          setError(null)
+        }}
+        className={
+          badgeClass({ active: name === selected }) +
+          (focusedRole === name ? ' ring-2 ring-amber-400' : '')
+        }
+      >
+        <span className={'min-w-0 truncate' + (isParam ? ' font-mono' : '')} title={name}>
+          {name}
+        </span>
+      </button>
+    )
+  }
+
   const verbs = group.known ? (catalog?.device_types[group.type] ?? {}) : null
   return (
     <div className="rounded border border-slate-200 bg-white p-1.5">
@@ -96,71 +165,39 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
         <p className="mb-1 px-1 text-xs text-hint">no roles yet — add one to use this device</p>
       ) : (
         <div className="mb-1 flex flex-wrap items-center gap-1">
-          {group.roles.map((name) =>
-            editing && name === selected ? (
-              <input
-                key={name}
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onBlur={() => {
-                  if (cancelled.current) {
-                    cancelled.current = false
-                    return
-                  }
-                  commitRename()
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitRename()
-                  if (e.key === 'Escape') {
-                    cancelled.current = true
-                    setEditing(false)
-                  }
-                }}
-                className={controlClass({ mono: true, width: 'w-28' })}
-              />
-            ) : (
-              <button
-                key={name}
-                id={`role-${name}`}
+          {topRoles.map((name) => badge(name))}
+          {/* rename/delete/colour act on `selected` and only make sense for a real top-level
+              role — a group param is edited in the group's Params panel, so hide the cluster
+              (and never render the rename input) when the selection is a param. */}
+          {!selectedIsParam && (
+            <span className="ml-auto flex items-center">
+              {selected && <RoleColorPicker name={selected} type={group.type} />}
+              <IconButton icon={Pencil} label="Rename selected role" onClick={startRename} />
+              <IconButton
+                icon={X}
+                label="Delete selected role"
+                destructive
                 onClick={() => {
-                  setPicked(name)
-                  setEditing(false)
-                  setError(null)
+                  if (!selected) return
+                  const err = removeRole(selected)
+                  setError(err)
+                  if (err === null) setPicked(null)
                 }}
-                className={
-                  badgeClass({ active: name === selected }) +
-                  (focusedRole === name ? ' ring-2 ring-amber-400' : '')
-                }
-              >
-                {/* title lives on the truncating span itself, not the button — the ellipsis is
-                    this span's (badgeClass makes the button an items-center flex row, which
-                    cannot ellipsize), so the hover text must ride the element that clips. Same
-                    pattern as the device-type heading above and every Canvas summary span; the
-                    probe's truncate-without-title rule checks the ellipsizing element's own
-                    title, and an inner span added for the ellipsis without moving the title here
-                    is exactly what it caught. */}
-                <span className="min-w-0 truncate" title={name}>
-                  {name}
-                </span>
-              </button>
-            ),
+              />
+            </span>
           )}
-          <span className="ml-auto flex items-center">
-            {selected && <RoleColorPicker name={selected} type={group.type} />}
-            <IconButton icon={Pencil} label="Rename selected role" onClick={startRename} />
-            <IconButton
-              icon={X}
-              label="Delete selected role"
-              destructive
-              onClick={() => {
-                if (!selected) return
-                const err = removeRole(selected)
-                setError(err)
-                if (err === null) setPicked(null)
-              }}
-            />
-          </span>
+        </div>
+      )}
+      {/* Additive "In this group" divider (design 2026-07-21): the active group's role params,
+          only ever non-empty inside that group's scope. */}
+      {groupParams.length > 0 && (
+        <div className="mb-1">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-caption">
+            In this group
+          </p>
+          <div className="flex flex-wrap items-center gap-1">
+            {groupParams.map((name) => badge(name))}
+          </div>
         </div>
       )}
       {error && <p className="mb-1 text-xs text-red-600">{error}</p>}
@@ -170,7 +207,13 @@ function RoleTypeBlock({ group, catalog }: { group: RoleTypeGroup; catalog: Cata
             <Chip
               key={verb}
               id={`palette-verb-${selected}-${verb}`}
-              payload={{ source: 'palette-verb', role: selected, verb, verbKind: spec.kind }}
+              payload={{
+                source: 'palette-verb',
+                role: selected,
+                verb,
+                verbKind: spec.kind,
+                deviceType: group.type,
+              }}
             >
               <KindIcon kind={spec.kind === 'measure' ? 'measure' : 'command'} className="mr-1" />
               {verb}

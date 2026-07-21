@@ -12,6 +12,7 @@ import { argEditorFor, asRequired, defaultArgValue, emptyRow, isHole, rolesOfTyp
 import { failureFields, failureSummary, timingFields, timingSummary } from './inspectorRules'
 import { InspectorSection } from './InspectorSection'
 import { coerceParamInput, coerceValueInput, paramInputText } from './params'
+import { useScopeRefs } from './scopeRefs'
 import { StreamIntoPicker } from './StreamIntoPicker'
 import {
   DurationField,
@@ -309,7 +310,9 @@ function ArgField({
   value: ParamValue | undefined
   onCommit: (v: ParamValue | undefined) => void
 }) {
-  const roles = useDocStore((s) => s.roles)
+  // Scope-aware so a nested group_ref/for_each role arg can pick a {hole} from the enclosing
+  // group's role params, not only a top-level role (design 2026-07-21).
+  const { roles } = useScopeRefs()
   const editor = argEditorFor(param.kind)
   // Seeded like ParamInput's own exprMode: an arg that already holds a hole starts in
   // expression mode with no click needed. Sticky per mount thereafter (same as ParamInput —
@@ -582,7 +585,7 @@ function BlockForm({ node }: { node: BlockNode }) {
  * verb). `pending` holds the checkbox visually checked and the hazard box open without
  * materialising `node.retry` until "allow repeat" is ticked. */
 function RetrySection({ node }: { node: CommandNode | MeasureNode }) {
-  const roles = useDocStore((s) => s.roles)
+  const { roles } = useScopeRefs()
   const patchBlock = useDocStore((s) => s.patchBlock)
   const catalog = useCatalogStore((s) => s.catalog)
   const roleType = roles[node.device]?.type
@@ -713,7 +716,10 @@ function KindBody({ node }: { node: BlockNode }) {
 }
 
 function ActionForm({ node }: { node: CommandNode | MeasureNode }) {
-  const roles = useDocStore((s) => s.roles)
+  // Scope-aware roles: inside a group's body the Role dropdown offers that group's role params
+  // ({param_pump}), so a dropped role-param block resolves its type/verbs and never shows the
+  // "unknown role" banner for a valid reference (design 2026-07-21).
+  const { roles } = useScopeRefs()
   const patchBlock = useDocStore((s) => s.patchBlock)
   const catalog = useCatalogStore((s) => s.catalog)
   const roleType = roles[node.device]?.type
@@ -776,9 +782,14 @@ function ActionForm({ node }: { node: CommandNode | MeasureNode }) {
 
 function IntoPicker({ node }: { node: MeasureNode }) {
   const patchBlock = useDocStore((s) => s.patchBlock)
+  const { streamHoles } = useScopeRefs()
   return (
     <FieldRow label="Into stream" required>
-      <StreamIntoPicker value={node.into} onPick={(name) => patchBlock(node.uid, { into: name })} />
+      <StreamIntoPicker
+        value={node.into}
+        onPick={(name) => patchBlock(node.uid, { into: name })}
+        extraOptions={streamHoles}
+      />
     </FieldRow>
   )
 }
@@ -1068,6 +1079,7 @@ function BranchForm({ node }: { node: BranchNode }) {
  * only meet at save time. */
 function ValueForm({ node }: { node: ComputeNode | RecordNode }) {
   const patchBlock = useDocStore((s) => s.patchBlock)
+  const { streamHoles } = useScopeRefs()
   return (
     <div>
       {node.kind === 'compute' ? (
@@ -1081,7 +1093,11 @@ function ValueForm({ node }: { node: ComputeNode | RecordNode }) {
         </FieldRow>
       ) : (
         <FieldRow label="Into stream" required>
-          <StreamIntoPicker value={node.into} onPick={(v) => patchBlock(node.uid, { into: v })} />
+          <StreamIntoPicker
+            value={node.into}
+            onPick={(v) => patchBlock(node.uid, { into: v })}
+            extraOptions={streamHoles}
+          />
         </FieldRow>
       )}
       <FieldRow label="Value" required>

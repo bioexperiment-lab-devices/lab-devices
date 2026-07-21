@@ -3,6 +3,7 @@ import { SquareFunction } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useActiveTree, useDocStore } from '../stores/docStore'
 import { collectBindings } from './refs'
+import { scopeBindingNames, scopeStreamNames, useScopeRefs } from './scopeRefs'
 import { buildExpressionHelp } from './exprHelp'
 import { DURATION_RE } from './params'
 import { controlClass, textAreaClass } from '../ui/controls'
@@ -155,9 +156,17 @@ export function ExpressionInput(props: {
   // whose own `compute` blocks feed later expressions in that same body — needs its own
   // group's bindings, not the main workflow's.
   const activeTree = useActiveTree()
+  // Scope-aware: inside a group's body the help panel also lists that group's stream params &
+  // locals (as {holes}) under Streams, and its value + binding params/locals under Bindings
+  // (design 2026-07-21).
+  const { group } = useScopeRefs()
   const expression = useCatalogStore((s) => s.catalog?.expression ?? null)
   const help = expression
-    ? buildExpressionHelp(expression, Object.keys(streams), collectBindings(activeTree))
+    ? buildExpressionHelp(
+        expression,
+        scopeStreamNames(streams, group),
+        Array.from(new Set([...collectBindings(activeTree), ...scopeBindingNames(group)])),
+      )
     : null
   // The ref wraps BOTH the trigger and the panel: if the trigger sat outside it, clicking
   // it while open would dismiss and immediately re-open (spec §4.2, finding #6).

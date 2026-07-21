@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { X } from 'lucide-react'
-import { useDocStore } from '../stores/docStore'
+import { useActiveTree, useDocStore } from '../stores/docStore'
 import { streamSources } from './refs'
+import { groupStreamRefs, useScopeRefs } from './scopeRefs'
 import { filterStreamNames } from './streamFilter'
 import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
@@ -42,6 +43,17 @@ export function StreamsPanel() {
   }
 
   const matches = filterStreamNames(Object.keys(streams), query)
+
+  // The active group's own stream refs (params + locals, as {holes}), shown read-only below the
+  // top-level list while editing that group — authored in the group's Params/Locals panels, not
+  // here (design 2026-07-21). Source tags are computed over the GROUP body (useActiveTree),
+  // since that is where a `{local_stream}` is written.
+  const { scope, group } = useScopeRefs()
+  const activeTree = useActiveTree()
+  const groupSources = streamSources(activeTree)
+  const groupRefs = groupStreamRefs(group)
+  const visibleGroupRefs = new Set(filterStreamNames(groupRefs.map((r) => r.ref), query))
+  const shownGroupRefs = groupRefs.filter((r) => visibleGroupRefs.has(r.ref))
 
   return (
     <div className="space-y-1">
@@ -143,6 +155,41 @@ export function StreamsPanel() {
           Add
         </button>
       </div>
+      {scope !== null && shownGroupRefs.length > 0 && (
+        <div className="mt-1 border-t border-slate-200 pt-1">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-caption">
+            In group “{scope}”
+          </p>
+          <ul className="space-y-1">
+            {shownGroupRefs.map((r) => (
+              <li key={r.ref} className="flex items-center gap-1 text-sm">
+                <span className="min-w-0 flex-1 truncate font-mono text-caption" title={r.ref}>
+                  {r.ref}
+                </span>
+                <span className="shrink-0 rounded bg-slate-100 px-1 text-xs text-caption">
+                  {r.origin}
+                </span>
+                {r.units && <span className="shrink-0 text-xs text-hint">{r.units}</span>}
+                <span
+                  title={
+                    groupSources[r.ref] === undefined
+                      ? 'No block in this group writes this stream'
+                      : `Written by a ${groupSources[r.ref]} block`
+                  }
+                  className={
+                    'flex h-6 shrink-0 items-center rounded px-1 text-xs ' +
+                    (groupSources[r.ref] === undefined
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-slate-200 text-slate-600')
+                  }
+                >
+                  {groupSources[r.ref] ?? 'unused'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   )

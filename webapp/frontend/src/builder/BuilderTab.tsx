@@ -126,8 +126,9 @@ export function BuilderTab() {
       s.insertBlock(newGroupRefNode(payload.name), at)
       return
     }
-    const roleType = s.roles[payload.role]?.type
-    const spec = roleType ? catalog?.device_types[roleType]?.[payload.verb] : undefined
+    // palette-verb: `deviceType` comes from the palette chip (the role's device type), so a
+    // role-param chip ({param_pump}, not in s.roles) resolves the same as a top-level role.
+    const spec = catalog?.device_types[payload.deviceType]?.[payload.verb]
     if (spec) s.insertBlock(newVerbNode(payload.role, payload.verb, spec), at)
   }
 
