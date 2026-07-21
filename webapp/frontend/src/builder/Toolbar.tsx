@@ -81,19 +81,10 @@ export function Toolbar() {
     }
   }
 
-  const save = () =>
-    run(async () => {
-      const state = useDocStore.getState()
-      const doc = selectDoc(state)
-      const snapshot = snapshotOf(selectContent(state))
-      const res = state.serverId
-        ? await replaceExperiment(state.serverId, doc)
-        : await createExperiment(doc)
-      markSaved(res.id, snapshot)
-    })
-
-  const saveAs = () => {
-    const newName = window.prompt('Save as…', `${name} (copy)`)
+  // Shared by Save-on-a-new-doc and Save as: prompt for a name, create, adopt the server id.
+  // pauseHistory around the rename so cancel/error leaves no undo step behind.
+  const promptAndCreate = (title: string, defaultName: string) => {
+    const newName = window.prompt(title, defaultName)
     if (!newName) return
     const previousName = useDocStore.getState().name
     void run(async () => {
@@ -113,6 +104,24 @@ export function Toolbar() {
       }
     })
   }
+
+  // A never-saved doc has no server identity to overwrite, so Save IS Save as — minus the
+  // "(copy)" suffix, because there is no original to copy.
+  const save = () => {
+    const state = useDocStore.getState()
+    if (state.serverId === null) {
+      promptAndCreate('Save…', state.name)
+      return
+    }
+    return run(async () => {
+      const doc = selectDoc(state)
+      const snapshot = snapshotOf(selectContent(state))
+      const res = await replaceExperiment(state.serverId as string, doc)
+      markSaved(res.id, snapshot)
+    })
+  }
+
+  const saveAs = () => promptAndCreate('Save as…', `${name} (copy)`)
 
   const duplicate = () => {
     if (selectDirty(useDocStore.getState()) && !window.confirm('Discard unsaved changes?')) return
