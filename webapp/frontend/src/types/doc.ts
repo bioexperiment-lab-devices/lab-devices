@@ -1,6 +1,7 @@
-/** Hand-written TS mirrors of doc v1 + engine workflow schema v1 (webapp design §4.1).
- * The block grammar mirrors the engine serializer: one type key per block plus optional
- * block-level keys label/gap_after/start_offset/retry/on_error (2026-07-14 design). */
+/** Hand-written TS mirrors of doc v1 envelope + engine workflow schema v2 (webapp design §4.1;
+ * typed-params design 2026-07-20). The block grammar mirrors the engine serializer: one type key
+ * per block plus optional block-level keys label/gap_after/start_offset/retry/on_error. Group
+ * params/for_each vars are typed decls; groups carry locals; roles live in `workflow.roles`. */
 
 export type ParamValue = number | string | boolean
 

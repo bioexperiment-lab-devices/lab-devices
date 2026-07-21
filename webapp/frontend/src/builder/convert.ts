@@ -2,10 +2,10 @@
  * fixture byte-for-byte; emission rules mirror the engine serializer:
  * omit empty params, omit null timing keys, `check` only alongside `until`, `else`
  * omitted (not null) when absent, `on_error` omitted unless it is 'continue'. `groups`
- * omitted entirely when empty; a for_each's `var` omitted when null, its JSON key `in` maps
- * to the node field `items`; a group_ref's `args` omitted when empty (repetition design
- * 2026-07-15 §5 `serialize.py:288-347`; W9 removes the `groups`/`for_each`/`group_ref`
- * hard-reject this file carried since Increment 7 §9/§10). */
+ * omitted entirely when empty; a for_each carries typed `vars` and its JSON key `in` maps
+ * to the node field `rows` (typed rows; the v1 scalar `var` shorthand is gone); a group_ref's
+ * `as` is omitted when null and `args` when empty (typed-params design 2026-07-20 §3-4,
+ * `serialize.py`; roles now live in `workflow.roles`, not the doc envelope, §5). */
 import type {
   AbortBody,
   AlarmBody,
