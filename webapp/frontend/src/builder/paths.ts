@@ -106,6 +106,42 @@ function resolveTail(root: BlockNode[] | null, tail: string): BlockNode | null {
   return node
 }
 
+/** Structural (suffix-stripped) path -> {node, scope}. Shared by resolveDiagnosticPath
+ * (for its uid) and resolveDiagnosticNode. Mirrors the three head forms the file documents.
+ *
+ * Compound: only the INNERMOST (last) `->` segment is the edit target — everything before
+ * it is call-site context (see file header, point 3). Skip the opaque `headEnd` prefix
+ * here too, so an arrow inside a quoted group name is never mistaken for one. A quoted
+ * `groups[...]` head and a compound path are NOT mutually exclusive: docs_store.py's
+ * `_remap_group_segment` preserves a quoted head that is itself a call site into a plain
+ * group (test_docs_store.py's parametrized-group regression guard), so this file must
+ * resolve that combination too — see the tests in paths.test.ts. */
+function resolveStructuralNode(
+  tree: BlockNode[],
+  groups: GroupsMap,
+  structural: string,
+): { node: BlockNode | null; scope: string | null } {
+  const headEnd = quotedGroupHeadEnd(structural)
+  const arrowTail = structural.slice(headEnd).lastIndexOf('->')
+  const arrowIndex = arrowTail === -1 ? -1 : arrowTail + headEnd
+  if (arrowIndex !== -1) {
+    const segMatch = GROUP_SEGMENT_RE.exec(structural.slice(arrowIndex + 2))
+    if (!segMatch) return { node: null, scope: null }
+    const [, name, tail] = segMatch
+    const node = resolveTail(groups[name]?.body ?? null, tail)
+    return { node, scope: node ? name : null }
+  }
+  const groupHeadMatch = GROUP_HEAD_RE.exec(structural)
+  if (groupHeadMatch) {
+    const name = groupHeadMatch[1] ?? groupHeadMatch[2]
+    const node = resolveTail(groups[name]?.body ?? null, groupHeadMatch[3])
+    return { node, scope: node ? name : null }
+  }
+  const blocksMatch = BLOCKS_RE.exec(structural)
+  if (!blocksMatch) return { node: null, scope: null }
+  return { node: resolveTail(tree, blocksMatch[1]), scope: null }
+}
+
 export function resolveDiagnosticPath(tree: BlockNode[], groups: GroupsMap, path: string): ResolvedPath {
   const roleMatch = ROLE_RE.exec(path)
   if (roleMatch) return { ...NONE, role: roleMatch[1] ?? roleMatch[2] }
@@ -121,38 +157,23 @@ export function resolveDiagnosticPath(tree: BlockNode[], groups: GroupsMap, path
   const param = paramMatch ? (paramMatch[1] ?? paramMatch[2]) : null
   const field = suffix === '' ? null : suffix
 
-  // Compound: only the INNERMOST (last) `->` segment is the edit target — everything
-  // before it is call-site context (see file header, point 3). Skip the same opaque
-  // `headEnd` prefix here too, so an arrow inside a quoted group name is never mistaken
-  // for one. A quoted `groups[...]` head and a compound path are NOT mutually exclusive:
-  // docs_store.py's `_remap_group_segment` preserves a quoted head that is itself a
-  // call site into a plain group (test_docs_store.py's parametrized-group regression
-  // guard), so this file must resolve that combination too — see the test below.
-  const arrowTail = structural.slice(headEnd).lastIndexOf('->')
-  const arrowIndex = arrowTail === -1 ? -1 : arrowTail + headEnd
-  if (arrowIndex !== -1) {
-    const segMatch = GROUP_SEGMENT_RE.exec(structural.slice(arrowIndex + 2))
-    if (!segMatch) return { ...NONE, param, field }
-    const [, name, tail] = segMatch
-    const node = resolveTail(groups[name]?.body ?? null, tail)
-    return node
-      ? { uid: node.uid, role: null, param, scope: name, field }
-      : { ...NONE, param, field }
-  }
+  const { node, scope } = resolveStructuralNode(tree, groups, structural)
+  return { uid: node?.uid ?? null, role: null, param, scope, field }
+}
 
-  const groupHeadMatch = GROUP_HEAD_RE.exec(structural)
-  if (groupHeadMatch) {
-    const name = groupHeadMatch[1] ?? groupHeadMatch[2]
-    const node = resolveTail(groups[name]?.body ?? null, groupHeadMatch[3])
-    return node
-      ? { uid: node.uid, role: null, param, scope: name, field }
-      : { ...NONE, param, field }
-  }
-
-  const blocksMatch = BLOCKS_RE.exec(structural)
-  if (!blocksMatch) return { ...NONE, param, field }
-  const node = resolveTail(tree, blocksMatch[1])
-  return { uid: node?.uid ?? null, role: null, param, scope: null, field }
+/** The node a diagnostic/source path addresses (or null). Same resolution as
+ * resolveDiagnosticPath, returning the block instead of only its uid — used to name run-log
+ * events by the authored block's label/summary. */
+export function resolveDiagnosticNode(
+  tree: BlockNode[],
+  groups: GroupsMap,
+  path: string,
+): BlockNode | null {
+  if (ROLE_RE.test(path)) return null
+  const headEnd = quotedGroupHeadEnd(path)
+  const spaceIndex = path.indexOf(' ', headEnd)
+  const structural = spaceIndex === -1 ? path : path.slice(0, spaceIndex)
+  return resolveStructuralNode(tree, groups, structural).node
 }
 
 /** Diagnostics for one field of one block (Inspector, spec §3.5). */

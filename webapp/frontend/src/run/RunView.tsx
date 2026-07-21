@@ -1,12 +1,14 @@
 /** Active-run screen (§9.4): status header + controls, event log, terminal report,
  * operator-input dialog. The live chart slot is filled by Task 9. */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavStore } from '../stores/navStore'
 import { useRecordsStore } from '../stores/recordsStore'
 import { useRunStore } from '../stores/runStore'
 import { StatusChip } from '../records/RecordsTable'
 import { formatElapsed } from '../records/format'
 import { StreamChart } from '../charts/StreamChart'
+import { docToTree } from '../builder/convert'
+import { blockName } from './blockName'
 import { EventLog } from './EventLog'
 import { InputDialog } from './InputDialog'
 import { alarmSummary, toleratedSummary } from './reportSummary'
@@ -49,6 +51,18 @@ export function RunView() {
   const controlBusy = useRunStore((s) => s.controlBusy)
   const report = useRunStore((s) => s.report)
   const recordId = useRunStore((s) => s.recordId)
+  const doc = useRunStore((s) => s.doc)
+  const resolved = useMemo(() => {
+    if (doc === null) return null
+    try {
+      const { tree, groups } = docToTree(doc)
+      // Coerce groups to {} (DocContent.groups is typed optional) so a plain blocks[i] path
+      // still resolves — mirrors RecordViewer, keeping blockName's guard identical on both surfaces.
+      return { tree, groups: groups ?? {} }
+    } catch {
+      return null
+    }
+  }, [doc])
   const tolerated = toleratedSummary(report)
   const alarms = alarmSummary(report)
 
@@ -133,7 +147,12 @@ export function RunView() {
       )}
 
       <LiveChart />
-      <EventLog events={feed.events} origin={feed.origin} rev={feed.rev} />
+      <EventLog
+        events={feed.events}
+        origin={feed.origin}
+        rev={feed.rev}
+        nameFor={(e) => blockName(e, resolved?.tree ?? null, resolved?.groups ?? null)}
+      />
     </div>
   )
 }

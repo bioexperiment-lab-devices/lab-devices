@@ -3,7 +3,7 @@ import { applyMessage, emptyFeed, type FeedState } from './reducer'
 import type { RunWsMsg } from '../types/runs'
 
 const ev = (seq: number, kind: string, data: Record<string, unknown> = {}, ts = seq): RunWsMsg =>
-  ({ type: 'event', seq, timestamp: ts, kind, block_id: null, data })
+  ({ type: 'event', seq, timestamp: ts, kind, block_id: null, source_path: null, data })
 const st = (seq: number, status: string): RunWsMsg => ({ type: 'status', seq, status })
 
 const feedAll = (msgs: RunWsMsg[], s: FeedState = emptyFeed()): FeedState =>

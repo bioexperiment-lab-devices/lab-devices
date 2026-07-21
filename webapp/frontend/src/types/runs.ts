@@ -34,6 +34,7 @@ export interface RunEventMsg {
   timestamp: number
   kind: string
   block_id: string | null
+  source_path: string | null
   data: Record<string, unknown>
 }
 
@@ -50,5 +51,6 @@ export interface RecordEvent {
   timestamp: number
   kind: string
   block_id: string | null
+  source_path: string | null
   data: Record<string, unknown>
 }
