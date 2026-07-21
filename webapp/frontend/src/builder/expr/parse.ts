@@ -36,7 +36,10 @@ export function parseDurationLiteral(text: string): number {
 }
 
 class Failure {
-  constructor(readonly error: ParseError) {}
+  readonly error: ParseError
+  constructor(error: ParseError) {
+    this.error = error
+  }
 }
 
 class Parser {
