@@ -154,7 +154,7 @@ def test_unknown_block_type_rejected():
 
 def test_round_trip_preserves_retry_and_on_error():
     doc = {
-        "schema_version": 2,
+        "schema_version": 3,
         "persistence": {"default": "in_memory", "format": "jsonl"},
         "defaults": {"retry": {"attempts": 2, "backoff": "5s"}},
         "roles": _ROLES_DOC,
@@ -179,9 +179,9 @@ def test_round_trip_preserves_retry_and_on_error():
 
 def test_retry_defaults_backoff_to_one_second():
     w = workflow_from_dict({
-        "schema_version": 2,
+        "schema_version": 3,
         "roles": _ROLES_DOC,
-        "streams": {"od_1": {}},
+        "streams": {"od_1": {"units": "unitless"}},
         "blocks": [{"measure": {"device": "densitometer_1", "verb": "measure", "into": "od_1"},
                     "retry": {"attempts": 3}}],
     })
@@ -194,7 +194,7 @@ def test_retry_defaults_backoff_to_one_second():
 def test_bad_on_error_value_rejected_at_load():
     with pytest.raises(WorkflowLoadError, match="on_error"):
         workflow_from_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "blocks": [{"wait": {"duration": "1s"}, "on_error": "retry"}],
         })
 
@@ -202,8 +202,8 @@ def test_bad_on_error_value_rejected_at_load():
 def test_bad_retry_attempts_rejected_at_load():
     with pytest.raises(WorkflowLoadError, match="attempts"):
         workflow_from_dict({
-            "schema_version": 2,
-            "streams": {"od_1": {}},
+            "schema_version": 3,
+            "streams": {"od_1": {"units": "unitless"}},
             "blocks": [{"measure": {"device": "densitometer_1", "verb": "measure",
                                     "into": "od_1"}, "retry": {"attempts": 0}}],
         })
@@ -214,7 +214,7 @@ def test_retry_nested_in_a_command_body_is_rejected_at_load():
     dropped -- the author believes they have a retry policy and has none."""
     with pytest.raises(WorkflowLoadError, match="block-level key"):
         workflow_from_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "blocks": [{"command": {"device": "pump_1", "verb": "dispense",
                                     "params": {"volume_ml": 0.5},
                                     "retry": {"attempts": 3, "allow_repeat": True}}}],
@@ -224,8 +224,8 @@ def test_retry_nested_in_a_command_body_is_rejected_at_load():
 def test_on_error_nested_in_a_measure_body_is_rejected_at_load():
     with pytest.raises(WorkflowLoadError, match="block-level key"):
         workflow_from_dict({
-            "schema_version": 2,
-            "streams": {"od_1": {}},
+            "schema_version": 3,
+            "streams": {"od_1": {"units": "unitless"}},
             "blocks": [{"measure": {"device": "densitometer_1", "verb": "measure",
                                     "into": "od_1", "on_error": "continue"}}],
         })
@@ -244,13 +244,13 @@ def test_a_misplaced_block_key_is_rejected_on_every_block_type(body):
     """`on_error` is legal on EVERY block type, so the silently-dropped-key trap is too:
     nested in a body it used to load and vanish, and the author believed they had a policy."""
     with pytest.raises(WorkflowLoadError, match="block-level key"):
-        workflow_from_dict({"schema_version": 2, "blocks": [body]})
+        workflow_from_dict({"schema_version": 3, "blocks": [body]})
 
 
 def test_defaults_on_error_rejected_at_load():
     with pytest.raises(WorkflowLoadError, match="on_error"):
         workflow_from_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "defaults": {"on_error": "continue"},
             "blocks": [{"wait": {"duration": "1s"}}],
         })
@@ -259,7 +259,7 @@ def test_defaults_on_error_rejected_at_load():
 def test_defaults_unknown_key_rejected_at_load():
     with pytest.raises(WorkflowLoadError, match="bogus"):
         workflow_from_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "defaults": {"bogus": True},
             "blocks": [{"wait": {"duration": "1s"}}],
         })
@@ -309,7 +309,7 @@ def test_compute_value_object_rejected():
 
 def test_workflow_roundtrip_with_compute_and_record():
     doc = {
-        "schema_version": 2,
+        "schema_version": 3,
         "persistence": {"default": "in_memory", "format": "jsonl"},
         "streams": {"r_series": {"units": "per_hour"}},
         "blocks": [
@@ -322,9 +322,9 @@ def test_workflow_roundtrip_with_compute_and_record():
 
 def test_abort_alarm_roundtrip():
     doc = {
-        "schema_version": 2,
+        "schema_version": 3,
         "persistence": {"default": "in_memory", "format": "jsonl"},
-        "streams": {"od_1": {}},
+        "streams": {"od_1": {"units": "unitless"}},
         "blocks": [
             {"abort": {"if": "count(od_1, last=1min) > 0 and last(od_1) > 2.0",
                        "message": "contaminated"}},
@@ -336,17 +336,17 @@ def test_abort_alarm_roundtrip():
 
 def test_abort_requires_if_and_message():
     with pytest.raises(WorkflowLoadError):
-        workflow_from_dict({"schema_version": 2,
+        workflow_from_dict({"schema_version": 3,
                             "blocks": [{"abort": {"message": "x"}}]})
     with pytest.raises(WorkflowLoadError):
-        workflow_from_dict({"schema_version": 2,
+        workflow_from_dict({"schema_version": 3,
                             "blocks": [{"abort": {"if": "true"}}]})
 
 
 def test_alarm_requires_if_and_message():
     with pytest.raises(WorkflowLoadError):
-        workflow_from_dict({"schema_version": 2,
+        workflow_from_dict({"schema_version": 3,
                             "blocks": [{"alarm": {"message": "x"}}]})
     with pytest.raises(WorkflowLoadError):
-        workflow_from_dict({"schema_version": 2,
+        workflow_from_dict({"schema_version": 3,
                             "blocks": [{"alarm": {"if": "true"}}]})

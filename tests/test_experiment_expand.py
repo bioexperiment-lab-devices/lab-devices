@@ -5,7 +5,7 @@ from lab_devices.experiment.expand import _substitute, expand_dict
 
 
 def _wf(blocks, groups=None):
-    d = {"schema_version": 2, "blocks": blocks}
+    d = {"schema_version": 3, "blocks": blocks}
     if groups is not None:
         d["groups"] = groups
     return d

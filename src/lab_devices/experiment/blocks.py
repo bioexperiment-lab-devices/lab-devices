@@ -103,12 +103,14 @@ class GroupRef(BlockBase):
 class Compute(BlockBase):
     into: str
     value: ValueExpr  # scalar bound into RunState.bindings (number or boolean)
+    as_: str | None = None  # unit assertion for the bound value (design 2026-07-21 §6); JSON "as"
 
 
 @dataclass(kw_only=True)
 class Record(BlockBase):
     into: str
     value: ValueExpr  # numeric sample appended to a declared stream
+    as_: str | None = None  # unit assertion for the recorded value; must match the stream's unit
 
 
 @dataclass(kw_only=True)

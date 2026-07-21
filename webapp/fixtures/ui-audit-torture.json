@@ -3,7 +3,7 @@
   "name": "UI audit torture",
   "description": "Boundary-stress fixture for the UI audit (design 2026-07-17 \u00a76.2). NOT a runnable experiment and NOT a design reference \u2014 it deliberately contains invalid stream and binding references so ProblemsPanel has something to render. Regenerate with `python3 webapp/fixtures/gen_torture.py`.",
   "workflow": {
-    "schema_version": 2,
+    "schema_version": 3,
     "metadata": {
       "author": "ui-audit",
       "description": "torture"

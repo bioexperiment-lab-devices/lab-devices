@@ -30,9 +30,13 @@ def make_workflow(
     persistence: dict[str, Any] | None = None,
     roles: dict[str, Any] | None = None,
 ) -> Workflow:
-    doc: dict[str, Any] = {"schema_version": 2, "blocks": blocks}
+    doc: dict[str, Any] = {"schema_version": 3, "blocks": blocks}
     if streams is not None:
-        doc["streams"] = streams
+        # Schema 3 requires a `units` annotation on every stream; default the ones a test
+        # left unspecified to "unitless" so unit-agnostic run tests need not spell it out.
+        doc["streams"] = {
+            name: {"units": "unitless", **decl} for name, decl in streams.items()
+        }
     if groups is not None:
         doc["groups"] = groups
     if persistence is not None:

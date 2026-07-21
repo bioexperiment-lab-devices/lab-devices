@@ -2,5 +2,5 @@
   "doc_version": 1,
   "name": "Broken roles",
   "description": null,
-  "workflow": {"schema_version": 2, "roles": {"mixer": {"type": "stirrer"}}, "blocks": []}
+  "workflow": {"schema_version": 3, "roles": {"mixer": {"type": "stirrer"}}, "blocks": []}
 }

@@ -241,7 +241,7 @@ def test_example_loads_and_validates(name: str) -> None:
     """Both shipped docs survive engine load + validation (ExperimentRun validates in ctor)."""
     doc, workflow = load(name)
     assert doc["doc_version"] == 1
-    assert doc["workflow"]["schema_version"] == 2
+    assert doc["workflow"]["schema_version"] == 3
     assert "roles" not in doc, "roles moved into the workflow (design 2026-07-20 §5.1)"
     assert set(workflow.roles) == set(MAPPING)
     assert workflow.role_type("od_meter_1") == "densitometer"

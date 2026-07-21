@@ -11,6 +11,7 @@ from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import ExpressionError, UnknownRoleError, WorkflowLoadError
 from lab_devices.experiment.expr import parse_expression
 from lab_devices.experiment.registry import DEVICE_TYPES, lookup
+from lab_devices.experiment.units import parse_unit
 from lab_devices.experiment.workflow import (
     REFERENCE_KINDS,
     VALUE_KINDS,
@@ -27,7 +28,7 @@ from lab_devices.experiment.workflow import (
     Workflow,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _BLOCK_KEYS = ("label", "gap_after", "start_offset", "retry", "on_error")
 _DEFAULTS_KEYS = ("retry",)
 _PARAM_KINDS: frozenset[str] = VALUE_KINDS | REFERENCE_KINDS
@@ -179,16 +180,28 @@ def _measure(body: Any, timing: dict[str, Any], roles: dict[str, RoleDecl]) -> B
     )
 
 
+def _opt_str(body: Any, key: str, ctx: str) -> str | None:
+    """Read an optional string field (e.g. a `compute`/`record` `as` unit cast)."""
+    val = body.get(key) if isinstance(body, dict) else None
+    if val is None:
+        return None
+    if not isinstance(val, str):
+        raise WorkflowLoadError(f"{ctx} must be a string, got {val!r}")
+    return val
+
+
 def _compute(body: Any, timing: dict[str, Any], roles: dict[str, RoleDecl]) -> B.Block:
     into = _str(_req(body, "into", "compute"), "compute into")
     value = _value(_req(body, "value", "compute"), "compute value")
-    return B.Compute(into=into, value=value, **timing)
+    as_ = _opt_str(body, "as", "compute as")
+    return B.Compute(into=into, value=value, as_=as_, **timing)
 
 
 def _record(body: Any, timing: dict[str, Any], roles: dict[str, RoleDecl]) -> B.Block:
     into = _str(_req(body, "into", "record"), "record into")
     value = _value(_req(body, "value", "record"), "record value")
-    return B.Record(into=into, value=value, **timing)
+    as_ = _opt_str(body, "as", "record as")
+    return B.Record(into=into, value=value, as_=as_, **timing)
 
 
 def _abort(body: Any, timing: dict[str, Any], roles: dict[str, RoleDecl]) -> B.Block:
@@ -389,9 +402,15 @@ def _dump_body(b: B.Block) -> tuple[str, dict[str, Any]]:
         body["body"] = [block_to_dict(c) for c in b.body]
         return "for_each", body
     if isinstance(b, B.Compute):
-        return "compute", {"into": b.into, "value": b.value}
+        compute_body: dict[str, Any] = {"into": b.into, "value": b.value}
+        if b.as_ is not None:
+            compute_body["as"] = b.as_
+        return "compute", compute_body
     if isinstance(b, B.Record):
-        return "record", {"into": b.into, "value": b.value}
+        record_body: dict[str, Any] = {"into": b.into, "value": b.value}
+        if b.as_ is not None:
+            record_body["as"] = b.as_
+        return "record", record_body
     if isinstance(b, B.Abort):
         return "abort", {"if": b.if_, "message": b.message}
     if isinstance(b, B.Alarm):
@@ -503,9 +522,11 @@ def workflow_from_dict(d: Any) -> Workflow:
     version = d.get("schema_version")
     if not isinstance(version, int) or isinstance(version, bool) or version != SCHEMA_VERSION:
         raise WorkflowLoadError(
-            f"unsupported schema_version {version!r}; expected {SCHEMA_VERSION}. Workflows "
-            f"using groups or for_each cannot be migrated automatically: their param types "
-            f"were never recorded in v1 (design 2026-07-20 §7)"
+            f"unsupported schema_version {version!r}; expected {SCHEMA_VERSION}. Schema 3 makes "
+            f"the DSL statically typed: every declared stream must carry a `units` annotation "
+            f"(use \"unitless\" when it has none), and a unit the type checker cannot derive is "
+            f"asserted with a `compute`/`record` `as` cast — information a v2 document never "
+            f"recorded, so it cannot be migrated automatically (design 2026-07-21 §8)"
         )
     md = _obj(d.get("metadata", {}), "metadata")
     metadata = Metadata(
@@ -547,7 +568,15 @@ def workflow_from_dict(d: Any) -> Workflow:
     streams: dict[str, StreamDecl] = {}
     for name, sv in _obj(d.get("streams", {}), "streams").items():
         s = _obj(sv, f"stream {name!r}")
-        streams[name] = StreamDecl(units=s.get("units"), persistence=s.get("persistence"))
+        units = s.get("units")
+        if units is None:
+            raise WorkflowLoadError(
+                f"stream {name!r} must declare a `units` annotation (schema 3); use "
+                f'"unitless" when the stream carries no unit (design 2026-07-21 §8)'
+            )
+        units = _str(units, f"stream {name!r} units")
+        parse_unit(units)  # validate the annotation now (raises UnitError on a bad unit)
+        streams[name] = StreamDecl(units=units, persistence=s.get("persistence"))
     groups: dict[str, Group] = {}
     for name, gv in _obj(d.get("groups", {}), "groups").items():
         g = _obj(gv, f"group {name!r}")

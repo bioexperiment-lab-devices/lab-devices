@@ -267,7 +267,7 @@ def build() -> dict[str, Any]:
             "`python3 webapp/fixtures/gen_torture.py`."
         ),
         "workflow": {
-            "schema_version": 2,
+            "schema_version": 3,
             "metadata": {"author": "ui-audit", "description": "torture"},
             "roles": roles,
             "streams": streams,

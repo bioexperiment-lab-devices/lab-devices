@@ -13,7 +13,7 @@ from tests.fakeclock import FakeClock, drive
 
 def _doc(roles, lanes):
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "roles": roles,
         "streams": {},
         "blocks": [{"parallel": {"children": lanes}}],

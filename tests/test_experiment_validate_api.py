@@ -20,7 +20,7 @@ _ROLES_DOC = {
 }
 
 SPEC_EXAMPLE = {
-    "schema_version": 2,
+    "schema_version": 3,
     "metadata": {
         "name": "od-feedback-feed",
         "author": "khamitov",
@@ -84,7 +84,7 @@ def test_load_and_validate_returns_workflow(tmp_path):
 
 def test_load_and_validate_rejects(tmp_path):
     doc = {
-        "schema_version": 2,
+        "schema_version": 3,
         "roles": {"pump_1": {"type": "pump"}},
         "blocks": [
             {"command": {"device": "pump_1", "verb": "rotate",
@@ -102,7 +102,7 @@ def test_load_and_validate_rejects(tmp_path):
 
 def test_collect_all_categories_in_one_raise():
     doc = {
-        "schema_version": 2,
+        "schema_version": 3,
         "roles": {"pump_1": {"type": "pump"}, "densitometer_1": {"type": "densitometer"}},
         "streams": {},
         "blocks": [
@@ -122,7 +122,7 @@ def test_collect_all_categories_in_one_raise():
 
 def test_validation_error_message_lists_each_diagnostic():
     doc = {
-        "schema_version": 2,
+        "schema_version": 3,
         "blocks": [{"group_ref": {"name": "ghost"}}],
     }
     with pytest.raises(ValidationError) as exc:

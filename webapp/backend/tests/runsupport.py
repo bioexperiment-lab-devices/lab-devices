@@ -66,7 +66,7 @@ def make_doc(
         "doc_version": 1,
         "name": name,
         "workflow": {
-            "schema_version": 2,
+            "schema_version": 3,
             "metadata": {"name": name},
             "persistence": {"default": "in_memory", "format": "jsonl"},
             "roles": (

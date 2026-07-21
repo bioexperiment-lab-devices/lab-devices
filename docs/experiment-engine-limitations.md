@@ -605,8 +605,12 @@ time-bounded conditions (`until: "elapsed() > 24h"`) direct rather than inferred
 - **String-kind params are opaque.** `direction`, `rotation`, and `default_rotation` are passed
   through literally and never evaluated — correct, but it means a param's behaviour depends on
   its registry kind in a way that is invisible in the document. Related to #5.
-- **Stream `units` are declarative only.** Nothing checks them; `blank_1` (an AU/s slope) and
-  `od_1` (AU) can be freely mixed in one expression.
+- ~~**Stream `units` are declarative only.**~~ **FIXED (2026-07-21, Increment 10 Engine B).**
+  Units are now opaque-symbolic types the checker enforces: `blank_1` (AU/s) and `od_1` (AU)
+  can no longer be added or compared in one expression, and a `record` into a united stream
+  must match (bridged by an `as` cast). See
+  [`superpowers/specs/2026-07-21-experiment-type-system-design.md`](superpowers/specs/2026-07-21-experiment-type-system-design.md).
+  Device-param units remain unchecked (deferred, design §13).
 - **No per-sample tagging.** A stream sample carries a value and a timestamp. There is no way
   to mark *which branch fired* on a given cycle, so the decision history cannot be overlaid on
   the OD chart — it lives only in the run log.

@@ -6,7 +6,7 @@ const doc = (): ExperimentDocJson => ({
   doc_version: 1,
   name: 'OD growth curve',
   description: null,
-  workflow: { schema_version: 2, roles: { feed_pump: { type: 'pump' } }, blocks: [] },
+  workflow: { schema_version: 3, roles: { feed_pump: { type: 'pump' } }, blocks: [] },
 })
 
 describe('exportFilename', () => {

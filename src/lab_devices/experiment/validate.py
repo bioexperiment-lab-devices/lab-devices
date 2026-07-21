@@ -9,9 +9,11 @@ from pathlib import Path
 
 from lab_devices.experiment import blocks as B
 from lab_devices.experiment.analyze import (
+    UNKNOWN,
+    Base,
     BindingType,
-    ExprType,
     ProvenWindows,
+    ScalarType,
     assignable,
     conjoin_proofs,
     infer_type,
@@ -39,6 +41,7 @@ from lab_devices.experiment.expr import (
     parse_expression,
 )
 from lab_devices.experiment.registry import ParamSpec, lookup, mode_action
+from lab_devices.experiment.units import UNITLESS, Unit, parse_unit, unit_str
 from lab_devices.experiment.serialize import load_workflow
 from lab_devices.experiment.workflow import (
     REFERENCE_KINDS,
@@ -47,6 +50,13 @@ from lab_devices.experiment.workflow import (
     ParamDecl,
     Workflow,
 )
+
+
+def _type_text(t: ScalarType) -> str:
+    """Render an inferred type for a diagnostic: `number<AU/s>`, `int`, `bool`."""
+    if t.base in ("int", "number") and t.unit != UNITLESS:
+        return f"{t.base}<{unit_str(t.unit)}>"
+    return t.base
 
 
 def _iter_blocks(blocks: list[B.Block], prefix: str) -> Iterator[tuple[str, B.Block]]:
@@ -601,18 +611,39 @@ def _check_declarations(w: Workflow, out: list[Diagnostic]) -> bool:
 
 
 _INPUT_TYPES: dict[str, BindingType] = {
-    "float": "number",
-    "int": "int",
-    "bool": "bool",
-    "enum": "string",
+    "float": ScalarType("number"),
+    "int": ScalarType("int"),
+    "bool": ScalarType("bool"),
+    "enum": ScalarType("string"),
 }
 
 
-def _collect_binding_types(w: Workflow) -> dict[str, BindingType]:
-    """Inferred scalar type of every binding, walked in document order (design 2026-07-21
-    §4.1): operator inputs from their declared `type`, compute bindings from their `value`
-    expression (using the types known so far). A name written more than once takes the join
-    of its writers — `int`/`number` widen to `number`, real disagreement is `unknown`."""
+@dataclass(frozen=True)
+class _TypeEnv:
+    """Everything the type/unit checks read: each binding's inferred type, and each declared
+    stream's parsed unit (design 2026-07-21 §4.1, §5)."""
+
+    binding_types: Mapping[str, BindingType]
+    stream_units: Mapping[str, Unit]
+
+
+def _stream_units(w: Workflow) -> dict[str, Unit]:
+    """Parsed unit of every declared top-level stream. A malformed unit raises `UnitError`
+    at load, before this runs; here `units` is already a valid string (or None -> unitless
+    for a legacy/permissive path). Group-local streams enter post-expansion."""
+    return {name: parse_unit(decl.units) for name, decl in w.streams.items()}
+
+
+def _cast_unit(as_: object) -> Unit | None:
+    """Parse a `compute.as` / `record.as` unit assertion, or None when absent."""
+    return parse_unit(as_) if isinstance(as_, str) else None
+
+
+def _collect_binding_types(w: Workflow, stream_units: Mapping[str, Unit]) -> dict[str, BindingType]:
+    """Inferred type (base + unit) of every binding, in document order (design §4.1, §5):
+    operator inputs from their declared `type`, compute bindings from their `value` expression
+    (its `as` cast overrides the derived unit). A name written more than once takes the join
+    of its writers."""
     types: dict[str, BindingType] = {}
 
     def record(name: str, t: BindingType) -> None:
@@ -620,7 +651,7 @@ def _collect_binding_types(w: Workflow) -> dict[str, BindingType]:
 
     for _, b in _iter_all_blocks(w):
         if isinstance(b, B.OperatorInput) and isinstance(b.name, str):
-            t = _INPUT_TYPES.get(b.type, "unknown") if isinstance(b.type, str) else "unknown"
+            t = _INPUT_TYPES.get(b.type, UNKNOWN) if isinstance(b.type, str) else UNKNOWN
             record(b.name, t)
         elif isinstance(b, B.Compute) and isinstance(b.into, str) and isinstance(b.value, str):
             try:
@@ -629,9 +660,13 @@ def _collect_binding_types(w: Workflow) -> dict[str, BindingType]:
                 # Holes (group bodies) or bad syntax: unparseable here. Group bodies are
                 # re-checked post-expansion on concrete values; bad syntax is diagnosed
                 # globally. Either way this binding's type is not knowable here.
-                record(b.into, "unknown")
+                record(b.into, UNKNOWN)
                 continue
-            record(b.into, infer_type(expr, types).type)
+            inferred = infer_type(expr, types, stream_units).type
+            cast = _cast_unit(b.as_)
+            if cast is not None:  # `as` asserts the unit, keeping the inferred base
+                inferred = ScalarType(inferred.base, cast)
+            record(b.into, inferred)
     return types
 
 
@@ -646,7 +681,8 @@ def _flag_ambiguous_refs(
     is 'unknown' — is a load error. A binding that is merely *absent* (never written) is the
     separate `data-flow` "read before written" diagnostic, so it is not double-reported here."""
     for name in sorted(references(expr).bindings):
-        if binding_types.get(name) == "unknown":
+        t = binding_types.get(name)
+        if t is not None and t.base == "unknown":
             out.append(Diagnostic(
                 "type", ctx,
                 f"binding {name!r} has no single inferable type — it is written with "
@@ -656,23 +692,37 @@ def _flag_ambiguous_refs(
 
 def _check_expr_type(
     text: str,
-    expected: ExprType,
+    expected_base: Base,
     ctx: str,
-    binding_types: Mapping[str, BindingType],
+    env: _TypeEnv,
     out: list[Diagnostic],
+    *,
+    expected_unit: Unit | None = None,
 ) -> None:
+    """Check an expression's base against `expected_base` (via `assignable`) and, when
+    `expected_unit` is given, its unit *exactly* (design §3.1) — a record's value must match
+    its stream's unit, bridged only by an `as` cast."""
     try:
         expr = parse_expression(text)
     except ExpressionError as exc:
         out.append(Diagnostic("type", ctx, f"invalid expression: {exc}"))
         return
-    report = infer_type(expr, binding_types)
+    report = infer_type(expr, env.binding_types, env.stream_units)
     for problem in report.problems:
-        out.append(Diagnostic("type", ctx, problem))
-    _flag_ambiguous_refs(expr, ctx, binding_types, out)
-    if report.type != "unknown" and not assignable(report.type, expected):
+        out.append(Diagnostic("units" if "unit" in problem else "type", ctx, problem))
+    _flag_ambiguous_refs(expr, ctx, env.binding_types, out)
+    got = report.type
+    if got.base == "unknown":
+        return
+    if not assignable(got.base, expected_base):
         out.append(Diagnostic(
-            "type", ctx, f"expected a {expected} expression, got {report.type}"
+            "type", ctx, f"expected a {expected_base} expression, got {_type_text(got)}"
+        ))
+        return
+    if expected_unit is not None and got.unit != expected_unit:
+        out.append(Diagnostic(
+            "units", ctx,
+            f"expected unit {unit_str(expected_unit)}, got {unit_str(got.unit)}",
         ))
 
 
@@ -681,23 +731,21 @@ def _check_param_value(
     value: object,
     ctx: str,
     w: Workflow,
-    binding_types: Mapping[str, BindingType],
+    env: _TypeEnv,
     out: list[Diagnostic],
 ) -> None:
-    """Check one param value against its spec, including stream declarations
-    referenced by stat calls in expression values."""
+    """Check one param value against its spec, including stream declarations referenced by
+    stat calls in expression values and (when the verb declares one) the param's unit."""
     if spec.kind == "string":
         if not isinstance(value, str):
             out.append(Diagnostic("params", ctx, f"expected a string literal, got {value!r}"))
         return
     if isinstance(value, str):
-        if spec.kind == "bool":
-            expected: ExprType = "bool"
-        elif spec.kind == "int":
-            expected = "int"
-        else:
-            expected = "number"
-        _check_expr_type(value, expected, ctx, binding_types, out)
+        base: Base = "bool" if spec.kind == "bool" else "int" if spec.kind == "int" else "number"
+        # Device params are unit-unchecked (design §13): a feedback control law legitimately
+        # computes a dose from a measured stream via an implicit-gain conversion, and a param
+        # slot has no `as` cast to bridge it, unlike a record. Only base is enforced here.
+        _check_expr_type(value, base, ctx, env, out)
         _check_streams_declared(value, ctx, w, out)
         return
     if spec.kind == "bool":
@@ -724,7 +772,7 @@ def _check_action(
     b: B.Command | B.Measure,
     path: str,
     w: Workflow,
-    binding_types: Mapping[str, BindingType],
+    env: _TypeEnv,
     out: list[Diagnostic],
 ) -> None:
     dtype = _role_type(w, b.device)
@@ -747,7 +795,7 @@ def _check_action(
         if spec is None:
             out.append(Diagnostic("params", path, f"unknown param {name!r} for verb {b.verb!r}"))
             continue
-        _check_param_value(spec, value, f"{path} param {name!r}", w, binding_types, out)
+        _check_param_value(spec, value, f"{path} param {name!r}", w, env, out)
     for spec in trait.params:
         if spec.required and spec.name not in b.params:
             out.append(Diagnostic(
@@ -778,7 +826,7 @@ def _check_condition(
     text: object,
     ctx: str,
     w: Workflow,
-    binding_types: Mapping[str, BindingType],
+    env: _TypeEnv,
     out: list[Diagnostic],
 ) -> None:
     if not isinstance(text, str):
@@ -786,7 +834,7 @@ def _check_condition(
             "type", ctx, f"condition must be an expression string, got {text!r}"
         ))
         return
-    _check_expr_type(text, "bool", ctx, binding_types, out)
+    _check_expr_type(text, "bool", ctx, env, out)
     _check_streams_declared(text, ctx, w, out)
 
 
@@ -799,10 +847,11 @@ def _check_compute_value(
     value: object,
     ctx: str,
     w: Workflow,
-    binding_types: Mapping[str, BindingType],
+    env: _TypeEnv,
     out: list[Diagnostic],
 ) -> None:
-    """compute stores a number OR a boolean; accept either, surface enum-string refs."""
+    """compute stores a number OR a boolean; accept either, surface enum-string refs. The
+    unit is whatever the value derives (or the `as` cast asserts) — not checked here."""
     if not isinstance(value, str):
         if isinstance(value, bool) or isinstance(value, (int, float)):
             return
@@ -815,40 +864,54 @@ def _check_compute_value(
     except ExpressionError as exc:
         out.append(Diagnostic("type", ctx, f"invalid expression: {exc}"))
         return
-    report = infer_type(expr, binding_types)
+    report = infer_type(expr, env.binding_types, env.stream_units)
     for problem in report.problems:
-        out.append(Diagnostic("type", ctx, problem))
-    if report.type == "string":
+        out.append(Diagnostic("units" if "unit" in problem else "type", ctx, problem))
+    if report.type.base == "string":
         out.append(Diagnostic(
             "type", ctx, "compute stores a number or a boolean, not a string"
         ))
-    _flag_ambiguous_refs(expr, ctx, binding_types, out)
+    _flag_ambiguous_refs(expr, ctx, env.binding_types, out)
     _check_streams_declared(value, ctx, w, out)
 
 
 def _check_record_value(
     value: object,
+    into: object,
+    as_: object,
     ctx: str,
     w: Workflow,
-    binding_types: Mapping[str, BindingType],
+    env: _TypeEnv,
     out: list[Diagnostic],
 ) -> None:
-    """record stores a number; a boolean literal or a boolean expression is an error."""
+    """record stores a number whose unit must equal the target stream's unit (design §3.1).
+    A boolean is an error. An `as` cast asserts the value's unit (trusted), which must still
+    match the stream — the visible acknowledgement for a unit the algebra cannot derive."""
     if not isinstance(value, str):
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             out.append(Diagnostic(
                 "type", ctx, f"record value must be a number or expression, got {value!r}"
             ))
         return
-    _check_expr_type(value, "number", ctx, binding_types, out)
-    _check_streams_declared(value, ctx, w, out)
+    stream_unit = env.stream_units.get(into) if isinstance(into, str) else None
+    cast = _cast_unit(as_)
+    if cast is not None:
+        if stream_unit is not None and cast != stream_unit:
+            out.append(Diagnostic(
+                "units", ctx,
+                f"as unit {unit_str(cast)} does not match stream {into!r} "
+                f"unit {unit_str(stream_unit)}",
+            ))
+        _check_expr_type(value, "number", ctx, env, out)  # unit trusted via the cast
+    else:
+        _check_expr_type(value, "number", ctx, env, out, expected_unit=stream_unit)
 
 
 def _check_compute(
     b: B.Compute,
     path: str,
     w: Workflow,
-    binding_types: Mapping[str, BindingType],
+    env: _TypeEnv,
     out: list[Diagnostic],
 ) -> None:
     usable = (
@@ -860,14 +923,14 @@ def _check_compute(
         out.append(Diagnostic(
             "block", path, f"compute into {b.into!r} is not a usable binding name"
         ))
-    _check_compute_value(b.value, f"{path} compute value", w, binding_types, out)
+    _check_compute_value(b.value, f"{path} compute value", w, env, out)
 
 
 def _check_record(
     b: B.Record,
     path: str,
     w: Workflow,
-    binding_types: Mapping[str, BindingType],
+    env: _TypeEnv,
     out: list[Diagnostic],
 ) -> None:
     if not isinstance(b.into, str):
@@ -878,7 +941,7 @@ def _check_record(
         out.append(Diagnostic(
             "declaration", path, f"record writes undeclared stream {b.into!r}"
         ))
-    _check_record_value(b.value, f"{path} record value", w, binding_types, out)
+    _check_record_value(b.value, b.into, b.as_, f"{path} record value", w, env, out)
 
 
 def _check_measure(b: B.Measure, path: str, w: Workflow, out: list[Diagnostic]) -> None:
@@ -953,7 +1016,7 @@ def _check_loop(
     b: B.Loop,
     path: str,
     w: Workflow,
-    binding_types: Mapping[str, BindingType],
+    env: _TypeEnv,
     out: list[Diagnostic],
 ) -> None:
     has_count = b.count is not None
@@ -972,7 +1035,7 @@ def _check_loop(
             "block", path, f"loop check must be 'before' or 'after', got {b.check!r}"
         ))
     if has_until:
-        _check_condition(b.until, f"{path} loop until", w, binding_types, out)
+        _check_condition(b.until, f"{path} loop until", w, env, out)
 
 
 def _check_on_error(block: B.Block, path: str, out: list[Diagnostic]) -> None:
@@ -1073,7 +1136,7 @@ def _check_block(
     block: B.Block,
     path: str,
     w: Workflow,
-    binding_types: Mapping[str, BindingType],
+    env: _TypeEnv,
     out: list[Diagnostic],
 ) -> None:
     # Unconditional: legal on every block type, including Serial/Parallel/Wait/GroupRef,
@@ -1081,21 +1144,21 @@ def _check_block(
     _check_on_error(block, path, out)
     _check_retry(block, path, w, out)
     if isinstance(block, (B.Command, B.Measure)):
-        _check_action(block, path, w, binding_types, out)
+        _check_action(block, path, w, env, out)
     if isinstance(block, B.Measure):
         _check_measure(block, path, w, out)
     elif isinstance(block, B.OperatorInput):
         _check_operator_input(block, path, out)
     elif isinstance(block, B.Loop):
-        _check_loop(block, path, w, binding_types, out)
+        _check_loop(block, path, w, env, out)
     elif isinstance(block, B.Branch):
-        _check_condition(block.if_, f"{path} branch if", w, binding_types, out)
+        _check_condition(block.if_, f"{path} branch if", w, env, out)
     elif isinstance(block, B.Compute):
-        _check_compute(block, path, w, binding_types, out)
+        _check_compute(block, path, w, env, out)
     elif isinstance(block, B.Record):
-        _check_record(block, path, w, binding_types, out)
+        _check_record(block, path, w, env, out)
     elif isinstance(block, B.Abort):
-        _check_condition(block.if_, f"{path} abort if", w, binding_types, out)
+        _check_condition(block.if_, f"{path} abort if", w, env, out)
         _check_message(block.message, path, "abort", out)
         if block.on_error == "continue":
             out.append(Diagnostic(
@@ -1103,7 +1166,7 @@ def _check_block(
                 "abort may not carry on_error: 'continue'; a safety stop cannot be tolerated",
             ))
     elif isinstance(block, B.Alarm):
-        _check_condition(block.if_, f"{path} alarm if", w, binding_types, out)
+        _check_condition(block.if_, f"{path} alarm if", w, env, out)
         _check_message(block.message, path, "alarm", out)
 
 
@@ -1488,9 +1551,10 @@ def _validate_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
     expandable = _check_groups(workflow, out)
     _check_defaults(workflow, out)
     _check_namespaces(workflow, out)
-    binding_types = _collect_binding_types(workflow)
+    stream_units = _stream_units(workflow)
+    env = _TypeEnv(_collect_binding_types(workflow, stream_units), stream_units)
     for path, block in _iter_all_blocks(workflow):
-        _check_block(block, path, workflow, binding_types, out)
+        _check_block(block, path, workflow, env, out)
     if expandable:
         _analyze_paths(workflow, out)
         _check_abort_not_under_tolerance(workflow, out)

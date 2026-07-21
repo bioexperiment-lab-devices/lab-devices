@@ -3,7 +3,7 @@
   "name": "UI audit run",
   "description": "Minimal runnable fixture (design 2026-07-17 addendum): the only seeded doc that both validates clean and completes a run against the devserver's FakeLab, so the Run tab's post-preflight states and the Records viewer are reachable. NOT a realistic experiment. Regenerate with `python3 webapp/fixtures/gen_run.py`.",
   "workflow": {
-    "schema_version": 2,
+    "schema_version": 3,
     "metadata": {
       "name": "UI audit run"
     },

@@ -83,7 +83,7 @@ def test_valid_durations_load_verbatim():
 
 
 def test_bad_expression_inside_group_body_fails_at_load():
-    doc = {"schema_version": 2,
+    doc = {"schema_version": 3,
            "groups": {"g": {"body": [{"branch": {"if": "((", "then": []}}]}},
            "blocks": []}
     with pytest.raises(ExpressionError):
