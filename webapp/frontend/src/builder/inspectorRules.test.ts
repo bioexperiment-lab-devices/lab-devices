@@ -115,13 +115,28 @@ describe('failureSummary', () => {
 })
 
 describe('claimedFieldSuffixes', () => {
-  it('claims the condition/value suffixes per kind (PR 1 surface)', () => {
-    expect(claimedFieldSuffixes('branch')).toEqual(['branch if'])
-    expect(claimedFieldSuffixes('loop')).toEqual(['loop until'])
-    expect(claimedFieldSuffixes('compute')).toEqual(['compute value'])
-    expect(claimedFieldSuffixes('record')).toEqual(['record value'])
-    expect(claimedFieldSuffixes('abort')).toEqual(['abort if'])
-    expect(claimedFieldSuffixes('alarm')).toEqual(['alarm if'])
-    expect(claimedFieldSuffixes('wait')).toEqual([])
+  it('claims the condition/value suffixes per kind', () => {
+    expect(claimedFieldSuffixes('branch')).toContain('branch if')
+    expect(claimedFieldSuffixes('compute')).toContain('compute value')
+    expect(claimedFieldSuffixes('record')).toContain('record value')
+    expect(claimedFieldSuffixes('abort')).toContain('abort if')
+    expect(claimedFieldSuffixes('alarm')).toContain('alarm if')
+  })
+  it('claims the duration/count slots (engine #58 catch-up)', () => {
+    expect(claimedFieldSuffixes('wait')).toContain('wait duration')
+    expect(claimedFieldSuffixes('loop')).toEqual(
+      expect.arrayContaining(['loop until', 'loop count', 'loop pace']),
+    )
+  })
+  it('claims retry backoff exactly where the failure section renders a retry', () => {
+    expect(claimedFieldSuffixes('command')).toContain('retry backoff')
+    expect(claimedFieldSuffixes('measure')).toContain('retry backoff')
+    expect(claimedFieldSuffixes('wait')).not.toContain('retry backoff')
+  })
+  it('claims the timing suffixes wherever a timing section can render', () => {
+    expect(claimedFieldSuffixes('wait')).toEqual(
+      expect.arrayContaining(['gap_after', 'start_offset']),
+    )
+    expect(claimedFieldSuffixes('for_each')).toEqual([])
   })
 })

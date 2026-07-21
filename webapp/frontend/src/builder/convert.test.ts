@@ -77,6 +77,27 @@ describe('treeToDoc', () => {
     expect(countJson.loop).not.toHaveProperty('check')
   })
 
+  it('round-trips an expression loop count as a string (engine #58, schema v3)', () => {
+    const { tree } = docToTree(fixture('valid-od-growth'))
+    const root = tree[0] as SerialNode
+    const loop = root.children[1] as LoopNode
+    const json = nodeToBlock({ ...loop, mode: 'count', count: 'n_cycles + 1' })
+    expect(json.loop).toMatchObject({ count: 'n_cycles + 1' })
+    const raw = fixture('valid-od-growth')
+    const back = docToTree({ ...raw, workflow: { ...raw.workflow, blocks: [json] } })
+    expect((back.tree[0] as LoopNode).count).toBe('n_cycles + 1')
+  })
+
+  it('canonicalizes a numeric-string count to a JSON number', () => {
+    const { tree } = docToTree(fixture('valid-od-growth'))
+    const root = tree[0] as SerialNode
+    const loop = root.children[1] as LoopNode
+    expect(nodeToBlock({ ...loop, mode: 'count', count: '3' }).loop).toMatchObject({ count: 3 })
+    expect(nodeToBlock({ ...loop, mode: 'count', count: ' 12 ' }).loop).toMatchObject({
+      count: 12,
+    })
+  })
+
   it('omits on_error entirely for a default-fail block — engine parity: block_to_dict emits ' +
     'on_error only via `!= "fail"`, so a default block must round-trip with no on_error key', () => {
     const base: WaitNode = {

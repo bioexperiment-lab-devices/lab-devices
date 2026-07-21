@@ -64,7 +64,8 @@ export interface ParallelBody {
 
 export interface LoopBody {
   body: BlockJson[]
-  count?: number
+  /** An int literal or, since schema v3 (engine #58), an int-typed expression string. */
+  count?: number | string
   until?: string
   check?: string // 'before' | 'after'
   pace?: string

@@ -74,7 +74,8 @@ export interface ParallelNode extends NodeBase {
 export interface LoopNode extends NodeBase {
   kind: 'loop'
   mode: 'count' | 'until'
-  count: number
+  /** number = literal; string = int-typed expression (schema v3, engine #58). */
+  count: number | string
   until: string
   check: 'before' | 'after'
   pace: string | null

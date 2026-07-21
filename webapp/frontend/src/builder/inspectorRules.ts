@@ -88,23 +88,32 @@ export function failureSummary(node: BlockNode): string | null {
 
 /** Diagnostic suffixes (validate.py context strings) CLAIMED by a field rendered in this
  * kind's Inspector form — everything else for the node falls to the header strip
- * (spec 2026-07-21 §3.5). PR 2 adds the duration/count slots ('wait duration',
- * 'loop count', 'loop pace', 'retry backoff', 'gap_after', 'start_offset'). */
+ * (spec 2026-07-21 §3.5). Timing claims are kind-level even though start_offset renders
+ * only inside a parallel: the engine only diagnoses a slot the doc actually set, and the
+ * Studio only sets it where it rendered, so a claimed-but-unrendered suffix cannot
+ * strand a real diagnostic. */
 export function claimedFieldSuffixes(kind: BlockNode['kind']): string[] {
-  switch (kind) {
-    case 'branch':
-      return ['branch if']
-    case 'loop':
-      return ['loop until']
-    case 'compute':
-      return ['compute value']
-    case 'record':
-      return ['record value']
-    case 'abort':
-      return ['abort if']
-    case 'alarm':
-      return ['alarm if']
-    default:
-      return []
-  }
+  const base: string[] = (() => {
+    switch (kind) {
+      case 'branch':
+        return ['branch if']
+      case 'loop':
+        return ['loop until', 'loop count', 'loop pace']
+      case 'compute':
+        return ['compute value']
+      case 'record':
+        return ['record value']
+      case 'abort':
+        return ['abort if']
+      case 'alarm':
+        return ['alarm if']
+      case 'wait':
+        return ['wait duration']
+      default:
+        return []
+    }
+  })()
+  if (failureFields(kind).includes('retry')) base.push('retry backoff')
+  if (kind !== 'for_each') base.push('gap_after', 'start_offset')
+  return base
 }
