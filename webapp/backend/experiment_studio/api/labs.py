@@ -5,14 +5,35 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
 
 from lab_devices.discovery import LabRegistry
 
-from experiment_studio.api.deps import get_run_manager
+from experiment_studio.api.deps import get_db, get_run_manager
+from experiment_studio.db import Database
+from experiment_studio.device_names import DeviceNamesStore
 from experiment_studio.labs import LabsService
 from experiment_studio.runner import RunActiveError, RunManager
 
 router = APIRouter()
+
+
+class NameBody(BaseModel):
+    name: str
+
+
+class CommandBody(BaseModel):
+    cmd: str
+    params: dict[str, Any] | None = None
+
+
+def _merge_names(
+    devices: list[dict[str, Any]], names: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Attach the operator-chosen name (or None) to each device payload (design §7.3)."""
+    for device in devices:
+        device["name"] = names.get(device["id"])
+    return devices
 
 
 def get_labs_service(request: Request) -> LabsService:
@@ -31,9 +52,13 @@ async def list_labs(service: LabsService = Depends(get_labs_service)) -> list[di
 
 @router.get("/{lab}/devices")
 async def lab_devices(
-    lab: str, service: LabsService = Depends(get_labs_service)
+    lab: str,
+    service: LabsService = Depends(get_labs_service),
+    db: Database = Depends(get_db),
 ) -> list[dict[str, Any]]:
-    return await service.devices(lab)
+    devices = await service.devices(lab)
+    names = await DeviceNamesStore(db).get_all(lab)
+    return _merge_names(devices, names)
 
 
 @router.post("/{lab}/discover")
@@ -41,8 +66,53 @@ async def lab_discover(
     lab: str,
     service: LabsService = Depends(get_labs_service),
     manager: RunManager = Depends(get_run_manager),
+    db: Database = Depends(get_db),
 ) -> list[dict[str, Any]]:
     active = manager.active()
     if active is not None and active.lab == lab:
         raise RunActiveError(active.run_id)  # §6: 409 while a run is active on that lab
-    return await service.discover(lab)
+    devices = await service.discover(lab)
+    names = await DeviceNamesStore(db).get_all(lab)
+    return _merge_names(devices, names)
+
+
+@router.post("/{lab}/devices/{device_id}/command")
+async def device_command(
+    lab: str,
+    device_id: str,
+    body: CommandBody,
+    service: LabsService = Depends(get_labs_service),
+    manager: RunManager = Depends(get_run_manager),
+) -> dict[str, Any]:
+    active = manager.active()
+    if active is not None and active.lab == lab:
+        raise RunActiveError(active.run_id)  # §6: manual control is locked during a run
+    result = await service.command(lab, device_id, body.cmd, body.params)
+    return {"result": result}
+
+
+@router.get("/{lab}/devices/{device_id}/jobs/{job_id}")
+async def device_job(
+    lab: str,
+    device_id: str,
+    job_id: str,
+    service: LabsService = Depends(get_labs_service),
+) -> dict[str, Any]:
+    result = await service.get_job(lab, device_id, job_id)
+    return {"result": result}
+
+
+@router.put("/{lab}/devices/{device_id}/name")
+async def set_device_name(
+    lab: str,
+    device_id: str,
+    body: NameBody,
+    db: Database = Depends(get_db),
+) -> dict[str, str | None]:
+    store = DeviceNamesStore(db)
+    name = body.name.strip()
+    if name:
+        await store.set(lab, device_id, name)
+        return {"name": name}
+    await store.clear(lab, device_id)
+    return {"name": None}

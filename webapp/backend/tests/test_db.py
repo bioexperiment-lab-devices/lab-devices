@@ -47,10 +47,10 @@ async def test_w4_tables_exist(tmp_path: Path) -> None:
     db = await Database.connect(tmp_path / "studio.db")
     cur = await db.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     names = {row["name"] for row in await cur.fetchall()}
-    assert {"experiments", "records", "mappings"} <= names
+    assert {"experiments", "records", "mappings", "device_names"} <= names
     cur = await db.conn.execute("PRAGMA user_version")
     row = await cur.fetchone()
-    assert row is not None and row[0] == len(db_module.MIGRATIONS) == 3
+    assert row is not None and row[0] == len(db_module.MIGRATIONS) == 4
     await db.close()
 
 

@@ -40,6 +40,15 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (experiment_id, lab, role)
     )
     """,
+    """
+    CREATE TABLE device_names (
+        lab TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (lab, device_id)
+    )
+    """,
 ]
 
 
