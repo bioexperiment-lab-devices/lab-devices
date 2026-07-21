@@ -12,6 +12,7 @@ from lab_devices.experiment.expr import (
     BinaryOp,
     BindingRef,
     Const,
+    DurationConst,
     DurationWindow,
     Expr,
     SampleWindow,
@@ -31,6 +32,8 @@ def evaluate(expr: Expr, state: RunState, now: float) -> Value:
     """Evaluate a parsed expression; raises EvaluationError if no value can be produced."""
     if isinstance(expr, Const):
         return expr.value
+    if isinstance(expr, DurationConst):
+        return expr.seconds
     if isinstance(expr, BindingRef):
         return _binding(expr, state)
     if isinstance(expr, StatCall):

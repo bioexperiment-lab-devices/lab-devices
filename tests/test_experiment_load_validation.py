@@ -1,8 +1,9 @@
 import pytest
 
 from lab_devices.experiment import blocks as B
-from lab_devices.experiment.errors import ExpressionError, WorkflowLoadError
+from lab_devices.experiment.errors import ExpressionError, ValidationError, WorkflowLoadError
 from lab_devices.experiment.serialize import block_from_dict, workflow_from_dict
+from lab_devices.experiment.validate import validate
 from lab_devices.experiment.workflow import RoleDecl
 
 ROLES = {
@@ -48,16 +49,20 @@ def test_non_string_conditions_rejected():
         block_from_dict({"loop": {"until": True, "body": []}})
 
 
-def test_bad_durations_fail_at_load():
+def test_bad_durations_fail_validation():
+    """Durations are `number<s>` expressions now (design 2026-07-21 §6): a malformed literal or
+    a bare unitless number is a validate-time diagnostic, not a load error."""
+    def rejects(block: dict) -> None:
+        doc = {"schema_version": 3, "roles": {"pump_1": {"type": "pump"}},
+               "streams": {}, "blocks": [block]}
+        with pytest.raises(ValidationError):
+            validate(workflow_from_dict(doc))
+
     stop = {"device": "pump_1", "verb": "stop"}
-    with pytest.raises(WorkflowLoadError, match="gap_after"):
-        block_from_dict({"command": stop, "gap_after": "30 sec"})
-    with pytest.raises(WorkflowLoadError, match="start_offset"):
-        block_from_dict({"command": stop, "start_offset": "later"})
-    with pytest.raises(WorkflowLoadError, match="wait duration"):
-        block_from_dict({"wait": {"duration": "5"}})
-    with pytest.raises(WorkflowLoadError, match="loop pace"):
-        block_from_dict({"loop": {"count": 3, "pace": "1 minute", "body": []}})
+    rejects({"command": stop, "gap_after": "30 sec"})       # bad grammar
+    rejects({"wait": {"duration": "5"}})                    # unitless, needs <s>
+    rejects({"wait": {"duration": "1 minute"}})             # bad grammar
+    rejects({"loop": {"count": 3, "pace": "5", "body": [{"wait": {"duration": "1s"}}]}})
 
 
 def test_enum_like_string_params_still_load():

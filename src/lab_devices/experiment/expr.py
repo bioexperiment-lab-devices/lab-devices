@@ -19,6 +19,15 @@ class Const:
 
 
 @dataclass(frozen=True)
+class DurationConst:
+    """A duration literal used as a value (`5min`), carrying its seconds. Typed `number<s>`
+    (design 2026-07-21 §6). Distinct from `Const` so the inferencer can stamp the seconds
+    unit — a bare `Const(300.0)` is unitless, a `DurationConst(300.0)` is `number<s>`."""
+
+    seconds: float
+
+
+@dataclass(frozen=True)
 class BindingRef:
     name: str
 
@@ -61,7 +70,7 @@ class BinaryOp:
     right: Expr
 
 
-Expr = Const | BindingRef | StatCall | UnaryOp | BinaryOp
+Expr = Const | DurationConst | BindingRef | StatCall | UnaryOp | BinaryOp
 
 
 @dataclass(frozen=True)
@@ -216,7 +225,7 @@ class _Parser:
                 raise self._fail(tok, "numeric literal is not finite")
             return Const(value)
         if tok.kind == "DURATION":
-            raise self._fail(tok, "duration literals are only valid as a stat window")
+            return DurationConst(parse_duration(tok.text))  # a value typed number<s> (§6)
         if tok.kind == "STRING":
             return Const(tok.text[1:-1])  # strip the surrounding single quotes
         if tok.kind == "NAME":

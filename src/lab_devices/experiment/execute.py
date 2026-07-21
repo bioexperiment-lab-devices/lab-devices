@@ -11,7 +11,6 @@ from typing import Any
 from lab_devices import errors as core_errors
 from lab_devices.experiment import blocks as B
 from lab_devices.experiment.context import RunContext
-from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import (
     AbortSignalError,
     AlarmRecord,
@@ -107,6 +106,34 @@ def _condition(text: str, ctx: RunContext) -> bool:
     value = evaluate(parse_expression(text), ctx.state, ctx.clock.now())
     if not isinstance(value, bool):
         raise EvaluationError(f"condition {text!r} evaluated to non-boolean {value!r}")
+    return value
+
+
+def _eval_seconds(text: str, ctx: RunContext) -> float:
+    """Resolve a duration slot (a `number<s>` expression, statically checked) to seconds at
+    this instant (design 2026-07-21 §6). A bare literal like `5min` evaluates the same as
+    before; an expression (`cycle_min * 1min`) resolves against current bindings."""
+    value = evaluate(parse_expression(text), ctx.state, ctx.clock.now())
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise EvaluationError(f"duration {text!r} must be a number of seconds, got {value!r}")
+    if not math.isfinite(value) or value < 0:
+        raise EvaluationError(f"duration {text!r} evaluated to {value!r}; must be >= 0")
+    return float(value)
+
+
+def _eval_count(value: int | str, ctx: RunContext) -> int:
+    """Resolve a `loop.count` slot (an int literal or an int-typed expression) at loop entry."""
+    if isinstance(value, str):
+        result = evaluate(parse_expression(value), ctx.state, ctx.clock.now())
+        if isinstance(result, bool):
+            raise EvaluationError(f"loop count {value!r} must be an integer, got {result!r}")
+        if isinstance(result, int):
+            return result
+        if isinstance(result, float) and result.is_integer():
+            return int(result)
+        raise EvaluationError(f"loop count {value!r} must be an integer, got {result!r}")
+    if isinstance(value, bool):  # bool is an int subtype; validation rejects it — defensive
+        raise EvaluationError(f"loop count {value!r} must be an integer")
     return value
 
 
@@ -210,7 +237,7 @@ async def _run_action(block: B.Command | B.Measure, ctx: RunContext) -> Any:
         block, lookup(ctx.workflow.role_type(block.device), block.verb), ctx
     )
     attempts = 1 if policy is None else policy.attempts
-    backoff = 0.0 if policy is None else parse_duration(policy.backoff)
+    backoff = 0.0 if policy is None else _eval_seconds(policy.backoff, ctx)
     for attempt in range(1, attempts + 1):
         await ctx.gate.wait()  # a pause during a retry storm quiesces at the next attempt
         if ctx.abort_requested:
@@ -460,7 +487,7 @@ async def execute_blocks(blocks: list[B.Block], ctx: RunContext) -> None:
     for block in blocks:
         await execute_block(block, ctx)
         if block.gap_after is not None:
-            await ctx.clock.sleep(parse_duration(block.gap_after))
+            await ctx.clock.sleep(_eval_seconds(block.gap_after, ctx))
 
 
 def _tolerable(exc: BaseException) -> bool:
@@ -606,7 +633,7 @@ async def _execute_inner(block: B.Block, ctx: RunContext) -> None:
     elif isinstance(block, B.OperatorInput):
         await _run_operator_input(block, ctx)
     elif isinstance(block, B.Wait):
-        await ctx.clock.sleep(parse_duration(block.duration))
+        await ctx.clock.sleep(_eval_seconds(block.duration, ctx))
     elif isinstance(block, B.Serial):
         await execute_blocks(block.children, ctx)
     elif isinstance(block, B.Parallel):
@@ -730,7 +757,8 @@ async def _run_operator_input(block: B.OperatorInput, ctx: RunContext) -> None:
 async def _run_loop(block: B.Loop, ctx: RunContext) -> None:
     """Loop semantics per design §8/§9: post-test default, pace is a floor from
     iteration start (both modes), no trailing pace, gate re-checked per iteration."""
-    pace = parse_duration(block.pace) if block.pace is not None else None
+    pace = _eval_seconds(block.pace, ctx) if block.pace is not None else None
+    count = _eval_count(block.count, ctx) if block.count is not None else None
     iterations = 0
     while True:
         await ctx.gate.wait()  # quiesce point at each iteration top (design §10)
@@ -741,7 +769,7 @@ async def _run_loop(block: B.Loop, ctx: RunContext) -> None:
         iterations += 1
         if block.until is not None and block.check == "after" and _condition(block.until, ctx):
             break
-        if block.count is not None and iterations >= block.count:
+        if count is not None and iterations >= count:
             break
         if pace is not None:
             remaining = pace - (ctx.clock.now() - started)
@@ -782,5 +810,5 @@ async def _run_parallel(block: B.Parallel, ctx: RunContext) -> None:
 
 async def _parallel_child(child: B.Block, ctx: RunContext) -> None:
     if child.start_offset is not None:
-        await ctx.clock.sleep(parse_duration(child.start_offset))
+        await ctx.clock.sleep(_eval_seconds(child.start_offset, ctx))
     await execute_block(child, ctx)

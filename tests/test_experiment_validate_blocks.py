@@ -9,11 +9,16 @@ def test_loop_count_zero():
     assert any(x.category == "block" and ">= 1" in x.message for x in d)
 
 
-def test_loop_count_bool_and_str():
-    w = Workflow(schema_version=1, blocks=[Loop(count=True, body=[])])
+def test_loop_count_bool_and_non_int_expression_rejected():
+    w = Workflow(schema_version=3, blocks=[Loop(count=True, body=[])])
     assert any("integer" in x.message for x in diags(w))
-    w2 = Workflow(schema_version=1, blocks=[Loop(count="5", body=[])])
-    assert any("integer" in x.message for x in diags(w2))
+    # A string count is an int-typed expression now (design §6); a float-valued one is rejected.
+    w2 = Workflow(schema_version=3, blocks=[Loop(count="1.5", body=[])])
+    assert any(x.category == "type" for x in diags(w2))
+
+
+def test_loop_count_int_expression_accepted():
+    assert validate(Workflow(schema_version=3, blocks=[Loop(count="1 + 2", body=[])])) is None
 
 
 def test_loop_count_and_until_both():

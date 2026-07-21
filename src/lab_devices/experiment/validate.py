@@ -1012,6 +1012,36 @@ def _check_operator_input(b: B.OperatorInput, path: str, out: list[Diagnostic]) 
         out.append(Diagnostic("block", path, f"min {b.min} exceeds max {b.max}"))
 
 
+_SECONDS: Unit = parse_unit("s")
+
+
+def _check_duration(
+    text: object, ctx: str, w: Workflow, env: _TypeEnv, out: list[Diagnostic]
+) -> None:
+    """A duration slot is a `number<s>` expression (design 2026-07-21 §6): a literal `5min`
+    or an expression producing seconds. A bare unitless number is a unit error."""
+    if not isinstance(text, str):
+        out.append(Diagnostic("type", ctx, f"duration must be an expression string, got {text!r}"))
+        return
+    _check_expr_type(text, "number", ctx, env, out, expected_unit=_SECONDS)
+    _check_streams_declared(text, ctx, w, out)
+
+
+def _check_count(
+    value: object, ctx: str, w: Workflow, env: _TypeEnv, out: list[Diagnostic]
+) -> None:
+    """A loop count is an int literal (>= 1) or an int-typed expression."""
+    if isinstance(value, str):
+        _check_expr_type(value, "int", ctx, env, out)
+        _check_streams_declared(value, ctx, w, out)
+    elif isinstance(value, bool) or not isinstance(value, int):
+        out.append(Diagnostic(
+            "block", ctx, f"loop count must be an integer or expression, got {value!r}"
+        ))
+    elif value < 1:
+        out.append(Diagnostic("block", ctx, f"loop count must be >= 1, got {value}"))
+
+
 def _check_loop(
     b: B.Loop,
     path: str,
@@ -1024,12 +1054,9 @@ def _check_loop(
     if has_count == has_until:
         out.append(Diagnostic("block", path, "loop requires exactly one of count or until"))
     if has_count:
-        if isinstance(b.count, bool) or not isinstance(b.count, int):
-            out.append(Diagnostic(
-                "block", path, f"loop count must be an integer, got {b.count!r}"
-            ))
-        elif b.count < 1:
-            out.append(Diagnostic("block", path, f"loop count must be >= 1, got {b.count}"))
+        _check_count(b.count, f"{path} loop count", w, env, out)
+    if b.pace is not None:
+        _check_duration(b.pace, f"{path} loop pace", w, env, out)
     if b.check not in ("before", "after"):
         out.append(Diagnostic(
             "block", path, f"loop check must be 'before' or 'after', got {b.check!r}"
@@ -1047,7 +1074,9 @@ def _check_on_error(block: B.Block, path: str, out: list[Diagnostic]) -> None:
         ))
 
 
-def _check_retry(block: B.Block, path: str, w: Workflow, out: list[Diagnostic]) -> None:
+def _check_retry(
+    block: B.Block, path: str, w: Workflow, env: _TypeEnv, out: list[Diagnostic]
+) -> None:
     """retry is command/measure only, and a non-idempotent verb needs an explicit
     in-document opt-in (design 2026-07-14 §4)."""
     retry = block.retry
@@ -1059,6 +1088,7 @@ def _check_retry(block: B.Block, path: str, w: Workflow, out: list[Diagnostic]) 
         out.append(Diagnostic(
             "block", path, f"retry.attempts must be >= 1, got {retry.attempts}",
         ))
+    _check_duration(retry.backoff, f"{path} retry backoff", w, env, out)
     if not isinstance(block, (B.Command, B.Measure)):
         out.append(Diagnostic(
             "block", path, "retry is only valid on command and measure blocks"
@@ -1142,7 +1172,13 @@ def _check_block(
     # Unconditional: legal on every block type, including Serial/Parallel/Wait/GroupRef,
     # which reach none of the type-specific checks below.
     _check_on_error(block, path, out)
-    _check_retry(block, path, w, out)
+    _check_retry(block, path, w, env, out)
+    if block.gap_after is not None:
+        _check_duration(block.gap_after, f"{path} gap_after", w, env, out)
+    if block.start_offset is not None:
+        _check_duration(block.start_offset, f"{path} start_offset", w, env, out)
+    if isinstance(block, B.Wait):
+        _check_duration(block.duration, f"{path} wait duration", w, env, out)
     if isinstance(block, (B.Command, B.Measure)):
         _check_action(block, path, w, env, out)
     if isinstance(block, B.Measure):

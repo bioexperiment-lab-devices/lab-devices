@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any, Callable, cast
 
 from lab_devices.experiment import blocks as B
-from lab_devices.experiment.durations import parse_duration
 from lab_devices.experiment.errors import ExpressionError, UnknownRoleError, WorkflowLoadError
 from lab_devices.experiment.expr import parse_expression
 from lab_devices.experiment.registry import DEVICE_TYPES, lookup
@@ -94,12 +93,10 @@ def _value(value: Any, ctx: str) -> B.ValueExpr:
 
 
 def _checked_duration(value: Any, ctx: str) -> str:
-    text = _str(value, ctx)
-    try:
-        parse_duration(text)
-    except ValueError as exc:
-        raise WorkflowLoadError(f"{ctx}: {exc}") from exc
-    return text
+    # A duration slot is now a `number<s>` expression (design 2026-07-21 §6): a bare literal
+    # (`5min`) or an expression (`cycle_min * 1min`). Its grammar and unit are checked at
+    # validate time, so the loader only coerces it to a string here.
+    return _str(value, ctx)
 
 
 def _checked_device_type(value: Any, ctx: str) -> str:
