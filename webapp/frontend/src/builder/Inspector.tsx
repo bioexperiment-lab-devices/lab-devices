@@ -1106,6 +1106,16 @@ function ValueForm({ node }: { node: ComputeNode | RecordNode }) {
           onCommit={(v) => patchBlock(node.uid, { value: coerceValueInput(v) })}
         />
       </FieldRow>
+      <InspectorSection title="Units" summary={node.as ? `as ${node.as}` : null}>
+        <FieldRow label="Cast (as)">
+          <TextField
+            mono
+            value={node.as ?? ''}
+            onCommit={(v) => patchBlock(node.uid, { as: v.trim() || null })}
+            placeholder={node.kind === 'record' ? "the stream's unit" : 'e.g. per_hour'}
+          />
+        </FieldRow>
+      </InspectorSection>
     </div>
   )
 }

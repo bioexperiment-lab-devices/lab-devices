@@ -141,6 +141,31 @@ describe('treeToDoc', () => {
     expect(treeToDoc(docToTree(doc)).workflow.blocks).toEqual(blocks)
   })
 
+  it('round-trips the compute/record `as` unit cast through the builder tree', () => {
+    const blocks: BlockJson[] = [
+      { compute: { into: 'r', value: '24 * mean(od) / last(od)', as: 'per_hour' } },
+      { record: { into: 'r_series', value: 'r', as: 'per_hour' } },
+      { compute: { into: 'flag', value: 'last(od) > 1' } }, // no cast -> `as` omitted
+    ]
+    const doc: ExperimentDocJson = {
+      doc_version: 1,
+      name: 'Cast test',
+      description: null,
+      workflow: {
+        schema_version: 3,
+        metadata: { name: 'Cast test' },
+        persistence: { default: 'in_memory', format: 'jsonl' },
+        roles: {},
+        streams: { od: { units: 'AU' }, r_series: { units: 'per_hour' } },
+        blocks,
+      },
+    }
+    const tree = docToTree(doc)
+    expect(tree.tree[0]).toMatchObject({ kind: 'compute', as: 'per_hour' })
+    expect(tree.tree[2]).toMatchObject({ kind: 'compute', as: null })
+    expect(treeToDoc(tree).workflow.blocks).toEqual(blocks)
+  })
+
   it('round-trips workflow.defaults.retry, which the builder has no UI for but must not destroy', () => {
     // Reproduces the reviewer's proof: a hand-authored doc with a workflow-wide retry
     // policy must survive Save unmodified, or the run loses its only fault-tolerance
