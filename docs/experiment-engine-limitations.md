@@ -515,7 +515,18 @@ with an outsized effect on how configurable a single doc can be.
 
 ---
 
-## 6. Durations and counts are literals, not expressions
+## 6. Durations and counts are literals, not expressions — **SHIPPED (2026-07-21)**
+
+**Shipped in Increment 10 (Engine C, the type-system's duration unification).** Design:
+[`superpowers/specs/2026-07-21-experiment-type-system-design.md`](superpowers/specs/2026-07-21-experiment-type-system-design.md).
+A duration literal (`5min`) is now an expression value typed `number<s>`, so `wait.duration`,
+`loop.pace`, `loop.count`, `gap_after`, `start_offset`, and `retry.backoff` all accept
+**expressions** resolved at entry (`pace` per iteration): cycle time and cycle count can be
+operator inputs (`{"wait": {"duration": "cycle_min * 1min"}}`, `{"loop": {"count": "cycles"}}`),
+and adaptive timing is expressible. Duration slots are type-checked `number<s>` — a bare
+unitless number is a load error, which keeps `wait: "5"` from silently meaning five *seconds* —
+and count slots `int`. Every existing literal resolves identically. The original problem
+statement is kept below as motivation.
 
 **What.** `loop.pace`, `loop.count`, `wait.duration`, `gap_after`, and `start_offset` are all
 parsed as literals. They cannot be expressions, so they cannot reference bindings.

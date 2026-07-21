@@ -473,6 +473,14 @@ by inferring its `value`. **Strings** support equality only: a single-quoted lit
 (`"if": "mode == 'chemostat'"`); a string in arithmetic or a mixed string/number comparison is a
 load error.
 
+A **duration** is `number<s>` (a duration literal like `5min` is a value, not just a stat
+window), so the duration slots — `wait.duration`, `loop.pace`, `gap_after`, `start_offset`,
+`retry.backoff` — and `loop.count` (an `int`) accept **expressions**, not only literals:
+`{"wait": {"duration": "cycle_min * 1min"}}` and `{"loop": {"count": "cycles"}}` resolve against
+bindings at entry (`pace` per iteration). A bare unitless number in a duration slot is a load
+error — it must carry the seconds unit (a literal like `5min`, or `× 1s`) — which stops
+`"duration": "5"` from silently meaning five seconds.
+
 The two windows are not interchangeable, and the difference is load-bearing. A sample window
 over an append-only stream always returns N values, reaching back across cycle boundaries if it
 must. A duration window can be **empty**, which is why a guard like `count(s, last=11min) > 0`
