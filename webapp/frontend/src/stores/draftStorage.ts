@@ -19,7 +19,10 @@ export interface DraftView {
 }
 
 export interface Draft {
-  v: 1
+  // Bumped to 2 alongside the workflow schema (design §7): a persisted v1 draft holds a
+  // DocContent whose tree/groups speak the old grammar, so parseDraft discards it (returns
+  // null) and the app cold-starts clean rather than casting a v1 tree into a v2 DocContent.
+  v: 2
   serverId: string | null
   // Stored, not recomputed: selectDirty (docStore.ts:153) compares live content against this
   // string, so a restored draft without it would read as clean and the unsaved dot would lie.
@@ -61,7 +64,7 @@ export function parseDraft(raw: string | null): Draft | null {
     return null
   }
   if (!isRecord(parsed)) return null
-  if (parsed.v !== 1) return null
+  if (parsed.v !== 2) return null
   if (!nullableString(parsed.serverId)) return null
   if (typeof parsed.savedSnapshot !== 'string') return null
   if (!isRecord(parsed.content)) return null
@@ -69,7 +72,7 @@ export function parseDraft(raw: string | null): Draft | null {
   const view = parseView(parsed.view)
   if (view === null) return null
   return {
-    v: 1,
+    v: 2,
     serverId: parsed.serverId,
     savedSnapshot: parsed.savedSnapshot,
     // Trusted as DocContent after the shape check above. A deep validation here would

@@ -16,7 +16,6 @@ import {
   ExpressionInput,
   FieldRow,
   NumberField,
-  TextAreaField,
   TextField,
 } from './fields'
 import {
@@ -82,36 +81,44 @@ export function Inspector() {
 }
 
 /** Shown when a group scope is active and no block is selected — the group-level analogue of
- * DocProperties. `params` is the ONLY thing that belongs to the group itself rather than to a
- * block inside it (design §5.2): group_ref's args are keyed by this list (expand.py:190), so
- * editing it here, in the scope it declares, is what keeps every call site's arity correct by
- * construction rather than by a second validation pass. */
+ * DocProperties. Schema 2: a group declares typed `params` and named `locals` (design §9.2).
+ * This is a COMPILE-AND-RENDER SHIM (S2): it presents both read-only. The real typed editors
+ * — a param-decl table and a locals table — land in S3; the store already has setGroupParams/
+ * setGroupLocals for them. */
 function GroupProperties({ name }: { name: string }) {
   const group = useDocStore((s) => s.groups[name])
-  const setGroupParams = useDocStore((s) => s.setGroupParams)
   const params = group?.params ?? []
+  const locals = group?.locals ?? {}
+  const localEntries = Object.entries(locals)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <h2 className="mb-2 text-sm font-semibold text-slate-700">Group: {name}</h2>
-      <FieldRow label="Params (one per line)" grow>
-        <AutoGrowTextArea
-          fillParent
-          maxLines={UNCAPPED_LINES}
-          mono
-          value={params.join('\n')}
-          onCommit={(v) =>
-            setGroupParams(
-              name,
-              v
-                .split('\n')
-                .map((line) => line.trim())
-                .filter((line) => line !== ''),
-            )
-          }
-        />
-      </FieldRow>
-      {/* mt-auto pins these to the bottom of the panel (finding #5a): the params field
-          above grows into the free space instead of leaving dead panel below it. */}
+      <h3 className="mt-2 text-xs font-semibold uppercase text-caption">Params</h3>
+      {params.length === 0 ? (
+        <p className="text-xs text-hint">no params</p>
+      ) : (
+        <ul className="text-xs text-caption">
+          {params.map((p) => (
+            <li key={p.name} className="font-mono">
+              {p.name}: {p.kind}
+              {p.device_type !== undefined ? ` (${p.device_type})` : ''}
+            </li>
+          ))}
+        </ul>
+      )}
+      <h3 className="mt-2 text-xs font-semibold uppercase text-caption">Locals</h3>
+      {localEntries.length === 0 ? (
+        <p className="text-xs text-hint">no locals</p>
+      ) : (
+        <ul className="text-xs text-caption">
+          {localEntries.map(([localName, decl]) => (
+            <li key={localName} className="font-mono">
+              {localName}: {decl.kind}
+            </li>
+          ))}
+        </ul>
+      )}
+      {/* mt-auto pins these to the bottom of the panel (finding #5a). */}
       <p className="mt-auto pt-2 text-xs text-caption">{group?.body.length ?? 0} top-level blocks.</p>
       <p className="mt-1 text-xs text-caption">Select a block to edit its parameters.</p>
     </div>
@@ -776,77 +783,30 @@ function ConditionForm({ node }: { node: AbortNode | AlarmNode }) {
   )
 }
 
-/** Fast-feedback mirror of expand.py:95-118 `_envs` (design §5.1): non-empty list; scalars
- * when `var` is set; objects sharing one key set when it is not. This is NOT a second
- * opinion — on ambiguity we still accept the input and let the backend diagnostic speak, so
- * the return is only ever advisory text, never a reason to withhold the patch.
- *
- * The `var`-branch predicate below must match expand.py:104's `isinstance(item, dict)`
- * exactly: the engine only rejects dicts, not lists — a JSON array is a perfectly valid
- * scalar `var` item (e.g. `[1, 2]`), so `typeof item === 'object'` alone (true for arrays
- * too) over-flagged it. A warning the backend would never raise is a false positive from a
- * check whose only job is to mirror the backend (2026-07-16 review, Finding 3). */
-function forEachItemsWarning(items: unknown[], hasVar: boolean): string | null {
-  if (items.length === 0) return "for_each 'in' must be a non-empty list"
-  if (hasVar) {
-    return items.some((item) => item !== null && typeof item === 'object' && !Array.isArray(item))
-      ? "for_each with 'var' requires scalar items"
-      : null
-  }
-  const keysets = items.map((item) =>
-    item !== null && typeof item === 'object' && !Array.isArray(item)
-      ? Object.keys(item as Record<string, unknown>).sort().join(',')
-      : null,
-  )
-  if (keysets.some((k) => k === null)) return 'for_each without \'var\' requires object items'
-  if (new Set(keysets).size > 1) return 'for_each object items must share one key set'
-  return null
-}
-
 /** for_each is a SPLICE, not a runtime block (design 2026-07-15 §2/2026-07-16 §5.1): it copies
- * `body` once per item and splices the copies into the enclosing list, so retry/on_error/
- * gap_after/start_offset are omitted here — BlockForm already suppresses all four for this
- * kind (expand.py:26 `_FOR_EACH_FORBIDDEN`), and `label` is the one block-level key left. */
+ * `body` once per row and splices the copies into the enclosing list. Schema 2: it declares
+ * typed `vars` and one value per `row` (the scalar `var` shorthand is gone). COMPILE-AND-RENDER
+ * SHIM (S2): vars and rows are presented read-only; the typed vars-and-rows editor lands in S3. */
 function ForEachForm({ node }: { node: ForEachNode }) {
-  const patchBlock = useDocStore((s) => s.patchBlock)
-  const itemsText = JSON.stringify(node.items)
-  const [itemsError, setItemsError] = useState<string | null>(null)
-
-  const commitItems = (text: string) => {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(text)
-    } catch {
-      setItemsError('invalid JSON — expected an array, e.g. [1, 2, 3]')
-      return
-    }
-    if (!Array.isArray(parsed)) {
-      setItemsError('must be a JSON array')
-      return
-    }
-    setItemsError(forEachItemsWarning(parsed, node.var !== null))
-    // Accept regardless of the warning above (fast-feedback mirror, not a gate) — the
-    // backend's own for_each validation is authoritative and will speak as a diagnostic.
-    patchBlock(node.uid, { items: parsed as ForEachNode['items'] })
-  }
-
   return (
     <div>
-      <FieldRow label="Loop variable (var)">
-        <TextField
-          mono
-          value={node.var ?? ''}
-          onCommit={(v) => patchBlock(node.uid, { var: v || null })}
-          placeholder="unset: items are objects, spread as named holes"
-        />
-      </FieldRow>
-      <FieldRow label="Items (JSON array)" required>
-        <TextAreaField mono rows={4} value={itemsText} onCommit={commitItems} />
-      </FieldRow>
-      {itemsError && <p className="text-[10px] text-amber-700">{itemsError}</p>}
+      <h3 className="mt-2 text-xs font-semibold uppercase text-caption">Loop variables</h3>
+      {node.vars.length === 0 ? (
+        <p className="text-xs text-hint">no vars</p>
+      ) : (
+        <ul className="text-xs text-caption">
+          {node.vars.map((v) => (
+            <li key={v.name} className="font-mono">
+              {v.name}: {v.kind}
+              {v.device_type !== undefined ? ` (${v.device_type})` : ''}
+            </li>
+          ))}
+        </ul>
+      )}
       <p className="mt-2 text-xs text-caption">
-        {node.body.length} block{node.body.length === 1 ? '' : 's'} in the body — drag onto the
-        canvas to edit; each copy is spliced into the list for_each sits in.
+        {node.rows.length} row{node.rows.length === 1 ? '' : 's'} · {node.body.length} block
+        {node.body.length === 1 ? '' : 's'} in the body — drag onto the canvas to edit; each copy
+        is spliced into the list for_each sits in.
       </p>
     </div>
   )
@@ -865,7 +825,7 @@ function GroupRefForm({ node }: { node: GroupRefNode }) {
   const setName = (name: string) => {
     const nextParams = groups[name]?.params ?? []
     const args: Record<string, ParamValue> = {}
-    for (const p of nextParams) if (node.args[p] !== undefined) args[p] = node.args[p]
+    for (const p of nextParams) if (node.args[p.name] !== undefined) args[p.name] = node.args[p.name]
     patchBlock(node.uid, { name, args })
   }
 
@@ -888,6 +848,17 @@ function GroupRefForm({ node }: { node: GroupRefNode }) {
           ))}
         </select>
       </FieldRow>
+      {/* `as` namespaces the group's locals per call site (schema 2, required when the group
+          declares locals). S3 makes it conditional on the group having locals; here it is
+          always shown as a plain optional field. */}
+      <FieldRow label="As (call-site prefix)">
+        <TextField
+          mono
+          value={node.as ?? ''}
+          onCommit={(v) => patchBlock(node.uid, { as: v || null })}
+          placeholder="tube_{tube}"
+        />
+      </FieldRow>
       {params.length === 0 ? (
         <p className="text-xs text-caption">
           {node.name === '' ? 'pick a group above' : 'this group takes no params'}
@@ -896,11 +867,11 @@ function GroupRefForm({ node }: { node: GroupRefNode }) {
         <>
           <h3 className="mt-2 text-xs font-semibold uppercase text-caption">Args</h3>
           {params.map((p) => (
-            <FieldRow key={p} label={p} required>
+            <FieldRow key={p.name} label={p.name} required>
               <ExpressionInput
-                value={paramInputText(node.args[p])}
+                value={paramInputText(node.args[p.name])}
                 onCommit={(v) =>
-                  patchBlock(node.uid, { args: { ...node.args, [p]: coerceValueInput(v) } })
+                  patchBlock(node.uid, { args: { ...node.args, [p.name]: coerceValueInput(v) } })
                 }
               />
             </FieldRow>

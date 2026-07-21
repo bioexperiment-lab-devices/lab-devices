@@ -36,7 +36,9 @@
 import type { Diagnostic } from '../types/doc'
 import { childSlots, type BlockNode } from './tree'
 
-export type GroupsMap = Record<string, { params: string[]; body: BlockNode[] }>
+// resolveDiagnosticPath/pathForUid read only `.body`; the store's richer GroupDef (typed
+// params + locals, convert.ts) is structurally assignable to this.
+export type GroupsMap = Record<string, { body: BlockNode[] }>
 
 export interface ResolvedPath {
   uid: string | null

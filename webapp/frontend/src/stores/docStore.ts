@@ -4,9 +4,9 @@
 import { create } from 'zustand'
 import { useStore, type StoreApi } from 'zustand'
 import { temporal, type TemporalState } from 'zundo'
-import type { ExperimentDocJson, WorkflowJson } from '../types/doc'
+import type { ExperimentDocJson, LocalDeclJson, ParamDeclJson, RoleDeclJson, WorkflowJson } from '../types/doc'
 import type { MappedDiagnostic } from '../builder/paths'
-import { treeToDoc, type DocContent } from '../builder/convert'
+import { treeToDoc, type DocContent, type GroupDef } from '../builder/convert'
 import type { DraftView } from './draftStorage'
 import {
   containsUid,
@@ -43,16 +43,19 @@ export const GROUP_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 export interface DocSnapshot {
   name: string
   description: string | null
-  roles: Record<string, { type: string }>
+  // Roles are the store's source of truth but are EXPORTED under the workflow (convert.ts
+  // handles placement); a role may carry an optional direct device binding (schema 2).
+  roles: Record<string, RoleDeclJson>
   // persistence is a per-stream override (2026-07-14 review, I2) — no UI sets it, but it
   // must survive store round trips the same way workflow-level persistence/defaults do.
   streams: Record<string, { units: string | null; persistence?: string | null }>
   tree: BlockNode[]
   // Reusable, parametrized group bodies invoked via group_ref (design §5.2). Unlike
   // persistence/defaults/metadata below, groups is NOT opaque carry-through: the store has a
-  // full authoring API for it (addGroup/renameGroup/removeGroup/setGroupParams), so it is a
-  // required field, like tree, defaulting to {} rather than being carried as `undefined`.
-  groups: Record<string, { params: string[]; body: BlockNode[] }>
+  // full authoring API for it (addGroup/renameGroup/removeGroup/setGroupParams/setGroupLocals),
+  // so it is a required field, like tree, defaulting to {} rather than being carried as
+  // `undefined`. Schema 2: typed params + named locals (GroupDef, convert.ts).
+  groups: Record<string, GroupDef>
   // Carried opaquely through load -> save (2026-07-14 review, Fix 1): the builder has no
   // UI for either, but a hand-authored workflow.defaults.retry or custom persistence
   // setting must survive a round trip through the store, not just through convert.ts's
@@ -96,7 +99,7 @@ export interface EditorState extends DocSnapshot {
   removeBlock: (uid: string) => void
   duplicateBlock: (uid: string) => void
   patchBlock: (uid: string, patch: object) => void
-  addRole: (name: string, type: string) => string | null
+  addRole: (name: string, type: string, device?: string) => string | null
   renameRole: (from: string, to: string) => string | null
   removeRole: (name: string) => string | null
   addStream: (name: string, units: string | null) => string | null
@@ -109,7 +112,8 @@ export interface EditorState extends DocSnapshot {
   addGroup: (name: string) => string | null
   renameGroup: (from: string, to: string) => string | null
   removeGroup: (name: string) => string | null
-  setGroupParams: (name: string, params: string[]) => void
+  setGroupParams: (name: string, params: ParamDeclJson[]) => void
+  setGroupLocals: (name: string, locals: Record<string, LocalDeclJson>) => void
   select: (uid: string | null) => void
   toggleCollapsed: (uid: string) => void
   setDiagnostics: (diags: MappedDiagnostic[]) => void
@@ -177,9 +181,9 @@ const removeKey = <V>(rec: Record<string, V>, key: string): Record<string, V> =>
  * object, not a structurally-equal new one — followUndoScope (below) depends on that identity
  * staying meaningful. */
 const renameRefsInGroups = (
-  groups: Record<string, { params: string[]; body: BlockNode[] }>,
+  groups: Record<string, GroupDef>,
   rename: (body: BlockNode[]) => BlockNode[],
-): Record<string, { params: string[]; body: BlockNode[] }> =>
+): Record<string, GroupDef> =>
   Object.fromEntries(
     Object.entries(groups).map(([name, g]) => {
       const body = rename(g.body)
@@ -211,7 +215,11 @@ const setActiveList = (
     : {
         groups: {
           ...s.groups,
-          [s.scope]: { params: s.groups[s.scope]?.params ?? [], body: list },
+          [s.scope]: {
+            params: s.groups[s.scope]?.params ?? [],
+            locals: s.groups[s.scope]?.locals ?? {},
+            body: list,
+          },
         },
       }
 
@@ -263,10 +271,12 @@ export const useDocStore = create<EditorState>()(
       patchBlock: (uid, patch) =>
         set((s) => setActiveList(s, updateNode(activeList(s), uid, patch))),
 
-      addRole: (name, type) => {
+      addRole: (name, type, device) => {
         if (!ROLE_NAME_RE.test(name)) return `role name must match [a-z][a-z0-9_]*`
         if (name in get().roles) return `role '${name}' already exists`
-        set((s) => ({ roles: { ...s.roles, [name]: { type } } }))
+        set((s) => ({
+          roles: { ...s.roles, [name]: device !== undefined ? { type, device } : { type } },
+        }))
         return null
       },
 
@@ -348,7 +358,7 @@ export const useDocStore = create<EditorState>()(
       addGroup: (name) => {
         if (!GROUP_NAME_RE.test(name)) return `group name must be an identifier`
         if (name in get().groups) return `group '${name}' already exists`
-        set((s) => ({ groups: { ...s.groups, [name]: { params: [], body: [] } } }))
+        set((s) => ({ groups: { ...s.groups, [name]: { params: [], locals: {}, body: [] } } }))
         return null
       },
 
@@ -398,6 +408,13 @@ export const useDocStore = create<EditorState>()(
         set((s) =>
           name in s.groups
             ? { groups: { ...s.groups, [name]: { ...s.groups[name], params: [...params] } } }
+            : {},
+        ),
+
+      setGroupLocals: (name, locals) =>
+        set((s) =>
+          name in s.groups
+            ? { groups: { ...s.groups, [name]: { ...s.groups[name], locals: { ...locals } } } }
             : {},
         ),
 

@@ -71,7 +71,7 @@ export function PreflightPanel() {
         if (gen.current !== token) return
         setDiagnostics(validation.diagnostics)
         setSaved(savedMap)
-        setChosen(prefillMapping(res.doc.roles, useLabsStore.getState().devices, savedMap))
+        setChosen(prefillMapping(res.doc.workflow.roles ?? {}, useLabsStore.getState().devices, savedMap))
       })
       .catch((e: unknown) => {
         if (gen.current === token) setDocError(e instanceof Error ? e.message : String(e))
@@ -88,7 +88,7 @@ export function PreflightPanel() {
   // W6 (a): re-apply the prefill when the roster lands after loadSelection resolved.
   useEffect(() => {
     if (doc === null) return
-    setChosen((c) => mergePrefill(c, doc.roles, devices, saved))
+    setChosen((c) => mergePrefill(c, doc.workflow.roles ?? {}, devices, saved))
   }, [doc, devices, saved])
 
   if (lab === null) {
@@ -102,7 +102,7 @@ export function PreflightPanel() {
     )
   }
 
-  const rows = doc !== null ? buildMappingRows(doc.roles, devices, chosen) : []
+  const rows = doc !== null ? buildMappingRows(doc.workflow.roles ?? {}, devices, chosen) : []
   const unmapped = unmappedCount(rows)
   const clean = diagnostics !== null && diagnostics.length === 0
   const canStart = clean && mappingComplete(rows) && !startBusy && selectedId !== null

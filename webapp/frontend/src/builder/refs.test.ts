@@ -34,7 +34,7 @@ const comp = (uid: string, into: string, value: string): ComputeNode => ({
   uid, kind: 'compute', into, value, ...base,
 })
 const grp = (uid: string, name: string): GroupRefNode => ({
-  uid, kind: 'group_ref', name, args: {}, ...base,
+  uid, kind: 'group_ref', name, as: null, args: {}, ...base,
 })
 const tree: BlockNode[] = [
   {

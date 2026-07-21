@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { parseDraft, resolveDraft, serializeDraft, type Draft } from './draftStorage'
 
 const sample = (): Draft => ({
-  v: 1,
+  v: 2,
   serverId: 'a1b2',
   savedSnapshot: '{"name":"x"}',
   content: {
@@ -54,6 +54,11 @@ describe('parseDraft', () => {
       view: { scope: null, selectedUid: null },
     })
     expect(parseDraft(raw)?.view.collapsed).toEqual({})
+  })
+
+  it('discards a v1 draft (schema-2 guard, design §7)', () => {
+    const stale = JSON.stringify({ ...sample(), v: 1 })
+    expect(parseDraft(stale)).toBeNull()
   })
 })
 

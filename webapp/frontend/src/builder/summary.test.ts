@@ -14,7 +14,7 @@ const base = { label: null, gapAfter: null, startOffset: null }
 const ALL_KIND_FIXTURES: BlockNode[] = [
   { uid: 'x', kind: 'command', device: 'pump1', verb: 'dispense', params: { volume_ml: 5 }, ...base },
   { uid: 'x', kind: 'measure', device: 'od_meter', verb: 'measure', into: 'od', params: {}, ...base },
-  { uid: 'x', kind: 'group_ref', name: 'service', args: { tube: 1 }, ...base },
+  { uid: 'x', kind: 'group_ref', name: 'service', as: null, args: { tube: 1 }, ...base },
   newPaletteNode('serial'),
   newPaletteNode('parallel'),
   newPaletteNode('branch'),
@@ -120,15 +120,15 @@ describe('blockSummary', () => {
 
   it('summarises repetition blocks', () => {
     expect(
-      blockSummary({ uid: 'u', kind: 'for_each', var: 'tube', items: [1, 2, 3], body: [], ...base }),
-    ).toBe('For each tube in [1, 2, 3]')
+      blockSummary({ uid: 'u', kind: 'for_each', vars: [{ name: 'tube', kind: 'int' }], rows: [{ tube: 1 }, { tube: 2 }, { tube: 3 }], body: [], ...base }),
+    ).toBe('For each tube × 3')
     expect(
-      blockSummary({ uid: 'u', kind: 'for_each', var: null, items: [{ tube: 1 }, { tube: 2 }], body: [], ...base }),
-    ).toBe('For each of 2 items')
-    expect(blockSummary({ uid: 'u', kind: 'group_ref', name: 'service', args: { tube: 1 }, ...base })).toBe(
+      blockSummary({ uid: 'u', kind: 'for_each', vars: [{ name: 'tube', kind: 'int' }, { name: 'od', kind: 'stream' }], rows: [{ tube: 1, od: 'od_1' }, { tube: 2, od: 'od_2' }], body: [], ...base }),
+    ).toBe('For each tube, od × 2')
+    expect(blockSummary({ uid: 'u', kind: 'group_ref', name: 'service', as: null, args: { tube: 1 }, ...base })).toBe(
       'service(tube=1)',
     )
-    expect(blockSummary({ uid: 'u', kind: 'group_ref', name: 'wash', args: {}, ...base })).toBe('wash')
+    expect(blockSummary({ uid: 'u', kind: 'group_ref', name: 'wash', as: null, args: {}, ...base })).toBe('wash')
   })
 })
 
@@ -149,7 +149,7 @@ const PINNED_SUMMARIES: Array<[BlockNode, string]> = [
     'pump1 · dispense (volume_ml=5)'],
   [{ uid: 'x', kind: 'measure', device: 'od_meter', verb: 'measure', into: 'od', params: {}, ...base },
     'od_meter · measure → od'],
-  [{ uid: 'x', kind: 'group_ref', name: 'service', args: { tube: 1 }, ...base },
+  [{ uid: 'x', kind: 'group_ref', name: 'service', as: null, args: { tube: 1 }, ...base },
     'service(tube=1)'],
   [{ uid: 'x', kind: 'serial', children: [], ...base },
     'Serial · 0'],
@@ -162,8 +162,8 @@ const PINNED_SUMMARIES: Array<[BlockNode, string]> = [
     'If …'],
   [{ uid: 'x', kind: 'loop', mode: 'count', count: 2, until: '', check: 'after', pace: null, body: [], ...base },
     'Loop ×2'],
-  [{ uid: 'x', kind: 'for_each', var: 'tube', items: [1, 2, 3], body: [], ...base },
-    'For each tube in [1, 2, 3]'],
+  [{ uid: 'x', kind: 'for_each', vars: [{ name: 'tube', kind: 'int' }], rows: [{ tube: 1 }, { tube: 2 }, { tube: 3 }], body: [], ...base },
+    'For each tube × 3'],
   [{ uid: 'x', kind: 'compute', into: '', value: '', ...base },
     '? = …'],
   [{ uid: 'x', kind: 'record', into: '', value: '', ...base },
@@ -176,11 +176,13 @@ const PINNED_SUMMARIES: Array<[BlockNode, string]> = [
     'Alarm if …'],
   [{ uid: 'x', kind: 'abort', condition: '', message: '', ...base },
     'Abort if …'],
-  // Alternate forms newPaletteNode never reaches — the coverage gap noted in review.
+  // Alternate forms newPaletteNode never reaches — the coverage gap noted in review. The
+  // multi-var for_each exercises the comma-joined var-name list a single-var palette default
+  // never reaches.
   [{ uid: 'x', kind: 'loop', mode: 'until', count: 2, until: 'mean(od, last=3) > 0.6', check: 'after', pace: null, body: [], ...base },
     'Loop until mean(od, last=3) > 0.6'],
-  [{ uid: 'x', kind: 'for_each', var: null, items: [{ tube: 1 }, { tube: 2 }], body: [], ...base },
-    'For each of 2 items'],
+  [{ uid: 'x', kind: 'for_each', vars: [{ name: 'tube', kind: 'int' }, { name: 'od', kind: 'stream' }], rows: [{ tube: 1, od: 'od_1' }, { tube: 2, od: 'od_2' }], body: [], ...base },
+    'For each tube, od × 2'],
   // Fault marker on a kind that otherwise has no trailing detail segment — pins the marker's
   // own leading space.
   [{ uid: 'x', kind: 'command', device: 'pump1', verb: 'dispense', params: {}, ...base, retry: { attempts: 3 } },
@@ -223,11 +225,9 @@ describe('blockSummaryParts', () => {
       subject: ['ratio'], verb: [] },
     { node: { uid: 'x', kind: 'record', into: 'od_log', value: 'od', ...base },
       subject: ['od_log'], verb: [] },
-    // The `var !== null` arm — the `var: null` arm emits no subject at all, so it is the
-    // wrong fixture for a subject-tag assertion.
-    { node: { uid: 'x', kind: 'for_each', var: 'tube', items: [1, 2, 3], body: [], ...base },
-      subject: ['tube'], verb: ['For each'] },
-    { node: { uid: 'x', kind: 'group_ref', name: 'service', args: { tube: 1 }, ...base },
+    // Schema 2: for_each no longer emits a `subject` segment (its summary is 'For each' +
+    // detail only), so it is deliberately absent from this subject-tag table.
+    { node: { uid: 'x', kind: 'group_ref', name: 'service', as: null, args: { tube: 1 }, ...base },
       subject: ['service'], verb: [] },
   ]
 
