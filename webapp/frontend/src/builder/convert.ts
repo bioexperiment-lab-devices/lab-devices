@@ -94,7 +94,12 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
   const streams: DocContent['streams'] = {}
   for (const [name, decl] of Object.entries(wf.streams ?? {})) {
     streams[name] = {
-      units: decl.units ?? null,
+      // The engine spells "no unit" as the literal string "unitless" (units.py
+      // _UNITLESS_TEXTS); the Studio spells it as a blank field instead, converting at this
+      // one boundary. Only the exact spelling "unitless" maps to blank — "" and "1" are other
+      // engine-recognized unitless spellings, but they must round-trip verbatim, not collapse
+      // into this one, or a doc that spells it "" would silently re-save as "unitless".
+      units: decl.units === 'unitless' ? null : (decl.units ?? null),
       ...(decl.persistence !== undefined ? { persistence: decl.persistence } : {}),
     }
   }
@@ -229,7 +234,10 @@ export function treeToDoc(content: DocContent): ExperimentDocJson {
   const streams: Record<string, StreamDeclJson> = {}
   for (const [name, s] of Object.entries(content.streams)) {
     streams[name] = {
-      units: s.units,
+      // Mirror of the docToTree boundary above: a blank field (null) serializes back to the
+      // engine's literal "unitless" spelling; any other value (including "" or "1") passes
+      // through unchanged.
+      units: s.units ?? 'unitless',
       ...(s.persistence !== undefined ? { persistence: s.persistence } : {}),
     }
   }

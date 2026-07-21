@@ -96,7 +96,7 @@ export function StreamsPanel() {
             )}
             <input
               value={s.units ?? ''}
-              placeholder="units"
+              placeholder="unitless"
               onChange={(e) => setStreamUnits(name, e.target.value || null)}
               className={controlClass({ width: 'w-14' })}
             />
@@ -135,7 +135,7 @@ export function StreamsPanel() {
         />
         <input
           value={newUnits}
-          placeholder="units"
+          placeholder="unitless"
           onChange={(e) => setNewUnits(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
           className={controlClass({ width: 'w-14' })}

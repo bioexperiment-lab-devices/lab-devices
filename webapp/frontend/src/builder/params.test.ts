@@ -8,7 +8,7 @@ describe('coerceParamInput', () => {
   })
 
   it('keeps string params literal', () => {
-    expect(coerceParamInput('cw', 'string')).toBe('cw')
+    expect(coerceParamInput('abc', 'string')).toBe('abc')
     expect(coerceParamInput('5', 'string')).toBe('5')
   })
 

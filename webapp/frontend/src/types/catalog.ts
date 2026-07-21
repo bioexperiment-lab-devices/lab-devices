@@ -7,6 +7,8 @@ export interface ParamSpec {
   name: string
   type: ParamKind
   required: boolean
+  // Present when the param is a closed enum: the device accepts exactly these spellings.
+  values?: string[]
 }
 
 export interface VerbSpec {

@@ -892,6 +892,26 @@ function ParamInput(props: {
   const { spec, value, onCommit } = props
   const [exprMode, setExprMode] = useState(typeof value === 'string')
   if (spec.type === 'string') {
+    if (spec.values !== undefined) {
+      const current = typeof value === 'string' ? value : ''
+      return (
+        <select
+          value={current}
+          onChange={(e) => onCommit(e.target.value === '' ? undefined : e.target.value)}
+          className={controlClass()}
+        >
+          <option value="">— unset —</option>
+          {spec.values.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+          {current !== '' && !spec.values.includes(current) && (
+            <option value={current}>{current}</option>
+          )}
+        </select>
+      )
+    }
     return (
       <AutoGrowTextArea
         value={typeof value === 'string' ? value : paramInputText(value)}

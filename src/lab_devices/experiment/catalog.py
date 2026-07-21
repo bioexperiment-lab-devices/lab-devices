@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from lab_devices.experiment.expr import STAT_FNS
 from lab_devices.experiment.registry import _REGISTRY
@@ -12,6 +12,7 @@ class ParamEntry(TypedDict):
     name: str
     type: str
     required: bool
+    values: NotRequired[list[str]]
 
 
 class VerbEntry(TypedDict):
@@ -28,7 +29,9 @@ def verb_catalog() -> dict[str, dict[str, VerbEntry]]:
         catalog.setdefault(device_type, {})[verb] = VerbEntry(
             kind="measure" if trait.measurement else "command",
             params=[
-                ParamEntry(name=p.name, type=p.kind, required=p.required)
+                ParamEntry(name=p.name, type=p.kind, required=p.required, values=list(p.values))
+                if p.values is not None
+                else ParamEntry(name=p.name, type=p.kind, required=p.required)
                 for p in trait.params
             ],
             result_field=trait.result_field,

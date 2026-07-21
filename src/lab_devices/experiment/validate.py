@@ -748,6 +748,12 @@ def _check_param_value(
     if spec.kind == "string":
         if not isinstance(value, str):
             out.append(Diagnostic("params", ctx, f"expected a string literal, got {value!r}"))
+        elif spec.values is not None and "{" not in value and value not in spec.values:
+            # A hole defers to expansion, same as _role_type's device holes; the expanded
+            # copy re-runs this check with the literal filled in.
+            out.append(Diagnostic(
+                "params", ctx, f"expected one of {list(spec.values)}, got {value!r}"
+            ))
         return
     if isinstance(value, str):
         base: Base = "bool" if spec.kind == "bool" else "int" if spec.kind == "int" else "number"

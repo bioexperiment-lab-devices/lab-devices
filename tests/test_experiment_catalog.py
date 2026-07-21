@@ -49,3 +49,21 @@ def test_catalog_exposes_retry_safe():
     catalog = verb_catalog()
     assert catalog["densitometer"]["measure"]["retry_safe"] is True
     assert catalog["pump"]["dispense"]["retry_safe"] is False
+
+
+def test_catalog_declares_enum_values_for_closed_string_params():
+    cat = verb_catalog()
+    rotate = {p["name"]: p for p in cat["pump"]["rotate"]["params"]}
+    assert rotate["direction"]["values"] == ["forward", "reverse"]
+    valve = {p["name"]: p for p in cat["valve"]["set_position"]["params"]}
+    assert valve["rotation"]["values"] == ["shortest", "direct", "wrap"]
+    configure = {p["name"]: p for p in cat["valve"]["configure"]["params"]}
+    assert configure["default_rotation"]["values"] == ["shortest", "direct", "wrap"]
+    dispense = {p["name"]: p for p in cat["pump"]["dispense"]["params"]}
+    assert dispense["direction"]["values"] == ["forward", "reverse"]
+
+
+def test_catalog_omits_values_key_for_open_string_params():
+    cat = verb_catalog()
+    volume = {p["name"]: p for p in cat["pump"]["dispense"]["params"]}["volume_ml"]
+    assert "values" not in volume
