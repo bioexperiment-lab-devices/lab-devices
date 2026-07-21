@@ -70,6 +70,9 @@ class RunContext:
     abort_requested: bool = False
     log_sink: RunLogSink = field(default_factory=InMemoryRunLog)
     stream_sinks: dict[str, StreamSink | None] = field(default_factory=dict)
+    source_map: dict[str, str] = field(default_factory=dict)
+    # expanded block_id -> authored structural path (expand_workflow_traced). emit() names
+    # each block-scoped event's authored block from this; {} means "no naming" (source_path None).
 
     def __post_init__(self) -> None:
         if self.options.log_sink is not None:
@@ -101,4 +104,7 @@ class RunContext:
         return self.locks[role]
 
     def emit(self, kind: str, block_id: str | None = None, **data: Any) -> None:
-        self.log_sink.emit(RunEvent(self.clock.now(), kind, block_id, dict(data)))
+        source_path = self.source_map.get(block_id) if block_id is not None else None
+        self.log_sink.emit(
+            RunEvent(self.clock.now(), kind, block_id, dict(data), source_path=source_path)
+        )
