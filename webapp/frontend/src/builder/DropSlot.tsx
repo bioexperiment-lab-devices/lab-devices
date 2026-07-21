@@ -20,7 +20,7 @@ export function DropSlot(props: { at: SlotRef; horizontal: boolean; hint: boolea
       <div
         ref={setNodeRef}
         className={
-          'm-1 flex-1 rounded border border-dashed px-2 py-3 text-center text-xs ' +
+          'flex-1 rounded border border-dashed px-2 py-3 text-center text-xs ' +
           (highlight
             ? // Already opaque (bg-blue-50 fully paints the box), so this branch never
               // needs the hatch backing below regardless of scope.
