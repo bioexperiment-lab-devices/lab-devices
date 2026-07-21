@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Palette as PaletteIcon, Pencil, Plus, X } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
@@ -6,7 +6,7 @@ import { useRoleColorStore } from '../stores/roleColorStore'
 import type { Catalog } from '../types/catalog'
 import { effectiveSelection, roleGroups, type RoleTypeGroup } from './roleGroups'
 import { useScopeRefs } from './scopeRefs'
-import { ROLE_SWATCH_CLASSES, ROLE_SWATCH_LABELS, roleColorKey } from './roleColors'
+import { assignRoleColors, ROLE_SWATCH_CLASSES, ROLE_SWATCH_LABELS, roleColorKey } from './roleColors'
 import { Chip } from './Chip'
 import { KindIcon } from '../ui/icons'
 import { badgeClass, CONTROL_H, controlClass, inlineButtonClass } from '../ui/controls'
@@ -58,6 +58,9 @@ function RoleTypeBlock({
   const renameRole = useDocStore((s) => s.renameRole)
   const removeRole = useDocStore((s) => s.removeRole)
   const focusedRole = useDocStore((s) => s.focusedRole)
+  const docRoles = useDocStore((s) => s.roles)
+  const overrides = useRoleColorStore((s) => s.overrides)
+  const assigned = useMemo(() => assignRoleColors(docRoles, overrides), [docRoles, overrides])
   const [picked, setPicked] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
@@ -143,6 +146,9 @@ function RoleTypeBlock({
           (focusedRole === name ? ' ring-2 ring-amber-400' : '')
         }
       >
+        {assigned[name] && (
+          <span aria-hidden className={`mr-1 h-2.5 w-2.5 shrink-0 rounded-sm ${assigned[name]}`} />
+        )}
         <span className={'min-w-0 truncate' + (isParam ? ' font-mono' : '')} title={name}>
           {name}
         </span>
@@ -161,33 +167,34 @@ function RoleTypeBlock({
           <span className="ml-1 shrink-0 font-normal text-amber-700">— unknown device type</span>
         )}
       </p>
-      {group.roles.length === 0 ? (
+      {group.roles.length === 0 && (
         <p className="mb-1 px-1 text-xs text-hint">no roles yet — add one to use this device</p>
-      ) : (
-        <div className="mb-1 flex flex-wrap items-center gap-1">
-          {topRoles.map((name) => badge(name))}
-          {/* rename/delete/colour act on `selected` and only make sense for a real top-level
-              role — a group param is edited in the group's Params panel, so hide the cluster
-              (and never render the rename input) when the selection is a param. */}
-          {!selectedIsParam && (
-            <span className="ml-auto flex items-center">
-              {selected && <RoleColorPicker name={selected} type={group.type} />}
-              <IconButton icon={Pencil} label="Rename selected role" onClick={startRename} />
-              <IconButton
-                icon={X}
-                label="Delete selected role"
-                destructive
-                onClick={() => {
-                  if (!selected) return
-                  const err = removeRole(selected)
-                  setError(err)
-                  if (err === null) setPicked(null)
-                }}
-              />
-            </span>
-          )}
-        </div>
       )}
+      <div className="mb-1 flex flex-wrap items-center gap-1">
+        {topRoles.map((name) => badge(name))}
+        <AddRoleForm type={group.type} onAdded={setPicked} />
+        {/* rename/delete/colour act on `selected` and only make sense for a real top-level
+            role — a group param is edited in the group's Params panel, so hide the cluster
+            (and never render the rename input) when the selection is a param, and hide it
+            entirely when the group has no roles at all (nothing to act on). */}
+        {group.roles.length > 0 && !selectedIsParam && (
+          <span className="ml-auto flex items-center">
+            {selected && <RoleColorPicker name={selected} type={group.type} />}
+            <IconButton icon={Pencil} label="Rename selected role" onClick={startRename} />
+            <IconButton
+              icon={X}
+              label="Delete selected role"
+              destructive
+              onClick={() => {
+                if (!selected) return
+                const err = removeRole(selected)
+                setError(err)
+                if (err === null) setPicked(null)
+              }}
+            />
+          </span>
+        )}
+      </div>
       {/* Additive "In this group" divider (design 2026-07-21): the active group's role params,
           only ever non-empty inside that group's scope. */}
       {groupParams.length > 0 && (
@@ -221,7 +228,6 @@ function RoleTypeBlock({
           ))}
         </div>
       )}
-      <AddRoleForm type={group.type} onAdded={setPicked} />
     </div>
   )
 }
@@ -290,11 +296,12 @@ function RoleColorPicker({ name, type }: { name: string; type: string }) {
   )
 }
 
-/** "+ add role" reveal form. The type is implied by the enclosing block, so the row is
- * just name + Add — which is precisely what removed the old three-control row that
- * overflowed the 256px palette (finding 2's screenshot). Same dismiss-on-outside-click
- * boundary reasoning as Canvas's ScopeSwitcher: the trigger unmounts while the form is
- * open, so wrapping the form row alone is correct. */
+/** "+ add role" reveal form. Lives inline in the badge row, right after the last role
+ * badge — the type is implied by the enclosing block, so the row is just name + Add, which
+ * is precisely what removed the old three-control row that overflowed the 256px palette
+ * (finding 2's screenshot). Same dismiss-on-outside-click boundary reasoning as Canvas's
+ * ScopeSwitcher: the trigger unmounts while the form is open, so wrapping the form row
+ * alone is correct. */
 function AddRoleForm({ type, onAdded }: { type: string; onAdded: (name: string) => void }) {
   const addRole = useDocStore((s) => s.addRole)
   const [adding, setAdding] = useState(false)
@@ -317,30 +324,28 @@ function AddRoleForm({ type, onAdded }: { type: string; onAdded: (name: string) 
   }
   if (!adding) {
     return (
-      <button onClick={() => setAdding(true)} className={inlineButtonClass({ subtle: true }) + ' mt-1'}>
+      <button onClick={() => setAdding(true)} className={inlineButtonClass({ subtle: true })}>
         <Plus size={12} aria-hidden className="mr-0.5" />add role
       </button>
     )
   }
   return (
-    <div ref={addingRef} className="mt-1 space-y-1">
-      <div className="flex items-center gap-1">
-        <input
-          autoFocus
-          value={name}
-          placeholder="role name"
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') add()
-            if (e.key === 'Escape') close()
-          }}
-          className={controlClass({ mono: true, width: 'w-28' })}
-        />
-        <button onClick={add} className={inlineButtonClass()}>
-          Add
-        </button>
-      </div>
-      {error && <p className="text-xs text-red-600">{error}</p>}
+    <div ref={addingRef} className="flex min-w-0 flex-wrap items-center gap-1">
+      <input
+        autoFocus
+        value={name}
+        placeholder="role name"
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') add()
+          if (e.key === 'Escape') close()
+        }}
+        className={controlClass({ mono: true, width: 'w-28' })}
+      />
+      <button onClick={add} className={inlineButtonClass()}>
+        Add
+      </button>
+      {error && <p className="basis-full text-xs text-red-600">{error}</p>}
     </div>
   )
 }
