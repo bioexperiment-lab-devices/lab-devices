@@ -276,7 +276,14 @@ function RoleColorPicker({ name, type }: { name: string; type: string }) {
     const below = trigger.bottom + 4 + panel.height <= window.innerHeight
     setPos({
       top: below ? trigger.bottom + 4 : Math.max(8, trigger.top - 4 - panel.height),
-      right: Math.max(8, window.innerWidth - trigger.right),
+      // The trigger lives in the left-side palette, so pure right-alignment
+      // (`innerWidth - trigger.right`) walks the panel's left edge off the left of the
+      // viewport — clamp `right` so that edge (innerWidth - right - panel.width) stays
+      // >= 8px in, sliding the panel rightward past the trigger when there isn't room.
+      right: Math.max(
+        8,
+        Math.min(window.innerWidth - trigger.right, window.innerWidth - 8 - panel.width),
+      ),
     })
   }, [open, ref])
 
