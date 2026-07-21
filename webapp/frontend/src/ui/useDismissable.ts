@@ -63,6 +63,7 @@ export function useDismissable(
       document.removeEventListener('pointerdown', handle)
       document.removeEventListener('keydown', handle)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   return ref
