@@ -15,7 +15,7 @@ _MAX_NESTING = 64
 
 @dataclass(frozen=True)
 class Const:
-    value: int | float | bool
+    value: int | float | bool | str  # str is a single-quoted string literal (design §6)
 
 
 @dataclass(frozen=True)
@@ -74,6 +74,7 @@ class Token:
 _TOKEN_RE = re.compile(
     rf"\s+|(?P<DURATION>{DURATION_PATTERN})"
     r"|(?P<NUMBER>\d+(?:\.\d+)?)"
+    r"|(?P<STRING>'[^']*')"  # single-quoted string literal, e.g. 'chemostat' (design §6)
     r"|(?P<NAME>[A-Za-z_][A-Za-z0-9_]*)"
     r"|(?P<OP><=|>=|==|!=|[-+*/(),<>=])"
 )
@@ -216,6 +217,8 @@ class _Parser:
             return Const(value)
         if tok.kind == "DURATION":
             raise self._fail(tok, "duration literals are only valid as a stat window")
+        if tok.kind == "STRING":
+            return Const(tok.text[1:-1])  # strip the surrounding single quotes
         if tok.kind == "NAME":
             if tok.text == "true":
                 return Const(True)

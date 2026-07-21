@@ -21,7 +21,7 @@ from lab_devices.experiment.expr import (
 )
 from lab_devices.experiment.state import RunState, Sample
 
-Value = int | float | bool
+Value = int | float | bool | str  # str: a string literal or an enum-input binding (design §6)
 
 _ARITH_OPS = frozenset({"+", "-", "*", "/"})
 _ORDER_OPS = frozenset({"<", "<=", ">", ">="})
@@ -51,10 +51,9 @@ def _binding(ref: BindingRef, state: RunState) -> Value:
     if ref.name not in state.bindings:
         raise EvaluationError(f"unbound binding {ref.name!r}")
     bound = state.bindings[ref.name]
-    if isinstance(bound, str):
-        raise EvaluationError(
-            f"binding {ref.name!r} holds a string; expressions evaluate numbers and booleans"
-        )
+    # A string binding (enum operator input) is no longer rejected outright: it is legal in a
+    # string comparison (design §6). It is still refused wherever a number or a boolean is
+    # required, by `_number`/`_boolean` and the `==` class check below.
     if isinstance(bound, float) and not math.isfinite(bound):
         raise EvaluationError(f"binding {ref.name!r} holds a non-finite value")
     return bound
@@ -97,7 +96,11 @@ def _binary(expr: BinaryOp, state: RunState, now: float) -> Value:
         return _arith(expr.op, _number(left, ctx), _number(right, ctx))
     if expr.op in _ORDER_OPS:
         return _compare(expr.op, _number(left, ctx), _number(right, ctx))
-    if isinstance(left, bool) != isinstance(right, bool):
+    # == / != : operands must be the same class — both strings, both booleans, or both numbers.
+    l_str, r_str = isinstance(left, str), isinstance(right, str)
+    if l_str != r_str:
+        raise EvaluationError(f"{ctx} cannot compare a string with a non-string")
+    if not l_str and isinstance(left, bool) != isinstance(right, bool):
         raise EvaluationError(f"{ctx} cannot compare a boolean with a number")
     return (left == right) if expr.op == "==" else (left != right)
 
