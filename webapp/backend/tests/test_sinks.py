@@ -25,6 +25,7 @@ def test_emit_appends_event_messages_with_contiguous_seq() -> None:
         "timestamp": 1.0,
         "kind": "run_started",
         "block_id": "blocks[0]",
+        "source_path": None,
         "data": {"k": "v"},
     }
     assert tee.messages[1] == {"type": "status", "seq": 1, "status": "running"}
