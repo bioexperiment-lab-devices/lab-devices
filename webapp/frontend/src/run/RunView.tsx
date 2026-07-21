@@ -56,7 +56,9 @@ export function RunView() {
     if (doc === null) return null
     try {
       const { tree, groups } = docToTree(doc)
-      return { tree, groups }
+      // Coerce groups to {} (DocContent.groups is typed optional) so a plain blocks[i] path
+      // still resolves — mirrors RecordViewer, keeping blockName's guard identical on both surfaces.
+      return { tree, groups: groups ?? {} }
     } catch {
       return null
     }
