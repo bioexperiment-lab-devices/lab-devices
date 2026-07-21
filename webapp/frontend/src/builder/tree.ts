@@ -379,13 +379,13 @@ export function newPaletteNode(kind: PaletteKind): BlockNode {
         ],
       }
     case 'loop':
-      return { ...base, kind, mode: 'count', count: 2, until: '', check: 'after', pace: null, body: [] }
+      return { ...base, kind, mode: 'count', count: '', until: '', check: 'after', pace: null, body: [] }
     case 'branch':
       return { ...base, kind, condition: '', then: [], else: [] }
     case 'wait':
-      return { ...base, kind, duration: '1s' }
+      return { ...base, kind, duration: '' }
     case 'operator_input':
-      return { ...base, kind, name: 'value', inputType: 'float', prompt: null, min: null, max: null, choices: null }
+      return { ...base, kind, name: '', inputType: 'float', prompt: null, min: null, max: null, choices: null }
     case 'compute':
     case 'record':
       return { ...base, kind, into: '', value: '' }
@@ -393,11 +393,11 @@ export function newPaletteNode(kind: PaletteKind): BlockNode {
     case 'alarm':
       return { ...base, kind, condition: '', message: '' }
     case 'for_each':
-      // Seeded with a concrete example rather than blanks: an empty `in` is a load error
-      // (expand.py:99 "for_each 'in' must be a non-empty list"), so a freshly-dragged empty
-      // for_each would make the whole doc unsavable until filled. Schema 2: a typed `var` and
-      // one value per row (the scalar `var` shorthand is gone).
-      return { ...base, kind, vars: [{ name: 'tube', kind: 'int' }], rows: [{ tube: 1 }, { tube: 2 }, { tube: 3 }], body: [] }
+      // Seeded empty like branch/compute: a fabricated example (tube / 1,2,3) read as real
+      // data. An empty `in` is still a load error (expand.py:99), so the block is
+      // invalid-until-filled — which Save permits and ProblemsPanel reports, same as an
+      // empty branch condition.
+      return { ...base, kind, vars: [], rows: [], body: [] }
     case 'group_ref':
       return { ...base, kind, name: '', as: null, args: {} }
   }
