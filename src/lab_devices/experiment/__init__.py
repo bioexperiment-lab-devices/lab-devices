@@ -95,7 +95,8 @@ from lab_devices.experiment.serialize import (
     workflow_to_dict,
 )
 from lab_devices.experiment.state import BindingValue, RunState, Sample, Stream
-from lab_devices.experiment.validate import load_and_validate, validate
+from lab_devices.experiment.units import unit_str
+from lab_devices.experiment.validate import binding_types, load_and_validate, validate
 from lab_devices.experiment.workflow import (
     Defaults,
     Group,
@@ -110,7 +111,8 @@ from lab_devices.experiment.workflow import (
 
 __all__ = [
     "BindingType", "Diagnostic", "ExprRefs", "ExprType", "TypeReport",
-    "ValidationError", "infer_type", "load_and_validate", "references", "validate",
+    "ValidationError", "binding_types", "infer_type", "load_and_validate",
+    "references", "unit_str", "validate",
     "Block", "Branch", "Command", "Compute", "ForEach", "GroupRef", "Loop", "Measure",
     "OperatorInput", "Parallel", "Record", "Retry", "Serial", "Wait",
     "EvaluationError", "ExperimentError", "ExpressionError", "UnknownVerbError",
