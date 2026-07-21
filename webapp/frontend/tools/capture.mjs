@@ -383,6 +383,88 @@ const states = [
       }
     },
   },
+  {
+    name: 'group-scope-typed-properties',
+    description:
+      "the group-scope Inspector with nothing selected: groups.service's typed param table " +
+      '(tube:int, od:stream) and locals table (7 bindings/streams with init/units) — the S3 ' +
+      'typed editors replacing the S2 read-only <ul> summaries.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.morbidostat)
+      await selectScope(page, 'service')
+      // The typed editors render one name TextField per declared param/local (placeholder
+      // "name"); the S2 shim rendered plain read-only <li> text and had none of these. Pinned
+      // to morbidostat's actual counts (2 params + 7 locals) rather than ">0" so a row silently
+      // failing to render is caught, not just total absence.
+      const nameFields = await page.evaluate(
+        () => document.querySelectorAll('input[placeholder="name"]').length,
+      )
+      if (nameFields !== 9) {
+        throw new Error(
+          `group scope Inspector rendered ${nameFields} typed name fields, expected 9 (2 params + 7 locals)`,
+        )
+      }
+    },
+  },
+  {
+    name: 'group-ref-kind-aware-args',
+    description:
+      "a group_ref block ('service(tube={tube}, od={od})') selected: `as` marked required " +
+      "(the group declares locals) and one kind-aware arg editor per param — od (stream) " +
+      'renders as a StreamIntoPicker rather than the S2 shim\'s one free-text ExpressionInput ' +
+      'per param.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.morbidostat)
+      await selectBlock(page, /^service\(tube=/)
+      const asRequired = await page.evaluate(() =>
+        [...document.querySelectorAll('label')].some(
+          (l) => (l.textContent ?? '').includes('As (call-site prefix)') && (l.textContent ?? '').includes('*'),
+        ),
+      )
+      if (!asRequired) {
+        throw new Error('`as` was not marked required for a group that declares locals')
+      }
+      // `od`'s CURRENT value here is the hole "{od}" (this group_ref lives inside the tube/od
+      // for_each, whose body substitutes its own vars — same as the main tree's `{meter} ·
+      // measure → {od}` block uses the identical StreamIntoPicker via IntoPicker today), so the
+      // picker's selected option legitimately won't match any declared stream. Assert the
+      // picker rendered at all via its own "+ new stream…" sentinel option, not the value.
+      const streamPickerPresent = await page.evaluate(() =>
+        [...document.querySelectorAll('select')].some((sel) =>
+          [...sel.options].some((o) => o.value === '__new__'),
+        ),
+      )
+      if (!streamPickerPresent) {
+        throw new Error("group_ref args did not render a StreamIntoPicker for the 'od' (stream) param")
+      }
+    },
+  },
+  {
+    name: 'for-each-role-grid',
+    description:
+      'the outer for_each (tube:int, meter:role<densitometer>, od:stream) selected: the typed ' +
+      'vars editor plus the typed row grid, whose `meter` column is a role <select> filtered ' +
+      'to densitometer roles — the case design §9.2 calls out by name.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.morbidostat)
+      await selectBlock(page, /^∀For each tube, meter,/)
+      const gridPresent = (await page.locator('table').count()) > 0
+      if (!gridPresent) {
+        throw new Error('for_each Inspector did not render the row grid')
+      }
+      const roleColumnFiltered = await page.evaluate(() =>
+        [...document.querySelectorAll('table select')].some((sel) =>
+          [...sel.options].some((o) => o.value === 'od_meter_1'),
+        ),
+      )
+      if (!roleColumnFiltered) {
+        throw new Error("for_each grid did not render a role-filtered select for the 'meter' column")
+      }
+    },
+  },
 ]
 
 const SETUP_HELP =

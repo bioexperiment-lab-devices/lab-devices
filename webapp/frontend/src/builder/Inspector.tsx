@@ -319,7 +319,20 @@ function ArgField({
       )
     case 'integer':
     case 'number':
-      return (
+      // A STRING here is a hole bound to an enclosing loop's own typed var (e.g. `{tube}`
+      // in a group_ref nested inside that var's for_each — design §3.1's typed
+      // substitution; morbidostat.json's `service` call is exactly this) rather than a
+      // literal number. NumberField can only hold a real JS number, so feeding it a hole
+      // string would render it blank and hide an already-saved value; fall back to a
+      // plain text field instead, the same way ParamInput falls back to ExpressionInput
+      // whenever a bool param's current value is a string (below).
+      return typeof value === 'string' ? (
+        <TextField
+          mono
+          value={value}
+          onCommit={(v) => onCommit(coerceParamInput(v, param.kind as 'int' | 'number'))}
+        />
+      ) : (
         <NumberField
           value={typeof value === 'number' ? value : null}
           integer={editor === 'integer'}
@@ -327,6 +340,12 @@ function ArgField({
         />
       )
     case 'bool': {
+      // Same string-hole fallback as integer/number above.
+      if (typeof value === 'string') {
+        return (
+          <TextField mono value={value} onCommit={(v) => onCommit(coerceParamInput(v, 'bool'))} />
+        )
+      }
       const current = value === true ? 'true' : value === false ? 'false' : ''
       return (
         <select
