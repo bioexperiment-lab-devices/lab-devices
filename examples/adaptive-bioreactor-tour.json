@@ -1,0 +1,1041 @@
+{
+  "doc_version": 1,
+  "name": "Adaptive Bioreactor - Studio Grand Tour (demo speed)",
+  "description": "Adaptive bioreactor, demo speed: three continuous-culture vials whose CONTROL REGIME is chosen by the operator at run start. One document, three experiments.\n\nAt setup you answer `regime` (an enum):\n  - `turbidostat` - hold optical density at `target_od`. A tube reading above target is diluted with 1 ml of fresh medium; otherwise nothing. Drug is never used.\n  - `chemostat` - hold a constant dilution rate. Each serviced tube gets a fixed medium top-up, and once per cycle `medium_pump` is run in continuous `rotate` MODE for a short settling window (a bounded until-loop), then stopped.\n  - `morbidostat` - the evolution experiment: a tube out-growing its dilution above `od_thr` gets 1 ml of drug, otherwise 1 ml of medium, and its believed drug concentration is tracked with the standard recursion (see examples/morbidostat.json).\n\nTube C (od_meter_3) is a CONTROL tube: measured every cycle but never dosed, in every regime. Tubes A and B are the actuated pair.\n\nThis example exists to exercise EVERY schema-3 engine feature and EVERY device verb in one run - it is the Experiment Studio grand tour. It reuses the morbidostat's 9-role topology so it runs on the same lab, and its committed test extends the same simulated-culture harness.\n\nPACE-COUPLED CONSTANTS. Each cycle reads every tube 10 times at 3 s spacing, then decides. The slope constant 480 = 2*3600/(n*dt) with n=5, dt=3 s, and the freshness window `last=45s` must exceed the 30 s growth phase and stay under the 60 s cycle pace (30 < 45 < 60) so a sample from the previous cycle can never satisfy it. Change either loop's count or pace and both constants must be recomputed.\n\nFAULT TOLERANCE. Every retry-safe device call inherits the workflow default retry (3 attempts, 1 s apart); the thermostat setup asks for 6. The pumps' `dispense` is NEVER retried - `volume_ml` is relative, so a retried dispense would double-dose. The 10 OD reads additionally carry `on_error: continue`, so a read that fails all its attempts drops one sample instead of the run, and its two sibling lanes keep reading; each tube's service is then guarded by `count(od, last=45s) > 0`. The blanks are NOT tolerated: a failed blank is a setup failure and must stop the run.\n\nSAFETY. Answer `emergency_stop=true` at setup to see the whole-run abort fire before the first OD is read (status `aborted`, finalizer still sweeps the modes off). Left false, the run completes; a second abort latches if all three tubes are flagged contaminated.\n\nDemo speed only: 20 cycles of 60 s is ~20 min, and the intervals are biologically meaningless - no culture grows measurably in 60 s. This is for learning the block structure and watching the live chart, not for doing science.",
+  "workflow": {
+    "schema_version": 3,
+    "metadata": {
+      "name": "Adaptive Bioreactor - Studio Grand Tour (demo speed)",
+      "author": "lab-devices examples",
+      "description": "Adaptive bioreactor, demo speed: three continuous-culture vials whose CONTROL REGIME is chosen by the operator at run start. One document, three experiments.\n\nAt setup you answer `regime` (an enum):\n  - `turbidostat` - hold optical density at `target_od`. A tube reading above target is diluted with 1 ml of fresh medium; otherwise nothing. Drug is never used.\n  - `chemostat` - hold a constant dilution rate. Each serviced tube gets a fixed medium top-up, and once per cycle `medium_pump` is run in continuous `rotate` MODE for a short settling window (a bounded until-loop), then stopped.\n  - `morbidostat` - the evolution experiment: a tube out-growing its dilution above `od_thr` gets 1 ml of drug, otherwise 1 ml of medium, and its believed drug concentration is tracked with the standard recursion (see examples/morbidostat.json).\n\nTube C (od_meter_3) is a CONTROL tube: measured every cycle but never dosed, in every regime. Tubes A and B are the actuated pair.\n\nThis example exists to exercise EVERY schema-3 engine feature and EVERY device verb in one run - it is the Experiment Studio grand tour. It reuses the morbidostat's 9-role topology so it runs on the same lab, and its committed test extends the same simulated-culture harness.\n\nPACE-COUPLED CONSTANTS. Each cycle reads every tube 10 times at 3 s spacing, then decides. The slope constant 480 = 2*3600/(n*dt) with n=5, dt=3 s, and the freshness window `last=45s` must exceed the 30 s growth phase and stay under the 60 s cycle pace (30 < 45 < 60) so a sample from the previous cycle can never satisfy it. Change either loop's count or pace and both constants must be recomputed.\n\nFAULT TOLERANCE. Every retry-safe device call inherits the workflow default retry (3 attempts, 1 s apart); the thermostat setup asks for 6. The pumps' `dispense` is NEVER retried - `volume_ml` is relative, so a retried dispense would double-dose. The 10 OD reads additionally carry `on_error: continue`, so a read that fails all its attempts drops one sample instead of the run, and its two sibling lanes keep reading; each tube's service is then guarded by `count(od, last=45s) > 0`. The blanks are NOT tolerated: a failed blank is a setup failure and must stop the run.\n\nSAFETY. Answer `emergency_stop=true` at setup to see the whole-run abort fire before the first OD is read (status `aborted`, finalizer still sweeps the modes off). Left false, the run completes; a second abort latches if all three tubes are flagged contaminated.\n\nDemo speed only: 20 cycles of 60 s is ~20 min, and the intervals are biologically meaningless - no culture grows measurably in 60 s. This is for learning the block structure and watching the live chart, not for doing science."
+    },
+    "persistence": {
+      "default": "in_memory",
+      "format": "jsonl"
+    },
+    "defaults": {
+      "retry": {
+        "attempts": 3,
+        "backoff": "1s"
+      }
+    },
+    "roles": {
+      "medium_pump": {
+        "type": "pump"
+      },
+      "drug_pump": {
+        "type": "pump"
+      },
+      "waste_pump": {
+        "type": "pump"
+      },
+      "medium_valve": {
+        "type": "valve"
+      },
+      "drug_valve": {
+        "type": "valve"
+      },
+      "waste_valve": {
+        "type": "valve"
+      },
+      "od_meter_1": {
+        "type": "densitometer"
+      },
+      "od_meter_2": {
+        "type": "densitometer"
+      },
+      "od_meter_3": {
+        "type": "densitometer"
+      }
+    },
+    "streams": {
+      "od_1": {
+        "units": "AU"
+      },
+      "od_2": {
+        "units": "AU"
+      },
+      "od_3": {
+        "units": "AU"
+      },
+      "blank_1": {
+        "units": "unitless"
+      },
+      "blank_2": {
+        "units": "unitless"
+      },
+      "blank_3": {
+        "units": "unitless"
+      },
+      "od_final": {
+        "units": "AU"
+      }
+    },
+    "groups": {
+      "service": {
+        "params": [
+          {
+            "name": "tube",
+            "kind": "int"
+          },
+          {
+            "name": "warn_od",
+            "kind": "number"
+          },
+          {
+            "name": "name",
+            "kind": "string"
+          },
+          {
+            "name": "is_control",
+            "kind": "bool"
+          },
+          {
+            "name": "meter",
+            "kind": "role",
+            "device_type": "densitometer"
+          },
+          {
+            "name": "od",
+            "kind": "stream"
+          },
+          {
+            "name": "budget",
+            "kind": "binding"
+          }
+        ],
+        "locals": {
+          "c": {
+            "kind": "binding",
+            "init": "0"
+          },
+          "contaminated": {
+            "kind": "binding",
+            "init": "false"
+          },
+          "od_high": {
+            "kind": "binding"
+          },
+          "r": {
+            "kind": "binding"
+          },
+          "c_series": {
+            "kind": "stream",
+            "units": "x_MIC",
+            "persistence": "disk"
+          },
+          "r_series": {
+            "kind": "stream",
+            "units": "per_hour"
+          }
+        },
+        "body": [
+          {
+            "compute": {
+              "into": "{od_high}",
+              "value": "count({od}, last=45s) > 0 and max({od}, last=45s) > 3.0"
+            },
+            "label": "tube {name}: OD-stuck-high probe"
+          },
+          {
+            "compute": {
+              "into": "{contaminated}",
+              "value": "{contaminated} or {od_high}"
+            },
+            "label": "tube {name}: contamination latch (sticky)"
+          },
+          {
+            "branch": {
+              "if": "not {contaminated} and count({od}, last=45s) > 0 and last({od}) >= od_min",
+              "then": [
+                {
+                  "compute": {
+                    "into": "{r}",
+                    "value": "480 * (mean({od}, last=5) - mean({od}, last=10)) / last({od})"
+                  },
+                  "label": "tube {name}: growth-rate estimate"
+                },
+                {
+                  "record": {
+                    "into": "{r_series}",
+                    "value": "{r}",
+                    "as": "per_hour"
+                  },
+                  "label": "tube {name}: chart growth rate"
+                },
+                {
+                  "branch": {
+                    "if": "not {is_control}",
+                    "then": [
+                      {
+                        "branch": {
+                          "if": "regime == 'turbidostat'",
+                          "then": [
+                            {
+                              "branch": {
+                                "if": "last({od}) > target_od",
+                                "then": [
+                                  {
+                                    "command": {
+                                      "device": "medium_valve",
+                                      "verb": "set_position",
+                                      "params": {
+                                        "position": "{tube}",
+                                        "rotation": "direct"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "command": {
+                                      "device": "medium_pump",
+                                      "verb": "dispense",
+                                      "params": {
+                                        "volume_ml": "dose_ml",
+                                        "speed_ml_min": 6.0,
+                                        "direction": "forward"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "compute": {
+                                      "into": "{budget}",
+                                      "value": "{budget} + dose_ml"
+                                    },
+                                    "label": "tube {name}: dose budget"
+                                  }
+                                ]
+                              },
+                              "label": "tube {name}: turbidostat dilution"
+                            }
+                          ],
+                          "else": [
+                            {
+                              "branch": {
+                                "if": "regime == 'morbidostat'",
+                                "then": [
+                                  {
+                                    "branch": {
+                                      "if": "last({od}) > od_thr and {r} > r_dil",
+                                      "then": [
+                                        {
+                                          "command": {
+                                            "device": "drug_valve",
+                                            "verb": "set_position",
+                                            "params": {
+                                              "position": "{tube}",
+                                              "rotation": "direct"
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "command": {
+                                            "device": "drug_pump",
+                                            "verb": "dispense",
+                                            "params": {
+                                              "volume_ml": "dose_ml",
+                                              "speed_ml_min": 6.0,
+                                              "direction": "forward"
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "compute": {
+                                            "into": "{c}",
+                                            "value": "{c} * working_volume_ml/(working_volume_ml + dose_ml) + drug_stock_x_mic * dose_ml/(working_volume_ml + dose_ml)"
+                                          }
+                                        },
+                                        {
+                                          "compute": {
+                                            "into": "{budget}",
+                                            "value": "{budget} + dose_ml"
+                                          }
+                                        }
+                                      ],
+                                      "else": [
+                                        {
+                                          "command": {
+                                            "device": "medium_valve",
+                                            "verb": "set_position",
+                                            "params": {
+                                              "position": "{tube}",
+                                              "rotation": "direct"
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "command": {
+                                            "device": "medium_pump",
+                                            "verb": "dispense",
+                                            "params": {
+                                              "volume_ml": "dose_ml",
+                                              "speed_ml_min": 6.0,
+                                              "direction": "forward"
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "compute": {
+                                            "into": "{c}",
+                                            "value": "{c} * working_volume_ml/(working_volume_ml + dose_ml)"
+                                          }
+                                        },
+                                        {
+                                          "compute": {
+                                            "into": "{budget}",
+                                            "value": "{budget} + dose_ml"
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "label": "tube {name}: morbidostat decision"
+                                  },
+                                  {
+                                    "record": {
+                                      "into": "{c_series}",
+                                      "value": "{c}",
+                                      "as": "x_MIC"
+                                    },
+                                    "label": "tube {name}: chart drug concentration"
+                                  }
+                                ],
+                                "else": [
+                                  {
+                                    "command": {
+                                      "device": "medium_valve",
+                                      "verb": "set_position",
+                                      "params": {
+                                        "position": "{tube}",
+                                        "rotation": "direct"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "command": {
+                                      "device": "medium_pump",
+                                      "verb": "dispense",
+                                      "params": {
+                                        "volume_ml": "dose_ml",
+                                        "speed_ml_min": 6.0,
+                                        "direction": "forward"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "compute": {
+                                      "into": "{budget}",
+                                      "value": "{budget} + dose_ml"
+                                    },
+                                    "label": "tube {name}: chemostat top-up"
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "else": [
+                      {
+                        "alarm": {
+                          "if": "last({od}) > {warn_od}",
+                          "message": "control tube {name}: OD above warn line, not dosing"
+                        }
+                      }
+                    ]
+                  },
+                  "label": "tube {name}: control tubes are read-only"
+                }
+              ]
+            },
+            "label": "tube {name}: freshness-guarded service"
+          }
+        ]
+      }
+    },
+    "blocks": [
+      {
+        "serial": {
+          "children": [
+            {
+              "operator_input": {
+                "name": "regime",
+                "type": "enum",
+                "prompt": "Control regime.",
+                "choices": [
+                  "turbidostat",
+                  "chemostat",
+                  "morbidostat"
+                ]
+              }
+            },
+            {
+              "operator_input": {
+                "name": "target_od",
+                "type": "float",
+                "prompt": "Target OD (turbidostat / chemostat setpoint).",
+                "min": 0.05,
+                "max": 2.0
+              }
+            },
+            {
+              "operator_input": {
+                "name": "cycles",
+                "type": "int",
+                "prompt": "Number of control cycles.",
+                "min": 1,
+                "max": 200
+              }
+            },
+            {
+              "operator_input": {
+                "name": "warm_start",
+                "type": "bool",
+                "prompt": "Run the warm-up / calibration phase?"
+              }
+            },
+            {
+              "operator_input": {
+                "name": "emergency_stop",
+                "type": "bool",
+                "prompt": "Abort immediately (safety switch)?"
+              }
+            },
+            {
+              "operator_input": {
+                "name": "od_min",
+                "type": "float",
+                "prompt": "Minimum OD to act on.",
+                "min": 0.005,
+                "max": 0.5
+              }
+            },
+            {
+              "operator_input": {
+                "name": "od_thr",
+                "type": "float",
+                "prompt": "Drug-injection OD threshold.",
+                "min": 0.01,
+                "max": 2.0
+              }
+            },
+            {
+              "operator_input": {
+                "name": "r_dil",
+                "type": "float",
+                "prompt": "Dilution rate 1/h (morbidostat setpoint).",
+                "min": 0.01,
+                "max": 5.0
+              }
+            },
+            {
+              "operator_input": {
+                "name": "dose_ml",
+                "type": "float",
+                "prompt": "Volume per injection (ml).",
+                "min": 0.1,
+                "max": 5.0
+              }
+            },
+            {
+              "operator_input": {
+                "name": "drug_stock_x_mic",
+                "type": "float",
+                "prompt": "Drug stock (x MIC).",
+                "min": 1.0,
+                "max": 1000.0
+              }
+            },
+            {
+              "compute": {
+                "into": "working_volume_ml",
+                "value": "12.0"
+              },
+              "label": "constant working volume"
+            },
+            {
+              "compute": {
+                "into": "settle_min",
+                "value": "0.05"
+              },
+              "label": "equilibration wait, minutes"
+            },
+            {
+              "compute": {
+                "into": "dose_budget_ml",
+                "value": "0"
+              },
+              "label": "seed shared dose accumulator"
+            },
+            {
+              "compute": {
+                "into": "budget_alarmed",
+                "value": "false"
+              },
+              "label": "fire-once latch for the budget alarm"
+            },
+            {
+              "wait": {
+                "duration": "settle_min * 1min"
+              },
+              "label": "equilibrate (duration expression)"
+            },
+            {
+              "serial": {
+                "children": [
+                  {
+                    "parallel": {
+                      "children": [
+                        {
+                          "command": {
+                            "device": "od_meter_1",
+                            "verb": "set_thermostat",
+                            "params": {
+                              "enabled": true,
+                              "target_c": 30.0
+                            }
+                          },
+                          "retry": {
+                            "attempts": 6,
+                            "backoff": "1s"
+                          },
+                          "label": "tube A thermostat (mode)"
+                        },
+                        {
+                          "command": {
+                            "device": "od_meter_2",
+                            "verb": "set_thermostat",
+                            "params": {
+                              "enabled": true,
+                              "target_c": 30.0
+                            }
+                          },
+                          "retry": {
+                            "attempts": 6,
+                            "backoff": "1s"
+                          },
+                          "label": "tube B thermostat (mode)"
+                        },
+                        {
+                          "command": {
+                            "device": "od_meter_3",
+                            "verb": "set_thermostat",
+                            "params": {
+                              "enabled": true,
+                              "target_c": 30.0
+                            }
+                          },
+                          "retry": {
+                            "attempts": 6,
+                            "backoff": "1s"
+                          },
+                          "label": "tube C thermostat (mode)"
+                        }
+                      ]
+                    },
+                    "label": "thermostats on (held all run)"
+                  },
+                  {
+                    "branch": {
+                      "if": "warm_start",
+                      "then": [
+                        {
+                          "parallel": {
+                            "children": [
+                              {
+                                "for_each": {
+                                  "vars": [
+                                    {
+                                      "name": "tube",
+                                      "kind": "int"
+                                    },
+                                    {
+                                      "name": "meter",
+                                      "kind": "role",
+                                      "device_type": "densitometer"
+                                    },
+                                    {
+                                      "name": "blank",
+                                      "kind": "stream"
+                                    }
+                                  ],
+                                  "in": [
+                                    {
+                                      "tube": 1,
+                                      "meter": "od_meter_1",
+                                      "blank": "blank_1"
+                                    },
+                                    {
+                                      "tube": 2,
+                                      "meter": "od_meter_2",
+                                      "blank": "blank_2"
+                                    },
+                                    {
+                                      "tube": 3,
+                                      "meter": "od_meter_3",
+                                      "blank": "blank_3"
+                                    }
+                                  ],
+                                  "body": [
+                                    {
+                                      "serial": {
+                                        "children": [
+                                          {
+                                            "command": {
+                                              "device": "{meter}",
+                                              "verb": "set_tube_correction",
+                                              "params": {
+                                                "factor": 1.0
+                                              }
+                                            },
+                                            "label": "tube {tube}: tube correction"
+                                          },
+                                          {
+                                            "measure": {
+                                              "device": "{meter}",
+                                              "verb": "measure_blank",
+                                              "into": "{blank}"
+                                            },
+                                            "label": "tube {tube}: blank baseline"
+                                          },
+                                          {
+                                            "command": {
+                                              "device": "{meter}",
+                                              "verb": "calibrate_tube",
+                                              "params": {
+                                                "reference_absorbance": 0.0
+                                              }
+                                            },
+                                            "label": "tube {tube}: calibrate"
+                                          },
+                                          {
+                                            "command": {
+                                              "device": "{meter}",
+                                              "verb": "set_led",
+                                              "params": {
+                                                "level": 8
+                                              }
+                                            },
+                                            "label": "tube {tube}: LED diagnostic on (mode)"
+                                          },
+                                          {
+                                            "command": {
+                                              "device": "{meter}",
+                                              "verb": "set_led",
+                                              "params": {
+                                                "level": 0
+                                              }
+                                            },
+                                            "label": "tube {tube}: LED diagnostic off (teardown)"
+                                          }
+                                        ]
+                                      },
+                                      "start_offset": "{tube} * 1s",
+                                      "gap_after": "1s",
+                                      "label": "tube {tube}: staggered warm-up"
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          },
+                          "label": "per-tube calibration (staggered lanes)"
+                        },
+                        {
+                          "parallel": {
+                            "children": [
+                              {
+                                "command": {
+                                  "device": "medium_valve",
+                                  "verb": "home",
+                                  "params": {
+                                    "position": 0
+                                  }
+                                }
+                              },
+                              {
+                                "command": {
+                                  "device": "drug_valve",
+                                  "verb": "home",
+                                  "params": {
+                                    "position": 0
+                                  }
+                                }
+                              },
+                              {
+                                "command": {
+                                  "device": "waste_valve",
+                                  "verb": "home",
+                                  "params": {
+                                    "position": 0
+                                  }
+                                }
+                              }
+                            ]
+                          },
+                          "label": "home all valves"
+                        },
+                        {
+                          "parallel": {
+                            "children": [
+                              {
+                                "command": {
+                                  "device": "medium_valve",
+                                  "verb": "configure",
+                                  "params": {
+                                    "default_rotation": "direct",
+                                    "hold_torque": false
+                                  }
+                                }
+                              },
+                              {
+                                "command": {
+                                  "device": "medium_pump",
+                                  "verb": "set_calibration",
+                                  "params": {
+                                    "ml_per_step": 0.0008
+                                  }
+                                }
+                              }
+                            ]
+                          },
+                          "label": "rig configuration"
+                        }
+                      ]
+                    },
+                    "label": "warm-up & calibration (skippable)"
+                  }
+                ]
+              },
+              "label": "setup: thermostats + calibration"
+            },
+            {
+              "loop": {
+                "count": "cycles",
+                "pace": "60s",
+                "body": [
+                  {
+                    "abort": {
+                      "if": "emergency_stop",
+                      "message": "operator emergency stop"
+                    },
+                    "label": "whole-run abort (operator switch)"
+                  },
+                  {
+                    "abort": {
+                      "if": "tube_1_contaminated and tube_2_contaminated and tube_3_contaminated",
+                      "message": "all vials contaminated"
+                    },
+                    "label": "whole-run abort (all tubes contaminated)"
+                  },
+                  {
+                    "loop": {
+                      "count": 10,
+                      "pace": "3s",
+                      "body": [
+                        {
+                          "parallel": {
+                            "children": [
+                              {
+                                "for_each": {
+                                  "vars": [
+                                    {
+                                      "name": "tube",
+                                      "kind": "int"
+                                    },
+                                    {
+                                      "name": "meter",
+                                      "kind": "role",
+                                      "device_type": "densitometer"
+                                    },
+                                    {
+                                      "name": "od",
+                                      "kind": "stream"
+                                    }
+                                  ],
+                                  "in": [
+                                    {
+                                      "tube": 1,
+                                      "meter": "od_meter_1",
+                                      "od": "od_1"
+                                    },
+                                    {
+                                      "tube": 2,
+                                      "meter": "od_meter_2",
+                                      "od": "od_2"
+                                    },
+                                    {
+                                      "tube": 3,
+                                      "meter": "od_meter_3",
+                                      "od": "od_3"
+                                    }
+                                  ],
+                                  "body": [
+                                    {
+                                      "measure": {
+                                        "device": "{meter}",
+                                        "verb": "measure",
+                                        "into": "{od}"
+                                      },
+                                      "on_error": "continue",
+                                      "label": "tube {tube} OD"
+                                    }
+                                  ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "label": "growth phase: 10 reads per tube"
+                  },
+                  {
+                    "for_each": {
+                      "vars": [
+                        {
+                          "name": "tube",
+                          "kind": "int"
+                        },
+                        {
+                          "name": "warn",
+                          "kind": "number"
+                        },
+                        {
+                          "name": "name",
+                          "kind": "string"
+                        },
+                        {
+                          "name": "control",
+                          "kind": "bool"
+                        },
+                        {
+                          "name": "meter",
+                          "kind": "role",
+                          "device_type": "densitometer"
+                        },
+                        {
+                          "name": "od",
+                          "kind": "stream"
+                        }
+                      ],
+                      "in": [
+                        {
+                          "tube": 1,
+                          "warn": 1.5,
+                          "name": "A",
+                          "control": false,
+                          "meter": "od_meter_1",
+                          "od": "od_1"
+                        },
+                        {
+                          "tube": 2,
+                          "warn": 1.5,
+                          "name": "B",
+                          "control": false,
+                          "meter": "od_meter_2",
+                          "od": "od_2"
+                        },
+                        {
+                          "tube": 3,
+                          "warn": 1.5,
+                          "name": "C",
+                          "control": true,
+                          "meter": "od_meter_3",
+                          "od": "od_3"
+                        }
+                      ],
+                      "body": [
+                        {
+                          "group_ref": {
+                            "name": "service",
+                            "as": "tube_{tube}",
+                            "args": {
+                              "tube": "{tube}",
+                              "warn_od": "{warn}",
+                              "name": "{name}",
+                              "is_control": "{control}",
+                              "meter": "{meter}",
+                              "od": "{od}",
+                              "budget": "dose_budget_ml"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "branch": {
+                      "if": "regime == 'chemostat'",
+                      "then": [
+                        {
+                          "serial": {
+                            "children": [
+                              {
+                                "command": {
+                                  "device": "medium_valve",
+                                  "verb": "set_position",
+                                  "params": {
+                                    "position": 1,
+                                    "rotation": "direct"
+                                  }
+                                }
+                              },
+                              {
+                                "command": {
+                                  "device": "medium_pump",
+                                  "verb": "rotate",
+                                  "params": {
+                                    "direction": "forward",
+                                    "speed_ml_min": 3.0
+                                  }
+                                },
+                                "label": "perfusion MODE open"
+                              },
+                              {
+                                "measure": {
+                                  "device": "od_meter_1",
+                                  "verb": "measure",
+                                  "into": "od_1"
+                                },
+                                "label": "perfusion baseline read"
+                              },
+                              {
+                                "compute": {
+                                  "into": "settle_iters",
+                                  "value": "0"
+                                }
+                              },
+                              {
+                                "loop": {
+                                  "until": "settle_iters >= 5 or mean(od_1, last=3) < target_od",
+                                  "check": "after",
+                                  "pace": "3s",
+                                  "body": [
+                                    {
+                                      "measure": {
+                                        "device": "od_meter_1",
+                                        "verb": "measure",
+                                        "into": "od_1"
+                                      },
+                                      "on_error": "continue"
+                                    },
+                                    {
+                                      "compute": {
+                                        "into": "settle_iters",
+                                        "value": "settle_iters + 1"
+                                      }
+                                    }
+                                  ]
+                                },
+                                "label": "settle until at target (bounded until-loop)"
+                              },
+                              {
+                                "command": {
+                                  "device": "medium_pump",
+                                  "verb": "stop"
+                                },
+                                "label": "perfusion MODE teardown"
+                              }
+                            ]
+                          },
+                          "label": "chemostat continuous perfusion"
+                        }
+                      ]
+                    },
+                    "label": "chemostat perfusion (this regime only)"
+                  },
+                  {
+                    "serial": {
+                      "children": [
+                        {
+                          "alarm": {
+                            "if": "dose_budget_ml > 12.0 and not budget_alarmed",
+                            "message": "cumulative dose budget exceeded"
+                          },
+                          "label": "dose-budget alarm (fire once)"
+                        },
+                        {
+                          "compute": {
+                            "into": "budget_alarmed",
+                            "value": "budget_alarmed or (dose_budget_ml > 12.0)"
+                          }
+                        },
+                        {
+                          "alarm": {
+                            "if": "count(od_1, last=5) > 0 and min(od_1, last=5) < 0.001",
+                            "message": "tube A washed out"
+                          },
+                          "label": "washout watch (guarded min)"
+                        }
+                      ]
+                    },
+                    "label": "cycle aggregate"
+                  }
+                ]
+              },
+              "label": "adaptive control loop"
+            },
+            {
+              "serial": {
+                "children": [
+                  {
+                    "parallel": {
+                      "children": [
+                        {
+                          "command": {
+                            "device": "od_meter_1",
+                            "verb": "set_thermostat",
+                            "params": {
+                              "enabled": false
+                            }
+                          },
+                          "label": "tube A thermostat off"
+                        },
+                        {
+                          "command": {
+                            "device": "od_meter_2",
+                            "verb": "set_thermostat",
+                            "params": {
+                              "enabled": false
+                            }
+                          }
+                        },
+                        {
+                          "command": {
+                            "device": "od_meter_3",
+                            "verb": "set_thermostat",
+                            "params": {
+                              "enabled": false
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "label": "thermostats off (mode teardown)"
+                  },
+                  {
+                    "branch": {
+                      "if": "count(od_1) > 0",
+                      "then": [
+                        {
+                          "record": {
+                            "into": "od_final",
+                            "value": "last(od_1)"
+                          },
+                          "label": "final OD snapshot"
+                        }
+                      ]
+                    },
+                    "label": "record final OD if any read landed"
+                  }
+                ]
+              },
+              "label": "wrap-up: modes off"
+            }
+          ]
+        },
+        "label": "adaptive bioreactor run"
+      }
+    ]
+  }
+}
