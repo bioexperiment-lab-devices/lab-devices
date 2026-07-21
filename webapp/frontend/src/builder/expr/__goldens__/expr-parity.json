@@ -1,0 +1,2758 @@
+{
+ "cases": [
+  {
+   "expr": "1",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NUMBER",
+     "pos": 0,
+     "text": "1"
+    }
+   ]
+  },
+  {
+   "expr": "0.5",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NUMBER",
+     "pos": 0,
+     "text": "0.5"
+    }
+   ]
+  },
+  {
+   "expr": "42",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NUMBER",
+     "pos": 0,
+     "text": "42"
+    }
+   ]
+  },
+  {
+   "expr": "true",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "true"
+    }
+   ]
+  },
+  {
+   "expr": "false",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "false"
+    }
+   ]
+  },
+  {
+   "expr": "od",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "od"
+    }
+   ]
+  },
+  {
+   "expr": "feed_ml",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "feed_ml"
+    }
+   ]
+  },
+  {
+   "expr": "_x1",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "_x1"
+    }
+   ]
+  },
+  {
+   "expr": "'chemostat'",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "STRING",
+     "pos": 0,
+     "text": "'chemostat'"
+    }
+   ]
+  },
+  {
+   "expr": "''",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "STRING",
+     "pos": 0,
+     "text": "''"
+    }
+   ]
+  },
+  {
+   "expr": "'a b c'",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "STRING",
+     "pos": 0,
+     "text": "'a b c'"
+    }
+   ]
+  },
+  {
+   "expr": "5min",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "DURATION",
+     "pos": 0,
+     "text": "5min"
+    }
+   ]
+  },
+  {
+   "expr": "30s",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "DURATION",
+     "pos": 0,
+     "text": "30s"
+    }
+   ]
+  },
+  {
+   "expr": "250ms",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "DURATION",
+     "pos": 0,
+     "text": "250ms"
+    }
+   ]
+  },
+  {
+   "expr": "1.5h",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "DURATION",
+     "pos": 0,
+     "text": "1.5h"
+    }
+   ]
+  },
+  {
+   "expr": "0.5s",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "DURATION",
+     "pos": 0,
+     "text": "0.5s"
+    }
+   ]
+  },
+  {
+   "expr": "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NUMBER",
+     "pos": 0,
+     "text": "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
+    }
+   ]
+  },
+  {
+   "expr": "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.0",
+   "lex_error_pos": null,
+   "parse_error": "numeric literal is not finite (got '9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.0') at position 0 in '9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.0'",
+   "parse_error_pos": 0,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NUMBER",
+     "pos": 0,
+     "text": "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.0"
+    }
+   ]
+  },
+  {
+   "expr": "mean(od)",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "last(od)",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "last"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "min(od)",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "min"
+    },
+    {
+     "kind": "OP",
+     "pos": 3,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 4,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 6,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "max(od)",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "max"
+    },
+    {
+     "kind": "OP",
+     "pos": 3,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 4,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 6,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "count(od)",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "count"
+    },
+    {
+     "kind": "OP",
+     "pos": 5,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 6,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 8,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "mean(od, last=5)",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ","
+    },
+    {
+     "kind": "NAME",
+     "pos": 9,
+     "text": "last"
+    },
+    {
+     "kind": "OP",
+     "pos": 13,
+     "text": "="
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 14,
+     "text": "5"
+    },
+    {
+     "kind": "OP",
+     "pos": 15,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "mean(od, last=30s)",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ","
+    },
+    {
+     "kind": "NAME",
+     "pos": 9,
+     "text": "last"
+    },
+    {
+     "kind": "OP",
+     "pos": 13,
+     "text": "="
+    },
+    {
+     "kind": "DURATION",
+     "pos": 14,
+     "text": "30s"
+    },
+    {
+     "kind": "OP",
+     "pos": 17,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "mean (od , last=5)",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 5,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 6,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 9,
+     "text": ","
+    },
+    {
+     "kind": "NAME",
+     "pos": 11,
+     "text": "last"
+    },
+    {
+     "kind": "OP",
+     "pos": 15,
+     "text": "="
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 16,
+     "text": "5"
+    },
+    {
+     "kind": "OP",
+     "pos": 17,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "count(od,last=90s) > 0 and mean(od,last=90s) > 2.0",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "count"
+    },
+    {
+     "kind": "OP",
+     "pos": 5,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 6,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 8,
+     "text": ","
+    },
+    {
+     "kind": "NAME",
+     "pos": 9,
+     "text": "last"
+    },
+    {
+     "kind": "OP",
+     "pos": 13,
+     "text": "="
+    },
+    {
+     "kind": "DURATION",
+     "pos": 14,
+     "text": "90s"
+    },
+    {
+     "kind": "OP",
+     "pos": 17,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 19,
+     "text": ">"
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 21,
+     "text": "0"
+    },
+    {
+     "kind": "NAME",
+     "pos": 23,
+     "text": "and"
+    },
+    {
+     "kind": "NAME",
+     "pos": 27,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 31,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 32,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 34,
+     "text": ","
+    },
+    {
+     "kind": "NAME",
+     "pos": 35,
+     "text": "last"
+    },
+    {
+     "kind": "OP",
+     "pos": 39,
+     "text": "="
+    },
+    {
+     "kind": "DURATION",
+     "pos": 40,
+     "text": "90s"
+    },
+    {
+     "kind": "OP",
+     "pos": 43,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 45,
+     "text": ">"
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 47,
+     "text": "2.0"
+    }
+   ]
+  },
+  {
+   "expr": "not a and b + 2 * c < 5 or true",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "not"
+    },
+    {
+     "kind": "NAME",
+     "pos": 4,
+     "text": "a"
+    },
+    {
+     "kind": "NAME",
+     "pos": 6,
+     "text": "and"
+    },
+    {
+     "kind": "NAME",
+     "pos": 10,
+     "text": "b"
+    },
+    {
+     "kind": "OP",
+     "pos": 12,
+     "text": "+"
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 14,
+     "text": "2"
+    },
+    {
+     "kind": "OP",
+     "pos": 16,
+     "text": "*"
+    },
+    {
+     "kind": "NAME",
+     "pos": 18,
+     "text": "c"
+    },
+    {
+     "kind": "OP",
+     "pos": 20,
+     "text": "<"
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 22,
+     "text": "5"
+    },
+    {
+     "kind": "NAME",
+     "pos": 24,
+     "text": "or"
+    },
+    {
+     "kind": "NAME",
+     "pos": 27,
+     "text": "true"
+    }
+   ]
+  },
+  {
+   "expr": "-x + 2",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "OP",
+     "pos": 0,
+     "text": "-"
+    },
+    {
+     "kind": "NAME",
+     "pos": 1,
+     "text": "x"
+    },
+    {
+     "kind": "OP",
+     "pos": 3,
+     "text": "+"
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 5,
+     "text": "2"
+    }
+   ]
+  },
+  {
+   "expr": "not not true",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "not"
+    },
+    {
+     "kind": "NAME",
+     "pos": 4,
+     "text": "not"
+    },
+    {
+     "kind": "NAME",
+     "pos": 8,
+     "text": "true"
+    }
+   ]
+  },
+  {
+   "expr": "-(-1)",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "OP",
+     "pos": 0,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 1,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 2,
+     "text": "-"
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 3,
+     "text": "1"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "a / b * c - d",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "a"
+    },
+    {
+     "kind": "OP",
+     "pos": 2,
+     "text": "/"
+    },
+    {
+     "kind": "NAME",
+     "pos": 4,
+     "text": "b"
+    },
+    {
+     "kind": "OP",
+     "pos": 6,
+     "text": "*"
+    },
+    {
+     "kind": "NAME",
+     "pos": 8,
+     "text": "c"
+    },
+    {
+     "kind": "OP",
+     "pos": 10,
+     "text": "-"
+    },
+    {
+     "kind": "NAME",
+     "pos": 12,
+     "text": "d"
+    }
+   ]
+  },
+  {
+   "expr": "(a or b) and c",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "OP",
+     "pos": 0,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 1,
+     "text": "a"
+    },
+    {
+     "kind": "NAME",
+     "pos": 3,
+     "text": "or"
+    },
+    {
+     "kind": "NAME",
+     "pos": 6,
+     "text": "b"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ")"
+    },
+    {
+     "kind": "NAME",
+     "pos": 9,
+     "text": "and"
+    },
+    {
+     "kind": "NAME",
+     "pos": 13,
+     "text": "c"
+    }
+   ]
+  },
+  {
+   "expr": "mode == 'chemostat'",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mode"
+    },
+    {
+     "kind": "OP",
+     "pos": 5,
+     "text": "=="
+    },
+    {
+     "kind": "STRING",
+     "pos": 8,
+     "text": "'chemostat'"
+    }
+   ]
+  },
+  {
+   "expr": "x != 'a'",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "x"
+    },
+    {
+     "kind": "OP",
+     "pos": 2,
+     "text": "!="
+    },
+    {
+     "kind": "STRING",
+     "pos": 5,
+     "text": "'a'"
+    }
+   ]
+  },
+  {
+   "expr": "last(od) > 0.5",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "last"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 9,
+     "text": ">"
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 11,
+     "text": "0.5"
+    }
+   ]
+  },
+  {
+   "expr": "5min + 30s",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "DURATION",
+     "pos": 0,
+     "text": "5min"
+    },
+    {
+     "kind": "OP",
+     "pos": 5,
+     "text": "+"
+    },
+    {
+     "kind": "DURATION",
+     "pos": 7,
+     "text": "30s"
+    }
+   ]
+  },
+  {
+   "expr": "cycle_min * 1min",
+   "lex_error_pos": null,
+   "parse_error": null,
+   "parse_error_pos": null,
+   "parse_ok": true,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "cycle_min"
+    },
+    {
+     "kind": "OP",
+     "pos": 10,
+     "text": "*"
+    },
+    {
+     "kind": "DURATION",
+     "pos": 12,
+     "text": "1min"
+    }
+   ]
+  },
+  {
+   "expr": "od > §3",
+   "lex_error_pos": 5,
+   "parse_error": "unexpected character '§' at position 5",
+   "parse_error_pos": 5,
+   "parse_ok": false,
+   "tokens": null
+  },
+  {
+   "expr": "x == 'oops",
+   "lex_error_pos": 5,
+   "parse_error": "unexpected character \"'\" at position 5",
+   "parse_error_pos": 5,
+   "parse_ok": false,
+   "tokens": null
+  },
+  {
+   "expr": "a & b",
+   "lex_error_pos": 2,
+   "parse_error": "unexpected character '&' at position 2",
+   "parse_error_pos": 2,
+   "parse_ok": false,
+   "tokens": null
+  },
+  {
+   "expr": "#tag",
+   "lex_error_pos": 0,
+   "parse_error": "unexpected character '#' at position 0",
+   "parse_error_pos": 0,
+   "parse_ok": false,
+   "tokens": null
+  },
+  {
+   "expr": "!x",
+   "lex_error_pos": 0,
+   "parse_error": "unexpected character '!' at position 0",
+   "parse_error_pos": 0,
+   "parse_ok": false,
+   "tokens": null
+  },
+  {
+   "expr": "",
+   "lex_error_pos": null,
+   "parse_error": "empty expression",
+   "parse_error_pos": null,
+   "parse_ok": false,
+   "tokens": []
+  },
+  {
+   "expr": "   ",
+   "lex_error_pos": null,
+   "parse_error": "empty expression",
+   "parse_error_pos": null,
+   "parse_ok": false,
+   "tokens": []
+  },
+  {
+   "expr": "1 +",
+   "lex_error_pos": null,
+   "parse_error": "expected a literal, name, stat call, or '(' at end of input in '1 +'",
+   "parse_error_pos": null,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NUMBER",
+     "pos": 0,
+     "text": "1"
+    },
+    {
+     "kind": "OP",
+     "pos": 2,
+     "text": "+"
+    }
+   ]
+  },
+  {
+   "expr": "mean(",
+   "lex_error_pos": null,
+   "parse_error": "expected a stream name at end of input in 'mean('",
+   "parse_error_pos": null,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    }
+   ]
+  },
+  {
+   "expr": "mean(od",
+   "lex_error_pos": null,
+   "parse_error": "expected ')' at end of input in 'mean(od'",
+   "parse_error_pos": null,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    }
+   ]
+  },
+  {
+   "expr": "mean(od,",
+   "lex_error_pos": null,
+   "parse_error": "window must be last=<N> or last=<duration> at end of input in 'mean(od,'",
+   "parse_error_pos": null,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ","
+    }
+   ]
+  },
+  {
+   "expr": "mean(od, last=",
+   "lex_error_pos": null,
+   "parse_error": "window must be last=<N> or last=<duration> at end of input in 'mean(od, last='",
+   "parse_error_pos": null,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ","
+    },
+    {
+     "kind": "NAME",
+     "pos": 9,
+     "text": "last"
+    },
+    {
+     "kind": "OP",
+     "pos": 13,
+     "text": "="
+    }
+   ]
+  },
+  {
+   "expr": "median(od)",
+   "lex_error_pos": null,
+   "parse_error": "unknown function 'median'; expected one of count, last, max, mean, min (got 'median') at position 0 in 'median(od)'",
+   "parse_error_pos": 0,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "median"
+    },
+    {
+     "kind": "OP",
+     "pos": 6,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 7,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 9,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "mean(and)",
+   "lex_error_pos": null,
+   "parse_error": "expected a stream name (got 'and') at position 5 in 'mean(and)'",
+   "parse_error_pos": 5,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "and"
+    },
+    {
+     "kind": "OP",
+     "pos": 8,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "mean(5)",
+   "lex_error_pos": null,
+   "parse_error": "expected a stream name (got '5') at position 5 in 'mean(5)'",
+   "parse_error_pos": 5,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 5,
+     "text": "5"
+    },
+    {
+     "kind": "OP",
+     "pos": 6,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "mean(od, first=3)",
+   "lex_error_pos": null,
+   "parse_error": "window must be last=<N> or last=<duration> (got 'first') at position 9 in 'mean(od, first=3)'",
+   "parse_error_pos": 9,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ","
+    },
+    {
+     "kind": "NAME",
+     "pos": 9,
+     "text": "first"
+    },
+    {
+     "kind": "OP",
+     "pos": 14,
+     "text": "="
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 15,
+     "text": "3"
+    },
+    {
+     "kind": "OP",
+     "pos": 16,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "mean(od, last=0)",
+   "lex_error_pos": null,
+   "parse_error": "window sample count must be positive (got '0') at position 14 in 'mean(od, last=0)'",
+   "parse_error_pos": 14,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ","
+    },
+    {
+     "kind": "NAME",
+     "pos": 9,
+     "text": "last"
+    },
+    {
+     "kind": "OP",
+     "pos": 13,
+     "text": "="
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 14,
+     "text": "0"
+    },
+    {
+     "kind": "OP",
+     "pos": 15,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "mean(od, last=2.5)",
+   "lex_error_pos": null,
+   "parse_error": "window sample count must be an integer (got '2.5') at position 14 in 'mean(od, last=2.5)'",
+   "parse_error_pos": 14,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ","
+    },
+    {
+     "kind": "NAME",
+     "pos": 9,
+     "text": "last"
+    },
+    {
+     "kind": "OP",
+     "pos": 13,
+     "text": "="
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 14,
+     "text": "2.5"
+    },
+    {
+     "kind": "OP",
+     "pos": 17,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "mean(od, last=-1)",
+   "lex_error_pos": null,
+   "parse_error": "window must be last=<N> or last=<duration> (got '-') at position 14 in 'mean(od, last=-1)'",
+   "parse_error_pos": 14,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "mean"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ","
+    },
+    {
+     "kind": "NAME",
+     "pos": 9,
+     "text": "last"
+    },
+    {
+     "kind": "OP",
+     "pos": 13,
+     "text": "="
+    },
+    {
+     "kind": "OP",
+     "pos": 14,
+     "text": "-"
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 15,
+     "text": "1"
+    },
+    {
+     "kind": "OP",
+     "pos": 16,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "1 < x < 2",
+   "lex_error_pos": null,
+   "parse_error": "comparisons cannot be chained (got '<') at position 6 in '1 < x < 2'",
+   "parse_error_pos": 6,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NUMBER",
+     "pos": 0,
+     "text": "1"
+    },
+    {
+     "kind": "OP",
+     "pos": 2,
+     "text": "<"
+    },
+    {
+     "kind": "NAME",
+     "pos": 4,
+     "text": "x"
+    },
+    {
+     "kind": "OP",
+     "pos": 6,
+     "text": "<"
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 8,
+     "text": "2"
+    }
+   ]
+  },
+  {
+   "expr": "x and",
+   "lex_error_pos": null,
+   "parse_error": "expected a literal, name, stat call, or '(' at end of input in 'x and'",
+   "parse_error_pos": null,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "x"
+    },
+    {
+     "kind": "NAME",
+     "pos": 2,
+     "text": "and"
+    }
+   ]
+  },
+  {
+   "expr": "()",
+   "lex_error_pos": null,
+   "parse_error": "expected a literal, name, stat call, or '(' (got ')') at position 1 in '()'",
+   "parse_error_pos": 1,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "OP",
+     "pos": 0,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 1,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "not",
+   "lex_error_pos": null,
+   "parse_error": "expected a literal, name, stat call, or '(' at end of input in 'not'",
+   "parse_error_pos": null,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "not"
+    }
+   ]
+  },
+  {
+   "expr": "true false",
+   "lex_error_pos": null,
+   "parse_error": "unexpected trailing input (got 'false') at position 5 in 'true false'",
+   "parse_error_pos": 5,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "true"
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "false"
+    }
+   ]
+  },
+  {
+   "expr": "1 1",
+   "lex_error_pos": null,
+   "parse_error": "unexpected trailing input (got '1') at position 2 in '1 1'",
+   "parse_error_pos": 2,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NUMBER",
+     "pos": 0,
+     "text": "1"
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 2,
+     "text": "1"
+    }
+   ]
+  },
+  {
+   "expr": ") od",
+   "lex_error_pos": null,
+   "parse_error": "expected a literal, name, stat call, or '(' (got ')') at position 0 in ') od'",
+   "parse_error_pos": 0,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "OP",
+     "pos": 0,
+     "text": ")"
+    },
+    {
+     "kind": "NAME",
+     "pos": 2,
+     "text": "od"
+    }
+   ]
+  },
+  {
+   "expr": "and od",
+   "lex_error_pos": null,
+   "parse_error": "unexpected keyword 'and' (got 'and') at position 0 in 'and od'",
+   "parse_error_pos": 0,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "and"
+    },
+    {
+     "kind": "NAME",
+     "pos": 4,
+     "text": "od"
+    }
+   ]
+  },
+  {
+   "expr": "5min(od)",
+   "lex_error_pos": null,
+   "parse_error": "unexpected trailing input (got '(') at position 4 in '5min(od)'",
+   "parse_error_pos": 4,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "DURATION",
+     "pos": 0,
+     "text": "5min"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "NAME",
+     "pos": 5,
+     "text": "od"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "x == == 2",
+   "lex_error_pos": null,
+   "parse_error": "expected a literal, name, stat call, or '(' (got '==') at position 5 in 'x == == 2'",
+   "parse_error_pos": 5,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NAME",
+     "pos": 0,
+     "text": "x"
+    },
+    {
+     "kind": "OP",
+     "pos": 2,
+     "text": "=="
+    },
+    {
+     "kind": "OP",
+     "pos": 5,
+     "text": "=="
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 8,
+     "text": "2"
+    }
+   ]
+  },
+  {
+   "expr": "(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))",
+   "lex_error_pos": null,
+   "parse_error": "expression too deeply nested (max 64) (got '(') at position 64 in '(((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))'",
+   "parse_error_pos": 64,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "OP",
+     "pos": 0,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 1,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 2,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 3,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 5,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 6,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 8,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 9,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 10,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 11,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 12,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 13,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 14,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 15,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 16,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 17,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 18,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 19,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 20,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 21,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 22,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 23,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 24,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 25,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 26,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 27,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 28,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 29,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 30,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 31,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 32,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 33,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 34,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 35,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 36,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 37,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 38,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 39,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 40,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 41,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 42,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 43,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 44,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 45,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 46,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 47,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 48,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 49,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 50,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 51,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 52,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 53,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 54,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 55,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 56,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 57,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 58,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 59,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 60,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 61,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 62,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 63,
+     "text": "("
+    },
+    {
+     "kind": "OP",
+     "pos": 64,
+     "text": "("
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 65,
+     "text": "1"
+    },
+    {
+     "kind": "OP",
+     "pos": 66,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 67,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 68,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 69,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 70,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 71,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 72,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 73,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 74,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 75,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 76,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 77,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 78,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 79,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 80,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 81,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 82,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 83,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 84,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 85,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 86,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 87,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 88,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 89,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 90,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 91,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 92,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 93,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 94,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 95,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 96,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 97,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 98,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 99,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 100,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 101,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 102,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 103,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 104,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 105,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 106,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 107,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 108,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 109,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 110,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 111,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 112,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 113,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 114,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 115,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 116,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 117,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 118,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 119,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 120,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 121,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 122,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 123,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 124,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 125,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 126,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 127,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 128,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 129,
+     "text": ")"
+    },
+    {
+     "kind": "OP",
+     "pos": 130,
+     "text": ")"
+    }
+   ]
+  },
+  {
+   "expr": "-----------------------------------------------------------------1",
+   "lex_error_pos": null,
+   "parse_error": "expression too deeply nested (max 64) (got '-') at position 64 in '-----------------------------------------------------------------1'",
+   "parse_error_pos": 64,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "OP",
+     "pos": 0,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 1,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 2,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 3,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 4,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 5,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 6,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 7,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 8,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 9,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 10,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 11,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 12,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 13,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 14,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 15,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 16,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 17,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 18,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 19,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 20,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 21,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 22,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 23,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 24,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 25,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 26,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 27,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 28,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 29,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 30,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 31,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 32,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 33,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 34,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 35,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 36,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 37,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 38,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 39,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 40,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 41,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 42,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 43,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 44,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 45,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 46,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 47,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 48,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 49,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 50,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 51,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 52,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 53,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 54,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 55,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 56,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 57,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 58,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 59,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 60,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 61,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 62,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 63,
+     "text": "-"
+    },
+    {
+     "kind": "OP",
+     "pos": 64,
+     "text": "-"
+    },
+    {
+     "kind": "NUMBER",
+     "pos": 65,
+     "text": "1"
+    }
+   ]
+  },
+  {
+   "expr": "5min_x",
+   "lex_error_pos": null,
+   "parse_error": "unexpected trailing input (got 'min_x') at position 1 in '5min_x'",
+   "parse_error_pos": 1,
+   "parse_ok": false,
+   "tokens": [
+    {
+     "kind": "NUMBER",
+     "pos": 0,
+     "text": "5"
+    },
+    {
+     "kind": "NAME",
+     "pos": 1,
+     "text": "min_x"
+    }
+   ]
+  }
+ ],
+ "note": "generated by webapp/backend/tests/test_expr_golden.py -- do not edit by hand"
+}

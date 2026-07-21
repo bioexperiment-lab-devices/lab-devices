@@ -17,11 +17,26 @@ export const CONTROL_H = 'h-6'
  * `controlClass` (fixed-height inputs/selects) and `textAreaClass` (height-free textareas)
  * both derive from this so the border/focus-ring never drifts between the two families.
  * Not exported: callers want a control class, not this fragment on its own. */
-function controlSurfaceClass(opts: { mono?: boolean; invalid?: boolean } = {}): string {
+function controlSurfaceClass(opts: { mono?: boolean; invalid?: boolean; ghost?: boolean } = {}): string {
+  // ghost: the transparent INPUT half of the expression editor's overlay pair — the
+  // visual surface (bg, border colour) is painted by the overlay div BEHIND it, so the
+  // input keeps identical metrics (border width, padding) but transparent paint, a visible
+  // caret, and the focus ring on top. The placeholder colour must be explicit because the
+  // ghost's text colour is transparent and some browsers derive ::placeholder from it.
+  // Selected here, never appended (see CLAUDE.md's cascade rule).
+  const border = opts.ghost
+    ? 'border-transparent '
+    : opts.invalid
+      ? 'border-red-400 '
+      : 'border-slate-300 '
+  const paint = opts.ghost
+    ? 'bg-transparent text-transparent caret-slate-800 placeholder:text-slate-500 '
+    : 'bg-white '
   return (
-    'rounded border bg-white px-1.5 text-xs ' +
+    'rounded border px-1.5 text-xs ' +
     'focus:border-blue-400 focus:outline-none ' +
-    (opts.invalid ? 'border-red-400 ' : 'border-slate-300 ') +
+    border +
+    paint +
     (opts.mono ? 'font-mono' : '')
   ).trim()
 }
@@ -46,7 +61,9 @@ export function controlClass(
  * `h-*` class: a textarea's height is driven by its content (see `autoGrow.ts`), never by
  * the fixed single-line token. `py-0.5` replaces the vertical space `CONTROL_H` would have
  * fixed. `fillParent` adds `max-h-full` so a flex parent can bound the growth instead. */
-export function textAreaClass(opts: { mono?: boolean; fillParent?: boolean } = {}): string {
+export function textAreaClass(
+  opts: { mono?: boolean; fillParent?: boolean; ghost?: boolean } = {},
+): string {
   return (
     `w-full py-0.5 ${controlSurfaceClass(opts)} ` + (opts.fillParent ? 'max-h-full' : '')
   ).trim()

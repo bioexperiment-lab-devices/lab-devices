@@ -3,10 +3,13 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   diagnosticsByUid,
+  fieldDiagnostics,
   mapDiagnostics,
   pathForUid,
   resolveDiagnosticPath,
+  unclaimedDiagnostics,
   type GroupsMap,
+  type MappedDiagnostic,
 } from './paths'
 import type { BlockNode, BranchNode, ForEachNode, LoopNode, SerialNode } from './tree'
 import { visitNodes } from './tree'
@@ -36,7 +39,7 @@ const tree: BlockNode[] = [
 describe('resolveDiagnosticPath', () => {
   it('resolves root and nested structural paths', () => {
     expect(resolveDiagnosticPath(tree, {}, 'blocks[0]')).toEqual({
-      uid: 's1', role: null, param: null, scope: null,
+      uid: 's1', role: null, param: null, scope: null, field: null,
     })
     expect(resolveDiagnosticPath(tree, {}, 'blocks[0].children[1]').uid).toBe('l1')
     expect(resolveDiagnosticPath(tree, {}, 'blocks[0].children[1].body[0]').uid).toBe('w2')
@@ -52,7 +55,7 @@ describe('resolveDiagnosticPath', () => {
 
   it('resolves role paths from the studio doc-level checks', () => {
     expect(resolveDiagnosticPath(tree, {}, "roles['Feed_Pump']")).toEqual({
-      uid: null, role: 'Feed_Pump', param: null, scope: null,
+      uid: null, role: 'Feed_Pump', param: null, scope: null, field: null,
     })
   })
 
@@ -61,7 +64,7 @@ describe('resolveDiagnosticPath', () => {
     // one diagnostic whose whole job is flagging a bad role name died silently the moment
     // that name contained an apostrophe.
     expect(resolveDiagnosticPath(tree, {}, `roles["o'brien"]`)).toEqual({
-      uid: null, role: "o'brien", param: null, scope: null,
+      uid: null, role: "o'brien", param: null, scope: null, field: null,
     })
   })
 
@@ -334,5 +337,39 @@ describe('mapDiagnostics', () => {
       { category: 'roles', path: "groups['service'].body[0]", message: 'unknown role' },
     ])
     expect(mapped[0]).toMatchObject({ uid: waitNode.uid, scope: 'service' })
+  })
+})
+
+describe('field capture (spec §3.5)', () => {
+  it('captures the context suffix as field', () => {
+    const r = resolveDiagnosticPath(tree, {}, 'blocks[0].children[2] branch if')
+    expect(r.uid).toBe('b1')
+    expect(r.field).toBe('branch if')
+  })
+  it('param suffixes populate both param and field', () => {
+    const r = resolveDiagnosticPath(tree, {}, "blocks[0].children[0] param 'volume_ml'")
+    expect(r.param).toBe('volume_ml')
+    expect(r.field).toBe("param 'volume_ml'")
+  })
+  it('suffix-less paths have a null field', () => {
+    expect(resolveDiagnosticPath(tree, {}, 'blocks[0]').field).toBeNull()
+  })
+})
+
+describe('fieldDiagnostics / unclaimedDiagnostics', () => {
+  const diag = (uid: string | null, field: string | null): MappedDiagnostic => ({
+    category: 'type', path: 'x', message: 'm', uid, role: null, param: null, scope: null, field,
+  })
+  const diags = [diag('u1', 'branch if'), diag('u1', null), diag('u2', 'branch if')]
+
+  it('partitions one block\'s diagnostics by claimed suffix', () => {
+    expect(fieldDiagnostics(diags, 'u1', ['branch if'])).toHaveLength(1)
+    expect(fieldDiagnostics(diags, 'u1', ['branch if'])[0].uid).toBe('u1')
+    expect(unclaimedDiagnostics(diags, 'u1', ['branch if'])).toHaveLength(1)
+    expect(unclaimedDiagnostics(diags, 'u1', ['branch if'])[0].field).toBeNull()
+  })
+  it('an unclaimed suffix falls to the strip', () => {
+    expect(unclaimedDiagnostics(diags, 'u1', [])).toHaveLength(2)
+    expect(fieldDiagnostics(diags, 'u1', [])).toHaveLength(0)
   })
 })

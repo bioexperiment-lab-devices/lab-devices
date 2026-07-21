@@ -45,6 +45,9 @@ export interface ResolvedPath {
   role: string | null
   param: string | null
   scope: string | null
+  /** The raw context suffix ("branch if", "wait duration", "param 'x'", …) — the
+   * Inspector attributes a diagnostic to the field claiming it (spec §3.5). */
+  field: string | null
 }
 
 export interface MappedDiagnostic extends Diagnostic {
@@ -52,9 +55,10 @@ export interface MappedDiagnostic extends Diagnostic {
   role: string | null
   param: string | null
   scope: string | null
+  field: string | null
 }
 
-const NONE: ResolvedPath = { uid: null, role: null, param: null, scope: null }
+const NONE: ResolvedPath = { uid: null, role: null, param: null, scope: null, field: null }
 
 // A trailer is zero or more `.slot[i]` hops below the head token.
 const TRAILER = String.raw`(?:\.(?:children|body|then|else)\[\d+\])*`
@@ -115,6 +119,7 @@ export function resolveDiagnosticPath(tree: BlockNode[], groups: GroupsMap, path
   const suffix = spaceIndex === -1 ? '' : path.slice(spaceIndex + 1)
   const paramMatch = PARAM_RE.exec(suffix)
   const param = paramMatch ? (paramMatch[1] ?? paramMatch[2]) : null
+  const field = suffix === '' ? null : suffix
 
   // Compound: only the INNERMOST (last) `->` segment is the edit target — everything
   // before it is call-site context (see file header, point 3). Skip the same opaque
@@ -127,23 +132,45 @@ export function resolveDiagnosticPath(tree: BlockNode[], groups: GroupsMap, path
   const arrowIndex = arrowTail === -1 ? -1 : arrowTail + headEnd
   if (arrowIndex !== -1) {
     const segMatch = GROUP_SEGMENT_RE.exec(structural.slice(arrowIndex + 2))
-    if (!segMatch) return { ...NONE, param }
+    if (!segMatch) return { ...NONE, param, field }
     const [, name, tail] = segMatch
     const node = resolveTail(groups[name]?.body ?? null, tail)
-    return node ? { uid: node.uid, role: null, param, scope: name } : { ...NONE, param }
+    return node
+      ? { uid: node.uid, role: null, param, scope: name, field }
+      : { ...NONE, param, field }
   }
 
   const groupHeadMatch = GROUP_HEAD_RE.exec(structural)
   if (groupHeadMatch) {
     const name = groupHeadMatch[1] ?? groupHeadMatch[2]
     const node = resolveTail(groups[name]?.body ?? null, groupHeadMatch[3])
-    return node ? { uid: node.uid, role: null, param, scope: name } : { ...NONE, param }
+    return node
+      ? { uid: node.uid, role: null, param, scope: name, field }
+      : { ...NONE, param, field }
   }
 
   const blocksMatch = BLOCKS_RE.exec(structural)
-  if (!blocksMatch) return { ...NONE, param }
+  if (!blocksMatch) return { ...NONE, param, field }
   const node = resolveTail(tree, blocksMatch[1])
-  return { uid: node?.uid ?? null, role: null, param, scope: null }
+  return { uid: node?.uid ?? null, role: null, param, scope: null, field }
+}
+
+/** Diagnostics for one field of one block (Inspector, spec §3.5). */
+export function fieldDiagnostics(
+  diags: MappedDiagnostic[],
+  uid: string,
+  fields: string[],
+): MappedDiagnostic[] {
+  return diags.filter((d) => d.uid === uid && d.field !== null && fields.includes(d.field))
+}
+
+/** Diagnostics for a block that no rendered field claims — the Inspector-level strip. */
+export function unclaimedDiagnostics(
+  diags: MappedDiagnostic[],
+  uid: string,
+  claimed: string[],
+): MappedDiagnostic[] {
+  return diags.filter((d) => d.uid === uid && (d.field === null || !claimed.includes(d.field)))
 }
 
 /** Spells a group name as a quoted `groups[...]` head the reader above can read back, the

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  claimedFieldSuffixes,
   failureFields,
   failureSummary,
   gapAfterEligible,
@@ -110,5 +111,17 @@ describe('failureSummary', () => {
   })
   it('ignores a retry left on a kind that does not render the control', () => {
     expect(failureSummary(node({ kind: 'wait', retry: { attempts: 3 } }))).toBeNull()
+  })
+})
+
+describe('claimedFieldSuffixes', () => {
+  it('claims the condition/value suffixes per kind (PR 1 surface)', () => {
+    expect(claimedFieldSuffixes('branch')).toEqual(['branch if'])
+    expect(claimedFieldSuffixes('loop')).toEqual(['loop until'])
+    expect(claimedFieldSuffixes('compute')).toEqual(['compute value'])
+    expect(claimedFieldSuffixes('record')).toEqual(['record value'])
+    expect(claimedFieldSuffixes('abort')).toEqual(['abort if'])
+    expect(claimedFieldSuffixes('alarm')).toEqual(['alarm if'])
+    expect(claimedFieldSuffixes('wait')).toEqual([])
   })
 })
