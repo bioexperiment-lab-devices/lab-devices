@@ -412,8 +412,12 @@ const states = [
     description:
       "a group_ref block ('service(tube={tube}, od={od})') selected: `as` marked required " +
       "(the group declares locals) and one kind-aware arg editor per param — od (stream) " +
-      'renders as a StreamIntoPicker rather than the S2 shim\'s one free-text ExpressionInput ' +
-      'per param.',
+      "renders as a StreamIntoPicker for an ORDINARY stream value, but both tube and od here " +
+      'hold a `{name}` hole (this group_ref lives inside the tube/od for_each, whose body ' +
+      "substitutes its own vars), so ArgField's hole handling must divert both to a mono text " +
+      'field showing the hole literally instead of a picker/NumberField that cannot represent ' +
+      'it (fix wave finding 1: StreamIntoPicker\'s <select> has no matching <option> for a ' +
+      "hole, so it silently displayed the FIRST declared stream — od_1 — instead of {od}).",
     setup: async (page) => {
       await gotoBuilder(page)
       await importDoc(page, FIXTURES.morbidostat)
@@ -426,18 +430,29 @@ const states = [
       if (!asRequired) {
         throw new Error('`as` was not marked required for a group that declares locals')
       }
-      // `od`'s CURRENT value here is the hole "{od}" (this group_ref lives inside the tube/od
-      // for_each, whose body substitutes its own vars — same as the main tree's `{meter} ·
-      // measure → {od}` block uses the identical StreamIntoPicker via IntoPicker today), so the
-      // picker's selected option legitimately won't match any declared stream. Assert the
-      // picker rendered at all via its own "+ new stream…" sentinel option, not the value.
-      const streamPickerPresent = await page.evaluate(() =>
+      // Both args are holes here, not literals: `tube` (int) must show "{tube}" in a text
+      // field (a NumberField cannot hold a string at all) and `od` (stream) must show "{od}"
+      // in a text field rather than StreamIntoPicker's <select>, whose options are only real
+      // stream names — none of which is "{od}", so the browser would otherwise fall back to
+      // silently selecting the first one (finding 1).
+      const holeInputValues = await page.evaluate(() =>
+        [...document.querySelectorAll('input')].map((i) => i.value),
+      )
+      if (!holeInputValues.includes('{tube}')) {
+        throw new Error("group_ref args did not display the 'tube' (int) arg's hole {tube} in a text field")
+      }
+      if (!holeInputValues.includes('{od}')) {
+        throw new Error("group_ref args did not display the 'od' (stream) arg's hole {od} in a text field")
+      }
+      // And the od arg must NOT still be showing StreamIntoPicker's select — that's the exact
+      // regression this fix removes (a <select> silently landing on od_1 instead).
+      const streamPickerStillShown = await page.evaluate(() =>
         [...document.querySelectorAll('select')].some((sel) =>
           [...sel.options].some((o) => o.value === '__new__'),
         ),
       )
-      if (!streamPickerPresent) {
-        throw new Error("group_ref args did not render a StreamIntoPicker for the 'od' (stream) param")
+      if (streamPickerStillShown) {
+        throw new Error("group_ref's 'od' arg still rendered StreamIntoPicker's select despite holding a hole")
       }
     },
   },

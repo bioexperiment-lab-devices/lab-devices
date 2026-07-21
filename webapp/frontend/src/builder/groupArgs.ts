@@ -49,3 +49,15 @@ export function emptyRow(vars: ParamDeclJson[]): Record<string, ParamValue> {
   for (const v of vars) row[v.name] = defaultArgValue(v.kind)
   return row
 }
+
+/** Mirrors the engine's `_WHOLE_HOLE_RE` (validate.py/expand.py, design 2026-07-20 §3): a
+ * group_ref/for_each arg carries a typed-substitution hole only when the ENTIRE string is
+ * `{identifier}` — unlike the free-form `string` kind, a non-string-kind arg (int/number/bool)
+ * or a reference-kind arg (role/stream/binding) never partially interpolates, so `{tube}` is a
+ * hole but `tube_{tube}` is not a legal value for those kinds. Used by `ArgField` to decide
+ * whether a role/stream slot must show its raw hole text instead of the picker it usually
+ * renders — a picker's `<option>`s only cover real names, so a hole value matches none of
+ * them and would otherwise render as whatever the first option happens to be. */
+export function isHole(value: ParamValue | undefined): boolean {
+  return typeof value === 'string' && /^\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(value)
+}

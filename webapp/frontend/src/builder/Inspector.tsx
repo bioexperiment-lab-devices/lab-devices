@@ -8,7 +8,7 @@ import { IconButton } from '../ui/IconButton'
 import type { ParamSpec } from '../types/catalog'
 import type { LocalDeclJson, ParamDeclJson, ParamKind, ParamValue, RetryJson } from '../types/doc'
 import { REFERENCE_KINDS, VALUE_KINDS } from '../types/doc'
-import { argEditorFor, asRequired, defaultArgValue, emptyRow, rolesOfType } from './groupArgs'
+import { argEditorFor, asRequired, defaultArgValue, emptyRow, isHole, rolesOfType } from './groupArgs'
 import { failureFields, failureSummary, timingFields, timingSummary } from './inspectorRules'
 import { InspectorSection } from './InspectorSection'
 import { coerceParamInput, coerceValueInput, paramInputText } from './params'
@@ -287,7 +287,19 @@ function LocalDeclListEditor({
  * by `GroupRefForm`'s per-param args and `ForEachForm`'s per-row cells — both bind a
  * `ParamValue` to a declared `ParamDeclJson`, differing only in what happens to the value on
  * commit. role/stream reuse the same pickers `ActionForm`'s Role select (~line 395) and
- * `StreamIntoPicker` already provide; bool mirrors `ParamInput`'s unset/true/false select. */
+ * `StreamIntoPicker` already provide; bool mirrors `ParamInput`'s unset/true/false select.
+ *
+ * Every one of these kinds can ALSO legitimately be a `{name}` hole — an enclosing `for_each`
+ * threading its own typed var into a group_ref arg (design §3.1's typed substitution;
+ * morbidostat.json's `service(tube={tube}, od={od})` is exactly this), not a malformed value.
+ * `exprMode` is this component's `ƒ` escape hatch — mirrors `ParamInput`'s own
+ * `typeof value === 'string'`-seeded toggle below — so a fresh int/bool/role/stream arg can
+ * originate a hole, not just display one already saved. role/stream additionally use `isHole`
+ * (groupArgs.ts) to tell "a hole" apart from "an ordinary name their own picker already lists":
+ * unlike int/bool (where any string IS the hole, since a real int/bool value is never a
+ * string), a role/stream value is a string in the common case too, so the picker must stay the
+ * default and only a genuine `{name}` hole should divert to the text fallback — else a plain
+ * `"od_1"` selection would permanently render as a text box instead of the picker. */
 function ArgField({
   param,
   value,
@@ -299,78 +311,149 @@ function ArgField({
 }) {
   const roles = useDocStore((s) => s.roles)
   const editor = argEditorFor(param.kind)
+  // Seeded like ParamInput's own exprMode: an arg that already holds a hole starts in
+  // expression mode with no click needed. Sticky per mount thereafter (same as ParamInput —
+  // no "back to picker" affordance once toggled, by the same reasoning: a value that was
+  // deliberately turned into an expression stays editable as one). role/stream must seed on
+  // `isHole`, NOT on `typeof value === 'string'`: unlike int/bool (a real value is never a
+  // string, so any string IS the hole), a role/stream value is a string in the ordinary
+  // picked-name case too — seeding on bare stringness would permanently strand every
+  // already-saved role/stream arg in text mode, picker never shown again.
+  const [exprMode, setExprMode] = useState(() =>
+    editor === 'role' || editor === 'stream' ? isHole(value) : typeof value === 'string',
+  )
+  const exprToggle = (
+    <IconButton
+      icon={SquareFunction}
+      label="Use an expression"
+      onClick={() => setExprMode(true)}
+      className="border border-slate-300"
+    />
+  )
   switch (editor) {
     case 'role': {
       const names = rolesOfType(roles, param.device_type)
       const current = typeof value === 'string' ? value : ''
+      if (isHole(current) || exprMode) {
+        return (
+          <TextField
+            mono
+            value={current}
+            onCommit={(v) => onCommit(v || undefined)}
+            placeholder={`{${param.name}}`}
+          />
+        )
+      }
       return (
-        <select
-          value={current}
-          onChange={(e) => onCommit(e.target.value || undefined)}
-          className={controlClass()}
-        >
-          {current === '' && <option value="">— pick a role —</option>}
-          {current !== '' && !names.includes(current) && (
-            <option value={current}>{current} (unknown)</option>
-          )}
-          {names.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-1">
+          <select
+            value={current}
+            onChange={(e) => onCommit(e.target.value || undefined)}
+            className={controlClass()}
+          >
+            {current === '' && <option value="">— pick a role —</option>}
+            {current !== '' && !names.includes(current) && (
+              <option value={current}>{current} (unknown)</option>
+            )}
+            {names.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+          {exprToggle}
+        </div>
       )
     }
-    case 'stream':
+    case 'stream': {
+      const current = typeof value === 'string' ? value : ''
+      // Finding 1 (S3 regression vs S2): StreamIntoPicker's <select> only offers real
+      // stream names as <option>s, so a hole like "{od}" matches none of them and the
+      // browser silently falls back to displaying the FIRST stream instead — not a blank,
+      // an actively WRONG selection. Diverting to the text fallback here (not inside
+      // StreamIntoPicker, which is shared with the Measure block and out of scope) fixes
+      // the display without touching that shared component.
+      if (isHole(current) || exprMode) {
+        return (
+          <TextField
+            mono
+            value={current}
+            onCommit={(v) => onCommit(v || undefined)}
+            placeholder={`{${param.name}}`}
+          />
+        )
+      }
       return (
-        <StreamIntoPicker value={typeof value === 'string' ? value : ''} onPick={(v) => onCommit(v)} />
+        <div className="flex items-center gap-1">
+          <StreamIntoPicker value={current} onPick={(v) => onCommit(v)} />
+          {exprToggle}
+        </div>
       )
+    }
     case 'integer':
     case 'number':
       // A STRING here is a hole bound to an enclosing loop's own typed var (e.g. `{tube}`
-      // in a group_ref nested inside that var's for_each — design §3.1's typed
-      // substitution; morbidostat.json's `service` call is exactly this) rather than a
-      // literal number. NumberField can only hold a real JS number, so feeding it a hole
-      // string would render it blank and hide an already-saved value; fall back to a
-      // plain text field instead, the same way ParamInput falls back to ExpressionInput
-      // whenever a bool param's current value is a string (below).
-      return typeof value === 'string' ? (
+      // in a group_ref nested inside that var's for_each) rather than a literal number.
+      // NumberField can only hold a real JS number, so feeding it a hole string would
+      // render it blank and hide an already-saved value; fall back to a plain text field
+      // instead, the same way ParamInput falls back to ExpressionInput whenever a bool
+      // param's current value is a string (below). `exprMode` extends this so a FRESH
+      // arg (currently a real number, or unset) can also be switched into hole entry —
+      // `paramInputText` carries the current numeric value over as a starting point
+      // instead of blanking it when the toggle is clicked.
+      return typeof value === 'string' || exprMode ? (
         <TextField
           mono
-          value={value}
+          value={typeof value === 'string' ? value : paramInputText(value)}
           onCommit={(v) => onCommit(coerceParamInput(v, param.kind as 'int' | 'number'))}
+          placeholder={`{${param.name}}`}
         />
       ) : (
-        <NumberField
-          value={typeof value === 'number' ? value : null}
-          integer={editor === 'integer'}
-          onCommit={(v) => onCommit(v ?? undefined)}
-        />
+        <div className="flex items-center gap-1">
+          <NumberField
+            value={typeof value === 'number' ? value : null}
+            integer={editor === 'integer'}
+            onCommit={(v) => onCommit(v ?? undefined)}
+          />
+          {exprToggle}
+        </div>
       )
     case 'bool': {
-      // Same string-hole fallback as integer/number above.
-      if (typeof value === 'string') {
+      // Same string-hole fallback as integer/number above, plus the same exprMode escape
+      // hatch to originate one from a fresh unset/true/false select.
+      if (typeof value === 'string' || exprMode) {
         return (
-          <TextField mono value={value} onCommit={(v) => onCommit(coerceParamInput(v, 'bool'))} />
+          <TextField
+            mono
+            value={typeof value === 'string' ? value : paramInputText(value)}
+            onCommit={(v) => onCommit(coerceParamInput(v, 'bool'))}
+            placeholder={`{${param.name}}`}
+          />
         )
       }
       const current = value === true ? 'true' : value === false ? 'false' : ''
       return (
-        <select
-          value={current}
-          onChange={(e) => {
-            const v = e.target.value
-            onCommit(v === '' ? undefined : v === 'true')
-          }}
-          className={controlClass()}
-        >
-          <option value="">— unset —</option>
-          <option value="true">true</option>
-          <option value="false">false</option>
-        </select>
+        <div className="flex items-center gap-1">
+          <select
+            value={current}
+            onChange={(e) => {
+              const v = e.target.value
+              onCommit(v === '' ? undefined : v === 'true')
+            }}
+            className={controlClass()}
+          >
+            <option value="">— unset —</option>
+            <option value="true">true</option>
+            <option value="false">false</option>
+          </select>
+          {exprToggle}
+        </div>
       )
     }
     case 'text':
+      // Already free text regardless of hole/literal — string/binding kinds may embed a
+      // hole inside a longer literal (design §3), unlike the other kinds above, so there
+      // is no separate "picker" mode to escape from and no toggle needed.
       return (
         <TextField
           value={typeof value === 'string' ? value : paramInputText(value)}

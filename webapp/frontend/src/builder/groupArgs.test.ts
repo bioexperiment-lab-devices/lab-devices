@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { argEditorFor, asRequired, defaultArgValue, emptyRow, rolesOfType } from './groupArgs'
+import { argEditorFor, asRequired, defaultArgValue, emptyRow, isHole, rolesOfType } from './groupArgs'
 
 describe('argEditorFor', () => {
   it('maps each kind to its editor', () => {
@@ -38,5 +38,24 @@ describe('defaultArgValue', () => {
     expect(defaultArgValue('int')).toBe(0)
     expect(defaultArgValue('bool')).toBe(false)
     expect(defaultArgValue('stream')).toBe('')
+  })
+})
+describe('isHole', () => {
+  it('is true only for a whole {identifier} string (engine _WHOLE_HOLE_RE)', () => {
+    expect(isHole('{od}')).toBe(true)
+    expect(isHole('{tube}')).toBe(true)
+    // a real stream/role name is a plain string, not a hole — must stay false so ArgField
+    // keeps rendering the picker for it instead of diverting to the text fallback
+    expect(isHole('od_1')).toBe(false)
+    // a reference-kind arg may not partially interpolate (design §3): embedding a hole
+    // inside a longer literal is a different, invalid shape, not a whole hole
+    expect(isHole('tube_{tube}')).toBe(false)
+    expect(isHole('{tube}_2')).toBe(false)
+    expect(isHole('')).toBe(false)
+    expect(isHole(undefined)).toBe(false)
+    expect(isHole(3)).toBe(false)
+    expect(isHole(true)).toBe(false)
+    // not a legal identifier start — would falsely accept if the character class were loose
+    expect(isHole('{1tube}')).toBe(false)
   })
 })
