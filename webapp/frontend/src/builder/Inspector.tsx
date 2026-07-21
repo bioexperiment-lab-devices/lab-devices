@@ -101,7 +101,15 @@ function GroupProperties({ name }: { name: string }) {
       <ParamDeclListEditor
         decls={params}
         addLabel="add param"
-        onAdd={() => setGroupParams(name, [...params, { name: '', kind: 'string' }])}
+        onAdd={() => {
+          // A fresh, non-colliding name rather than a blank row: an empty-named row is
+          // indistinguishable from nothing having been added until the author notices the
+          // placeholder, and ForEachForm's "add variable" (same shared component) already
+          // seeds a fresh name for the identical reason.
+          let n = 1
+          while (params.some((p) => p.name === `param${n}`)) n++
+          setGroupParams(name, [...params, { name: `param${n}`, kind: 'string' }])
+        }}
         onRemove={(i) => setGroupParams(name, params.filter((_, idx) => idx !== i))}
         onPatch={(i, patch) =>
           setGroupParams(
