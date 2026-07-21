@@ -29,6 +29,7 @@ def run_event_to_dict(event: RunEvent) -> dict[str, Any]:
         "timestamp": event.timestamp,
         "kind": event.kind,
         "block_id": event.block_id,
+        "source_path": event.source_path,
         "data": event.data,
     }
 
@@ -122,13 +123,14 @@ class CsvRunLogSink(_CsvWriter):
     """Run log as csv; the event data dict is JSON-encoded into one column (design 5 §7)."""
 
     def __init__(self, path: Path) -> None:
-        super().__init__(path, ["timestamp", "kind", "block_id", "data"])
+        super().__init__(path, ["timestamp", "kind", "block_id", "source_path", "data"])
 
     def emit(self, event: RunEvent) -> None:
         self._write_row([
             repr(event.timestamp),
             event.kind,
             event.block_id or "",
+            event.source_path or "",
             json.dumps(event.data),
         ])
 
