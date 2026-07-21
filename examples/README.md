@@ -13,6 +13,7 @@ Pick them on the Run tab and edit them as JSON.
 |---|---|
 | `morbidostat.json` | The morbidostat of Toprak et al. — three cultures held at their own moving IC₅₀. One 24 h "day": 120 cycles of 12 min. |
 | `morbidostat-demo-speed.json` | The same control loop compressed to ~25 min (25 cycles of 60 s) so you can watch it run end to end. Biologically meaningless intervals — for learning the structure, not for doing science. |
+| `adaptive-bioreactor-tour.json` | A regime-switching 3-tube bioreactor (turbidostat / chemostat / morbidostat, chosen at run start) that exercises **every** schema-3 feature and device verb. Demo speed, ~20 min. The Experiment Studio grand tour — see the walkthrough at the bottom of this file. |
 
 ---
 
@@ -631,3 +632,84 @@ on every remaining cycle. `test_operator_emergency_stop_aborts_and_finalizes` an
 `status: "aborted"`, never reads a single OD, and still runs the finalizer's thermostat sweep. If
 you touch `OD_CEILING`, the `drug_stock_x_mic * 0.99` stock ceiling, or the drop-from-service
 wrap, these are the tests that will catch you.
+
+---
+
+# Adaptive Bioreactor — the Experiment Studio grand tour
+
+`adaptive-bioreactor-tour.json` is not a new science experiment — the morbidostat above is the
+real one. It exists to put **every schema-3 feature and every device verb in one runnable
+document**, so you can watch the whole language work end to end and see, concretely, where each
+feature lives. Where the morbidostat's "Other modes, for free" section (above) says the three
+control laws are one condition-edit apart, this document makes all three selectable *at run time*
+from a single `enum` operator input.
+
+Import it (**Builder → Import**), map its roles on the preflight screen — the mapping is the
+morbidostat's, so the same lab runs both — and pick it on the Run tab. Like the morbidostat it
+uses `groups` and `for_each`, so the block-builder canvas opens it **read-only**; edit it as JSON.
+
+## The story, in one enum
+
+At setup you answer `regime`, and the same blocks become a different experiment:
+
+```
+turbidostat   OD > target_od            → 1 ml medium, else nothing   (hold turbidity)
+chemostat     every serviced tube       → 1 ml medium  +  a per-cycle continuous perfusion
+morbidostat   OD > od_thr and r > r_dil → 1 ml drug, else 1 ml medium (track IC₅₀; see above)
+```
+
+The selection is a `string`-equality branch on the enum value (`regime == 'morbidostat'`), nested
+inside the per-tube `service` group. Tube **C** (`od_meter_3`) is a control tube: measured every
+cycle, never dosed, in every regime.
+
+## Where each feature is, if you want to point at it
+
+| Feature | Where to look in the document / Studio |
+|---|---|
+| `enum` / `float` / `int` / `bool` operator inputs | Phase 0; they prompt during the run |
+| `string`-equality branch on an enum | `service` group → `regime == '…'` |
+| all seven group-parameter kinds | `service.params`: `tube` (int), `warn_od` (number), `name` (string), `is_control` (bool), `meter` (role), `od` (stream), `budget` (binding) |
+| both group-local kinds, with `init` / `units` / `persistence` | `service.locals`: bindings `c`/`contaminated`/`od_high`/`r`; streams `c_series` (x_MIC, disk) / `r_series` (per_hour) |
+| `for_each` over a typed table (int + role + stream columns) | the OD-read lane and the service call |
+| `parallel` with per-lane fault isolation | the growth-phase reads (`on_error: continue`) |
+| `loop` (paced count) and `loop` (`until` + `check`) | the main control loop; the chemostat settling loop |
+| `abort` (operator switch, contamination latch) and `alarm` (dose budget, fire-once) | top of each cycle; the cycle aggregate |
+| unit `as` casts | `record … as "per_hour"` and `… as "x_MIC"` |
+| duration / count **expressions** | `wait: settle_min * 1min`, `loop count: cycles`, `start_offset: {tube} * 1s` |
+| every device verb | pump `dispense`/`rotate`/`stop`/`set_calibration`; valve `set_position`/`home`/`configure`; densitometer `measure`/`measure_blank`/`set_led`/`set_thermostat`/`set_tube_correction`/`calibrate_tube` |
+| continuous **modes** + teardown | thermostat (held all run), LED (bounded diagnostic), pump `rotate` (chemostat perfusion) |
+| the **expression editor** | open any guard — the growth-rate estimate, the freshness guard, the regime branch — for highlighting, autocomplete, clickable help, and instant validation |
+| the read-only **Bindings panel** | see `dose_budget_ml`, `regime`, `working_volume_ml`, and the per-tube `tube_N_c`/`tube_N_r` locals inferred |
+| the live **chart** | `od_1..3`, plus `tube_N_c_series` (drug) and `tube_N_r_series` (rate) |
+| draft + URL persistence, export/import | refresh mid-edit; export the JSON and re-import it |
+
+## Things to try
+
+- **See the abort.** Answer `emergency_stop = true` at setup: the whole-run abort fires at the top
+  of the first cycle, the status is `aborted`, and the finalizer still sweeps the modes off. Left
+  `false`, the run completes.
+- **Switch regimes.** Run it three times, once per `regime`, and watch the chart and the injection
+  pattern change while the blocks stay identical.
+- **Skip the warm-up.** Answer `warm_start = false` to jump straight to the control loop (the
+  thermostats still come on — they are unconditional; only the calibration/LED diagnostics are
+  skipped).
+
+## Pace-coupled constants (same rule as the morbidostat)
+
+Each cycle reads every tube 10× at 3 s spacing, then decides. The slope constant `480 =
+2·3600/(n·dt)` (n = 5, dt = 3 s) and the freshness window `last=45s` (30 s growth phase < 45 s <
+60 s cycle pace) are both tied to the loop `count` and `pace`; change either and recompute both.
+
+## Persistence
+
+The document defaults to in-memory `jsonl`; only the two `c_series` streams are `disk`
+(`persistence: "disk"` on the local). To capture everything to CSV instead, set
+`workflow.persistence` to `{"default": "disk", "format": "csv"}` — one line, no other change.
+
+## Verifying changes
+
+`tests/test_examples_adaptive_bioreactor.py` loads and validates the document, pins that it still
+contains every feature above, runs all three regimes green against a simulated culture, and
+asserts the hard edges fire: retry hiding a transient fault, a persistent fault costing only its
+own lane, the dose-budget alarm raising exactly once, the emergency-stop abort, and every mode
+being torn down. If you edit the tour, run that test.
