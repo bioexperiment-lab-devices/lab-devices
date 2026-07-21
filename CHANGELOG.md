@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.12.0...v0.13.0) (2026-07-21)
+
+
+### Features
+
+* **experiment:** typed group parameters, group-locals, and engine-owned roles (Increment 9, PR 1) ([#50](https://github.com/bioexperiment-lab-devices/lab-devices/issues/50)) ([c6fe5f0](https://github.com/bioexperiment-lab-devices/lab-devices/commit/c6fe5f0ada8dfa4b65596d13d19bdc856adb5866))
+
 ## [0.12.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.11.0...v0.12.0) (2026-07-20)
 
 
