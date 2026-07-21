@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.3.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.2.0...v1.3.0) (2026-07-21)
+
+
+### Features
+
+* **examples:** adaptive-bioreactor Studio grand tour ([#69](https://github.com/bioexperiment-lab-devices/lab-devices/issues/69)) ([e8c5039](https://github.com/bioexperiment-lab-devices/lab-devices/commit/e8c5039ea901c9a3748fe9c3727c9da6cb35df02))
+* **studio:** behavior fixes — enum device params, blank units = unitless, save-as routing, no-roles runs ([#72](https://github.com/bioexperiment-lab-devices/lab-devices/issues/72)) ([24ff3f9](https://github.com/bioexperiment-lab-devices/lab-devices/commit/24ff3f98214557f2ca1f2942a9ceb306f0b1567b))
+* **studio:** human-readable block names in the run log ([#71](https://github.com/bioexperiment-lab-devices/lab-devices/issues/71)) ([ec334f4](https://github.com/bioexperiment-lab-devices/lab-devices/commit/ec334f42f08ec3dfe7e21c1458350c4e3669d7d5))
+* **studio:** read-only Bindings panel in the Builder ([#67](https://github.com/bioexperiment-lab-devices/lab-devices/issues/67)) ([3280f7d](https://github.com/bioexperiment-lab-devices/lab-devices/commit/3280f7db1ad1d19667acd54c51c791c4e7781e68))
+* **studio:** UI polish — roles panel, canvas sections, streams panel, palette defaults ([#70](https://github.com/bioexperiment-lab-devices/lab-devices/issues/70)) ([bee00ae](https://github.com/bioexperiment-lab-devices/lab-devices/commit/bee00aec7d26d6c5724be07115013c19b0568d66))
+
 ## [1.2.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.1.0...v1.2.0) (2026-07-21)
 
 
