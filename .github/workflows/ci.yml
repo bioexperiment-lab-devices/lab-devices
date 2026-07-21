@@ -77,7 +77,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build -f webapp/Dockerfile -t experiment-studio:ci .
+        # Retry to ride out transient Docker Hub pull timeouts (i/o timeout /
+        # DeadlineExceeded resolving base images), a recurring GitHub Actions flake.
+        run: |
+          for attempt in 1 2 3; do
+            docker build -f webapp/Dockerfile -t experiment-studio:ci . && exit 0
+            echo "docker build attempt $attempt failed; retrying in 15s..." >&2
+            sleep 15
+          done
+          echo "docker build failed after 3 attempts" >&2
+          exit 1
       - name: Smoke test
         run: |
           docker run -d --rm -p 8000:8000 --name studio experiment-studio:ci
