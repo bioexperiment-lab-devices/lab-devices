@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.1.0...v1.2.0) (2026-07-21)
+
+
+### Features
+
+* **studio:** expression editor — highlighting, autocomplete, clickable help, instant validation ([#63](https://github.com/bioexperiment-lab-devices/lab-devices/issues/63)) ([c8360a9](https://github.com/bioexperiment-lab-devices/lab-devices/commit/c8360a9f1f5c79223d0580a45d8c9bee7386d2c4))
+* **studio:** expressions in duration and count slots ([#65](https://github.com/bioexperiment-lab-devices/lab-devices/issues/65)) ([9857583](https://github.com/bioexperiment-lab-devices/lab-devices/commit/98575831fdbde9c94c3ba4f7eda3815df85df50c))
+
 ## [1.1.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.0.0...v1.1.0) (2026-07-21)
 
 
