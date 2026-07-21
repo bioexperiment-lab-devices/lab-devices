@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.0.0...v1.1.0) (2026-07-21)
+
+
+### Features
+
+* **studio:** manual device control — backend contract + persistence ([#60](https://github.com/bioexperiment-lab-devices/lab-devices/issues/60)) ([da329d3](https://github.com/bioexperiment-lab-devices/lab-devices/commit/da329d373091eacde5d2e75ee39c184a795523a8))
+* **studio:** manual device control tab (UI) ([#62](https://github.com/bioexperiment-lab-devices/lab-devices/issues/62)) ([542b264](https://github.com/bioexperiment-lab-devices/lab-devices/commit/542b2640163016241f9ad8bed2ce86237890f330))
+
 ## [1.0.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v0.14.0...v1.0.0) (2026-07-21)
 
 
