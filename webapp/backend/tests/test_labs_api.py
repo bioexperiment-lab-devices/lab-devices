@@ -114,8 +114,10 @@ async def test_devices_serialization(
         "connected": True,
         "model": "P-100",
         "firmware": "2.1.0",
+        "name": None,
     }
     assert valve["model"] is None and valve["firmware"] is None
+    assert valve["name"] is None
 
 
 async def test_discover_returns_devices(
