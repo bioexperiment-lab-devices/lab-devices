@@ -128,12 +128,14 @@ function resolveStructuralNode(
     const segMatch = GROUP_SEGMENT_RE.exec(structural.slice(arrowIndex + 2))
     if (!segMatch) return { node: null, scope: null }
     const [, name, tail] = segMatch
-    return { node: resolveTail(groups[name]?.body ?? null, tail), scope: name }
+    const node = resolveTail(groups[name]?.body ?? null, tail)
+    return { node, scope: node ? name : null }
   }
   const groupHeadMatch = GROUP_HEAD_RE.exec(structural)
   if (groupHeadMatch) {
     const name = groupHeadMatch[1] ?? groupHeadMatch[2]
-    return { node: resolveTail(groups[name]?.body ?? null, groupHeadMatch[3]), scope: name }
+    const node = resolveTail(groups[name]?.body ?? null, groupHeadMatch[3])
+    return { node, scope: node ? name : null }
   }
   const blocksMatch = BLOCKS_RE.exec(structural)
   if (!blocksMatch) return { node: null, scope: null }

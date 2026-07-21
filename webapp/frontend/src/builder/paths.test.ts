@@ -123,7 +123,11 @@ describe('resolveDiagnosticPath', () => {
 
   it('returns uid null (not the wrong block) for an out-of-range group-body index', () => {
     const groups: GroupsMap = { service: { body: [waitNode] } }
-    expect(resolveDiagnosticPath([], groups, "groups['service'].body[5]").uid).toBeNull()
+    // scope is null too when the node does not resolve: an unresolved group path carries no
+    // editable location, so it must not report a scope (pre-refactor resolveDiagnosticPath
+    // parity — the shared resolveStructuralNode only tags scope when resolveTail found a node).
+    expect(resolveDiagnosticPath([], groups, "groups['service'].body[5]"))
+      .toMatchObject({ uid: null, scope: null })
   })
 
   it('accepts a double-quoted group name — Python repr flips quote style for an apostrophe', () => {
