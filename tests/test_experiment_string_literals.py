@@ -21,7 +21,7 @@ def test_single_quoted_string_literal_parses() -> None:
 
 
 def test_string_literal_infers_as_string() -> None:
-    assert infer_type(parse_expression("'x'"), {}).type == "string"
+    assert infer_type(parse_expression("'x'"), {}).type.base == "string"
 
 
 def test_string_equality_evaluates() -> None:

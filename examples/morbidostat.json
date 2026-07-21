@@ -155,7 +155,8 @@
                       {
                         "record": {
                           "into": "{r_series}",
-                          "value": "{r}"
+                          "value": "{r}",
+                          "as": "per_hour"
                         },
                         "label": "tube {tube}: chart the growth rate"
                       },
@@ -255,7 +256,8 @@
                       {
                         "record": {
                           "into": "{c_series}",
-                          "value": "{c}"
+                          "value": "{c}",
+                          "as": "x_MIC"
                         },
                         "label": "tube {tube}: chart the drug-concentration sawtooth"
                       }

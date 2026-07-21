@@ -22,7 +22,7 @@ async def test_accumulator_and_recording_over_cycles(fake_client):
                 {"record": {"into": "od_copy", "value": "last(OD)"}},
             ]}},
         ],
-        streams={"OD": {"units": "AU"}, "c_series": {}, "od_copy": {}},
+        streams={"OD": {"units": "AU"}, "c_series": {}, "od_copy": {"units": "AU"}},
     )
     run = make_run(client, wf)
     report = await drive(run._options.clock, run.execute())

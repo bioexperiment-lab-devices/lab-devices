@@ -17,26 +17,37 @@ from lab_devices.experiment.expr import (
     UnaryOp,
     Window,
 )
+from lab_devices.experiment.units import UNITLESS, Unit, unit_div, unit_mul, unit_str
 
 # One scalar type vocabulary for the whole DSL (design 2026-07-21 §3). `int <: number`;
-# `bool`/`string` are invariant; `unknown` is the transient inference state. `BindingType`
-# and `ExprType` are kept as aliases so existing imports keep working.
-Type = Literal["int", "number", "bool", "string", "unknown"]
-BindingType = Type
-ExprType = Type
+# `bool`/`string` are invariant; `unknown` is the transient inference state.
+Base = Literal["int", "number", "bool", "string", "unknown"]
+Type = Base  # legacy alias for the base name
 
 _ARITH_OPS = frozenset({"+", "-", "*", "/"})
 _ORDER_OPS = frozenset({"<", "<=", ">", ">="})
 _NUMERIC: frozenset[str] = frozenset({"int", "number"})
+_EMPTY_UNITS: dict[str, Unit] = {}
 
 
-def assignable(got: Type, expected: Type) -> bool:
-    """Is a value of type `got` acceptable where `expected` is wanted (design §3.1)?
+@dataclass(frozen=True)
+class ScalarType:
+    """A scalar's base and, for numerics, its opaque unit (design 2026-07-21 §3, §5).
+    `bool`/`string`/`unknown` carry no unit (it stays `UNITLESS`)."""
 
-    `int <: number` at the base; every other base is invariant. `unknown` is leniently
-    assignable in either direction — it is the transient inference state, and strictness is
-    enforced at slot level (`validate._check_expr_type`), not here.
-    """
+    base: Base
+    unit: Unit = UNITLESS
+
+
+UNKNOWN = ScalarType("unknown")
+BindingType = ScalarType  # a binding's inferred type
+ExprType = ScalarType  # an expression's inferred type
+
+
+def assignable(got: Base, expected: Base) -> bool:
+    """Base subtyping only (design §3.1): `int <: number`, every other base invariant,
+    `unknown` leniently assignable in either direction. Unit compatibility is a separate
+    check the caller applies (`validate._check_expr_type`)."""
     if got == "unknown" or expected == "unknown":
         return True
     if got == expected:
@@ -44,11 +55,7 @@ def assignable(got: Type, expected: Type) -> bool:
     return got == "int" and expected == "number"
 
 
-def join_types(a: Type, b: Type) -> Type:
-    """Least upper bound of two inferred types for a binding written more than once
-    (design 2026-07-21 §4.1). `int` and `number` widen to `number` — a seed `0` followed by
-    a float recursion is one `number` accumulator, not a conflict. Any real disagreement
-    (bool vs number, string vs anything) or an `unknown` degrades to `unknown`."""
+def _join_base(a: Base, b: Base) -> Base:
     if a == b:
         return a
     if a in _NUMERIC and b in _NUMERIC:  # {int, number} -> number
@@ -56,12 +63,39 @@ def join_types(a: Type, b: Type) -> Type:
     return "unknown"
 
 
-def _describe(e: Expr, t: Type) -> str:
-    """Render an operand's type for a diagnostic, naming a bare binding so the author knows
-    which name is mistyped (e.g. `mode * 2` -> "string (binding 'mode')")."""
+def join_types(a: ScalarType, b: ScalarType) -> ScalarType:
+    """Least upper bound of two writers of one binding (design §4.1). Bases: int/number widen
+    to number, else same-or-unknown. Units: equal keeps it; unitless widens to the dimensioned
+    side (a seed `0` then an `AU` value is one `AU` accumulator); two *different* dimensioned
+    units conflict to `unknown`."""
+    base = _join_base(a.base, b.base)
+    if base == "unknown":
+        return UNKNOWN
+    if a.unit == b.unit:
+        unit = a.unit
+    elif a.unit == UNITLESS:
+        unit = b.unit
+    elif b.unit == UNITLESS:
+        unit = a.unit
+    else:
+        return UNKNOWN  # two dimensioned units disagree
+    return ScalarType(base, unit)
+
+
+def _fmt(t: ScalarType) -> str:
+    """Render a type for a diagnostic: `number<AU/s>`, `int`, `bool`."""
+    if t.base in _NUMERIC and t.unit != UNITLESS:
+        return f"{t.base}<{unit_str(t.unit)}>"
+    return t.base
+
+
+def _describe(e: Expr, t: ScalarType) -> str:
+    """Render an operand's type, naming a bare binding so the author knows which is mistyped
+    (e.g. `mode * 2` -> "string (binding 'mode')")."""
+    shown = _fmt(t)
     if isinstance(e, BindingRef):
-        return f"{t} (binding {e.name!r})"
-    return t
+        return f"{shown} (binding {e.name!r})"
+    return shown
 
 
 @dataclass(frozen=True)
@@ -102,69 +136,98 @@ class TypeReport:
     problems: tuple[str, ...]
 
 
-def infer_type(expr: Expr, binding_types: Mapping[str, BindingType]) -> TypeReport:
-    """Bottom-up type inference over the scalar lattice (design 2026-07-21 §3, §5).
+def infer_type(
+    expr: Expr,
+    binding_types: Mapping[str, BindingType],
+    stream_units: Mapping[str, Unit] = _EMPTY_UNITS,
+) -> TypeReport:
+    """Bottom-up type inference over the scalar lattice with opaque units (design §3, §5).
 
-    A `string` binding *flows* as `string` (no problem at the reference); a problem is raised
-    only when it is used in a non-string position (arithmetic, ordering, mixed comparison).
-    `unknown` operands never produce a problem here — that leniency is the fail-safe rule
-    (design §6); slot-level strictness lives in `validate._check_expr_type`.
+    A `string` binding flows as `string` (a problem only in a non-string position). Within an
+    operator a **unitless operand adapts** to its sibling's unit (§3.2); two differently
+    dimensioned operands are a problem. `×`/`÷` combine units. `unknown` operands never raise —
+    that leniency is the fail-safe rule (§6); slot-level strictness lives in `validate`.
     """
     problems: list[str] = []
 
-    def expect(e: Expr, expected: Type, ctx: str) -> None:
+    def expect_bool(e: Expr, ctx: str) -> None:
         got = infer(e)
-        if not assignable(got, expected):
-            problems.append(f"{ctx} requires a {expected} operand, got {_describe(e, got)}")
+        if not assignable(got.base, "bool"):
+            problems.append(f"{ctx} requires a bool operand, got {_describe(e, got)}")
 
-    def numeric(e: Expr, ctx: str) -> Type:
+    def numeric(e: Expr, ctx: str) -> ScalarType:
         got = infer(e)
-        if got not in _NUMERIC and got != "unknown":
+        if got.base not in _NUMERIC and got.base != "unknown":
             problems.append(f"{ctx} requires a number operand, got {_describe(e, got)}")
-            return "number"
+            return ScalarType("number")
         return got
 
-    def equality(e: BinaryOp) -> Type:
+    def combine_add(lt: ScalarType, rt: ScalarType, e: BinaryOp, ctx: str) -> Unit:
+        """Unit rule for +/- and comparison: equal, or one side unitless (adapts §3.2)."""
+        if lt.unit == rt.unit:
+            return lt.unit
+        if lt.unit == UNITLESS:
+            return rt.unit
+        if rt.unit == UNITLESS:
+            return lt.unit
+        problems.append(
+            f"{ctx} needs matching units, got "
+            f"{_describe(e.left, lt)} and {_describe(e.right, rt)}"
+        )
+        return UNITLESS
+
+    def equality(e: BinaryOp) -> ScalarType:
         left, right = infer(e.left), infer(e.right)
-        if "unknown" not in (left, right):
-            both_numeric = left in _NUMERIC and right in _NUMERIC
-            if not (both_numeric or left == right):
+        if "unknown" not in (left.base, right.base):
+            if left.base in _NUMERIC and right.base in _NUMERIC:
+                combine_add(left, right, e, f"operator {e.op!r}")
+            elif left.base != right.base:
                 problems.append(
                     f"operator {e.op!r} cannot compare "
                     f"{_describe(e.left, left)} with {_describe(e.right, right)}"
                 )
-        return "bool"
+        return ScalarType("bool")
 
-    def infer(e: Expr) -> Type:
+    def infer(e: Expr) -> ScalarType:
         if isinstance(e, Const):
             if isinstance(e.value, bool):
-                return "bool"
+                return ScalarType("bool")
             if isinstance(e.value, str):
-                return "string"
-            return "int" if isinstance(e.value, int) else "number"
+                return ScalarType("string")
+            return ScalarType("int" if isinstance(e.value, int) else "number")
         if isinstance(e, BindingRef):
-            return binding_types.get(e.name, "unknown")
+            return binding_types.get(e.name, UNKNOWN)
         if isinstance(e, StatCall):
-            return "int" if e.fn == "count" else "number"
+            if e.fn == "count":
+                return ScalarType("int")
+            return ScalarType("number", stream_units.get(e.stream, UNITLESS))
         if isinstance(e, UnaryOp):
             if e.op == "not":
-                expect(e.operand, "bool", "'not'")
-                return "bool"
-            return numeric(e.operand, "unary '-'")
+                expect_bool(e.operand, "'not'")
+                return ScalarType("bool")
+            return numeric(e.operand, "unary '-'")  # preserves base and unit
         if e.op in ("and", "or"):
-            expect(e.left, "bool", f"{e.op!r}")
-            expect(e.right, "bool", f"{e.op!r}")
-            return "bool"
+            expect_bool(e.left, f"{e.op!r}")
+            expect_bool(e.right, f"{e.op!r}")
+            return ScalarType("bool")
         if e.op in _ARITH_OPS:
             lt = numeric(e.left, f"operator {e.op!r}")
             rt = numeric(e.right, f"operator {e.op!r}")
-            if e.op == "/":
-                return "number"
-            return "int" if lt == "int" and rt == "int" else "number"
+            base: Base = (
+                "int" if e.op != "/" and lt.base == "int" and rt.base == "int" else "number"
+            )
+            if e.op == "*":
+                unit = unit_mul(lt.unit, rt.unit)
+            elif e.op == "/":
+                unit = unit_div(lt.unit, rt.unit)
+            else:  # + or -
+                unit = combine_add(lt, rt, e, f"operator {e.op!r}")
+            return ScalarType(base, unit)
         if e.op in _ORDER_OPS:
-            numeric(e.left, f"operator {e.op!r}")
-            numeric(e.right, f"operator {e.op!r}")
-            return "bool"
+            lt = numeric(e.left, f"operator {e.op!r}")
+            rt = numeric(e.right, f"operator {e.op!r}")
+            combine_add(lt, rt, e, f"operator {e.op!r}")
+            return ScalarType("bool")
         return equality(e)  # == / !=
 
     top = infer(expr)

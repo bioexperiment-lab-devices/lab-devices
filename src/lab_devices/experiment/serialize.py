@@ -179,16 +179,28 @@ def _measure(body: Any, timing: dict[str, Any], roles: dict[str, RoleDecl]) -> B
     )
 
 
+def _opt_str(body: Any, key: str, ctx: str) -> str | None:
+    """Read an optional string field (e.g. a `compute`/`record` `as` unit cast)."""
+    val = body.get(key) if isinstance(body, dict) else None
+    if val is None:
+        return None
+    if not isinstance(val, str):
+        raise WorkflowLoadError(f"{ctx} must be a string, got {val!r}")
+    return val
+
+
 def _compute(body: Any, timing: dict[str, Any], roles: dict[str, RoleDecl]) -> B.Block:
     into = _str(_req(body, "into", "compute"), "compute into")
     value = _value(_req(body, "value", "compute"), "compute value")
-    return B.Compute(into=into, value=value, **timing)
+    as_ = _opt_str(body, "as", "compute as")
+    return B.Compute(into=into, value=value, as_=as_, **timing)
 
 
 def _record(body: Any, timing: dict[str, Any], roles: dict[str, RoleDecl]) -> B.Block:
     into = _str(_req(body, "into", "record"), "record into")
     value = _value(_req(body, "value", "record"), "record value")
-    return B.Record(into=into, value=value, **timing)
+    as_ = _opt_str(body, "as", "record as")
+    return B.Record(into=into, value=value, as_=as_, **timing)
 
 
 def _abort(body: Any, timing: dict[str, Any], roles: dict[str, RoleDecl]) -> B.Block:
@@ -389,9 +401,15 @@ def _dump_body(b: B.Block) -> tuple[str, dict[str, Any]]:
         body["body"] = [block_to_dict(c) for c in b.body]
         return "for_each", body
     if isinstance(b, B.Compute):
-        return "compute", {"into": b.into, "value": b.value}
+        compute_body: dict[str, Any] = {"into": b.into, "value": b.value}
+        if b.as_ is not None:
+            compute_body["as"] = b.as_
+        return "compute", compute_body
     if isinstance(b, B.Record):
-        return "record", {"into": b.into, "value": b.value}
+        record_body: dict[str, Any] = {"into": b.into, "value": b.value}
+        if b.as_ is not None:
+            record_body["as"] = b.as_
+        return "record", record_body
     if isinstance(b, B.Abort):
         return "abort", {"if": b.if_, "message": b.message}
     if isinstance(b, B.Alarm):

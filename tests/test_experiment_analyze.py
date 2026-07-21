@@ -1,5 +1,6 @@
 from lab_devices.experiment.analyze import (
     ExprRefs,
+    ScalarType,
     TypeReport,
     infer_type,
     proof_covers,
@@ -19,7 +20,8 @@ def refs(text):
 
 
 def report(text, bindings=None):
-    return infer_type(parse_expression(text), bindings or {})
+    bt = {k: ScalarType(v) for k, v in (bindings or {}).items()}
+    return infer_type(parse_expression(text), bt)
 
 
 def test_references_bindings_and_streams():
@@ -46,21 +48,21 @@ def test_references_unary_and_nesting():
 
 
 def test_infer_const_and_stat_types():
-    assert report("1 + 2.5").type == "number"
-    assert report("true").type == "bool"
-    assert report("1 < 2").type == "bool"
-    assert report("not (1 < 2)").type == "bool"
-    assert report("-(3 * 2)").type == "int"  # int arithmetic + unary minus stays int
-    assert report("mean(OD)").type == "number"
-    assert report("count(OD)").type == "int"  # count is a sample count
-    assert report("count(OD) >= 3").type == "bool"
+    assert report("1 + 2.5").type.base == "number"
+    assert report("true").type.base == "bool"
+    assert report("1 < 2").type.base == "bool"
+    assert report("not (1 < 2)").type.base == "bool"
+    assert report("-(3 * 2)").type.base == "int"  # int arithmetic + unary minus stays int
+    assert report("mean(OD)").type.base == "number"
+    assert report("count(OD)").type.base == "int"  # count is a sample count
+    assert report("count(OD) >= 3").type.base == "bool"
 
 
 def test_infer_binding_types():
-    assert report("x + 1", {"x": "number"}) == TypeReport("number", ())
-    assert report("flag and true", {"flag": "bool"}) == TypeReport("bool", ())
-    assert report("x", {}).type == "unknown"
-    assert report("x + 1").type == "number"  # unknown operand: no false positive
+    assert report("x + 1", {"x": "number"}) == TypeReport(ScalarType("number"), ())
+    assert report("flag and true", {"flag": "bool"}) == TypeReport(ScalarType("bool"), ())
+    assert report("x", {}).type.base == "unknown"
+    assert report("x + 1").type.base == "number"  # unknown operand: no false positive
 
 
 def test_string_binding_is_a_problem():
@@ -78,13 +80,13 @@ def test_boolean_number_mixes_are_problems():
 
 
 def test_equality_same_kind_ok():
-    assert report("(1 < 2) == (3 < 4)") == TypeReport("bool", ())
-    assert report("1 == 2") == TypeReport("bool", ())
+    assert report("(1 < 2) == (3 < 4)") == TypeReport(ScalarType("bool"), ())
+    assert report("1 == 2") == TypeReport(ScalarType("bool"), ())
 
 
 def test_unknown_propagates_without_problems():
     rep = report("x + 1 > 0 and y", {})
-    assert rep.type == "bool"
+    assert rep.type.base == "bool"
     assert rep.problems == ()
 
 

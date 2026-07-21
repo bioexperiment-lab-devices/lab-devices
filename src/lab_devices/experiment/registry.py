@@ -20,6 +20,7 @@ class ParamSpec:
     name: str
     kind: Kind
     required: bool = False
+    unit: str | None = None  # optional opaque unit checked at load (design 2026-07-21 §5)
 
 
 @dataclass
