@@ -19,7 +19,7 @@ export function blockName(
   if (path === null || path === undefined) return null
   if (tree !== null && groups !== null) {
     const node = resolveDiagnosticNode(tree, groups, path)
-    if (node !== null) return { text: node.label ?? blockSummary(node), path }
+    if (node !== null) return { text: node.label?.trim() ? node.label : blockSummary(node), path }
   }
   return { text: path, path }
 }

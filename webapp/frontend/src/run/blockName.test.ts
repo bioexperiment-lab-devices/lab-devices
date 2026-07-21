@@ -13,6 +13,8 @@ import type { ExperimentDocJson } from '../types/doc'
 // blocks[1]: a wait with no label (must fall back to its derived summary).
 // blocks[2]: a for_each whose body[0] is an authored command block (proves the resolver
 // descends into a child slot, not just top-level blocks[i]).
+// blocks[3]/[4]: a wait with an empty-string / whitespace-only label — must be treated as
+// "no label" and fall back to the summary, never rendered as blank (never-blank invariant).
 const doc: ExperimentDocJson = {
   doc_version: 1,
   name: 'block name test',
@@ -33,6 +35,8 @@ const doc: ExperimentDocJson = {
           body: [{ command: { device: 'pump1', verb: 'dispense', params: { volume: 1 } } }],
         },
       },
+      { wait: { duration: '10s' }, label: '' },
+      { wait: { duration: '15s' }, label: '   ' },
     ],
   },
 }
@@ -67,6 +71,20 @@ describe('blockName', () => {
       text: 'pump1 · dispense (volume=1)',
       path: 'blocks[2].body[0]',
     })
+  })
+
+  it('treats an empty-string label as unset and falls back to the summary (never blank)', () => {
+    const { tree, groups } = resolve(doc)
+    const result = blockName(ev('blocks[3]'), tree, groups)
+    expect(result).toEqual({ text: 'wait 10s', path: 'blocks[3]' })
+    expect(result?.text).not.toBe('')
+  })
+
+  it('treats a whitespace-only label as unset and falls back to the summary (never blank)', () => {
+    const { tree, groups } = resolve(doc)
+    const result = blockName(ev('blocks[4]'), tree, groups)
+    expect(result).toEqual({ text: 'wait 15s', path: 'blocks[4]' })
+    expect(result?.text.trim()).not.toBe('')
   })
 
   it('returns the raw path when the path is unresolvable', () => {
