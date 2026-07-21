@@ -25,7 +25,7 @@ export function useDraftAutosave(enabled: boolean): void {
       if (timer !== null) clearTimeout(timer)
       timer = setTimeout(() => {
         writeDraft({
-          v: 1,
+          v: 2,
           serverId: s.serverId,
           savedSnapshot: s.savedSnapshot,
           content: selectContent(s),

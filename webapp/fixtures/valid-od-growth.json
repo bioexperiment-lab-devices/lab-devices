@@ -2,14 +2,11 @@
   "doc_version": 1,
   "name": "OD growth curve",
   "description": "Feed once, then measure OD every 30 s until mean of last 3 crosses 0.6.",
-  "roles": {
-    "feed_pump": {"type": "pump"},
-    "od_meter": {"type": "densitometer"}
-  },
   "workflow": {
-    "schema_version": 1,
+    "schema_version": 2,
     "metadata": {"name": "OD growth curve"},
     "persistence": {"default": "in_memory", "format": "jsonl"},
+    "roles": {"feed_pump": {"type": "pump"}, "od_meter": {"type": "densitometer"}},
     "streams": {"od": {"units": "AU"}},
     "blocks": [
       {"serial": {"children": [

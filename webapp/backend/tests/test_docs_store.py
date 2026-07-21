@@ -28,8 +28,7 @@ def make_doc(name: str = "OD growth curve", **overrides: Any) -> ExperimentDoc:
         "doc_version": 1,
         "name": name,
         "description": "demo",
-        "roles": {"feed_pump": {"type": "pump"}},
-        "workflow": {"schema_version": 1, "blocks": []},
+        "workflow": {"schema_version": 2, "roles": {"feed_pump": {"type": "pump"}}, "blocks": []},
     }
     payload.update(overrides)
     return ExperimentDoc.model_validate(payload)
@@ -38,7 +37,7 @@ def make_doc(name: str = "OD growth curve", **overrides: Any) -> ExperimentDoc:
 async def test_create_get_roundtrip(store: ExperimentsStore) -> None:
     created = await store.create(make_doc())
     assert created["name"] == "OD growth curve"
-    assert created["doc"]["roles"] == {"feed_pump": {"type": "pump"}}
+    assert created["doc"]["workflow"]["roles"] == {"feed_pump": {"type": "pump"}}
     assert created["created_at"] == created["updated_at"]
     fetched = await store.get(created["id"])
     assert fetched == created
@@ -148,16 +147,16 @@ def test_a_diagnostic_inside_a_for_each_body_reports_the_authored_path() -> None
             "doc_version": 1,
             "name": "macro",
             "description": None,
-            "roles": {"od_meter": {"type": "densitometer"}},
             "workflow": {
-                "schema_version": 1,
+                "schema_version": 2,
                 "metadata": {"name": "macro"},
+                "roles": {"od_meter": {"type": "densitometer"}},
                 "streams": {"od_1": {"units": None}, "od_2": {"units": None}},
                 "blocks": [
                     {
                         "for_each": {
-                            "var": "t",
-                            "in": [1, 2],
+                            "vars": [{"name": "t", "kind": "int"}],
+                            "in": [{"t": 1}, {"t": 2}],
                             "body": [
                                 {"measure": {"device": "od_meter", "verb": "measure", "into": "od_{t}"}},
                                 # `nope` is not a declared stream, binding, or function -> one
@@ -180,21 +179,21 @@ def test_a_diagnostic_inside_a_for_each_body_reports_the_authored_path() -> None
 
 def test_a_plain_group_ref_under_for_each_reports_a_compound_authored_path() -> None:
     """Critical fix: a validate-phase walk from a group_ref call site into a PLAIN
-    group's body builds a compound "<call site>->name.body[i]" path (validate.py:894).
-    The for_each duplicates the call site (blocks[0] and blocks[1]), but both copies are
-    authored at the same place: blocks[0].body[0] (the group_ref itself, inside the
-    for_each body) calling into groups['mygroup'].body[0] (the group definition, authored
-    where it is written and never duplicated). _remap must split on the first "->",
-    remap only the call-site segment, and carry the group-body tail through unchanged --
-    then dedup collapses the two per-copy diagnostics into one."""
+    group's body builds a compound "<call site>->name.body[i]" path (validate.py's
+    mode/data-flow walkers). The for_each duplicates the call site (blocks[0] and
+    blocks[1]), but both copies are authored at the same place: blocks[0].body[0] (the
+    group_ref itself, inside the for_each body) calling into groups['mygroup'].body[0]
+    (the group definition, authored where it is written and never duplicated). _remap
+    must split on the first "->", remap only the call-site segment, and carry the
+    group-body tail through unchanged -- then dedup collapses the two per-copy
+    diagnostics into one."""
     doc = ExperimentDoc.model_validate(
         {
             "doc_version": 1,
             "name": "plain-group-under-for-each",
             "description": None,
-            "roles": {},
             "workflow": {
-                "schema_version": 1,
+                "schema_version": 2,
                 "groups": {
                     "mygroup": {
                         "body": [
@@ -205,8 +204,8 @@ def test_a_plain_group_ref_under_for_each_reports_a_compound_authored_path() -> 
                 "blocks": [
                     {
                         "for_each": {
-                            "var": "t",
-                            "in": [1, 2],
+                            "vars": [{"name": "t", "kind": "int"}],
+                            "in": [{"t": 1}, {"t": 2}],
                             "body": [{"group_ref": {"name": "mygroup"}}],
                         }
                     }
@@ -221,19 +220,19 @@ def test_a_plain_group_ref_under_for_each_reports_a_compound_authored_path() -> 
 
 def test_a_compound_path_reached_through_a_parametrized_group_remaps_the_call_site() -> None:
     """Regression guard: a plain group_ref (to `plaingroup`) nested inside a
-    PARAMETRIZED group's body (`paramgroup`, called with args) still produces a compound
-    "<call site>->plaingroup.body[i]" path once validate.py walks into the surviving
-    GroupRef node -- the parametrized call site is fully inlined at expand time, but the
-    trace still knows it as groups['paramgroup'].body[0]. That call-site segment must
-    remap; the plaingroup.body[0] tail is already authored and passes through untouched."""
+    PARAMETRIZED group's body (`paramgroup`, called with a typed `tube: int` arg) still
+    produces a compound "<call site>->plaingroup.body[i]" path once validate.py walks into
+    the surviving GroupRef node -- the parametrized call site is fully inlined at expand
+    time, but the trace still knows it as groups['paramgroup'].body[0]. That call-site
+    segment must remap; the plaingroup.body[0] tail is already authored and passes through
+    untouched."""
     doc = ExperimentDoc.model_validate(
         {
             "doc_version": 1,
             "name": "plain-group-under-parametrized-group",
             "description": None,
-            "roles": {},
             "workflow": {
-                "schema_version": 1,
+                "schema_version": 2,
                 "groups": {
                     "plaingroup": {
                         "body": [
@@ -241,7 +240,7 @@ def test_a_compound_path_reached_through_a_parametrized_group_remaps_the_call_si
                         ]
                     },
                     "paramgroup": {
-                        "params": ["tube"],
+                        "params": [{"name": "tube", "kind": "int"}],
                         "body": [{"group_ref": {"name": "plaingroup"}}],
                     },
                 },
@@ -263,9 +262,8 @@ def test_a_diagnostic_with_no_arrow_remaps_by_identity_when_unduplicated() -> No
             "doc_version": 1,
             "name": "no-arrow",
             "description": None,
-            "roles": {},
             "workflow": {
-                "schema_version": 1,
+                "schema_version": 2,
                 "blocks": [
                     {"compute": {"into": "x", "value": "nope_undeclared_thing"}}
                 ],
@@ -278,30 +276,29 @@ def test_a_diagnostic_with_no_arrow_remaps_by_identity_when_unduplicated() -> No
 
 
 def test_a_for_each_inside_a_plain_groups_own_body_remaps_the_tail_index() -> None:
-    """Second Critical fix: expand.py expands a PLAIN group's body IN PLACE
-    (expand.py:270-274), so "g1.body[1]" in a compound path (validate.py:894/:940) is an
-    EXPANDED index into g1's own body, not an authored one -- unlike the call-site head,
-    the tail segment genuinely needs remapping too. Reproduced with NO outer duplication
-    at all: the for_each lives directly inside g1's own body. validate.py walks
-    blocks[0] (group_ref g1) into g1's two expanded for_each copies, reporting one
-    diagnostic per copy at "blocks[0]->g1.body[0]" and "blocks[0]->g1.body[1]" -- both
-    trace back to the one authored for_each body block, groups['g1'].body[0].body[0].
-    Both must collapse to a single diagnostic at "blocks[0]->g1.body[0].body[0]"."""
+    """Second Critical fix: expand.py expands a PLAIN group's body IN PLACE, so
+    "g1.body[1]" in a compound path is an EXPANDED index into g1's own body, not an
+    authored one -- unlike the call-site head, the tail segment genuinely needs remapping
+    too. Reproduced with NO outer duplication at all: the for_each lives directly inside
+    g1's own body. validate.py walks blocks[0] (group_ref g1) into g1's two expanded
+    for_each copies, reporting one diagnostic per copy at "blocks[0]->g1.body[0]" and
+    "blocks[0]->g1.body[1]" -- both trace back to the one authored for_each body block,
+    groups['g1'].body[0].body[0]. Both must collapse to a single diagnostic at
+    "blocks[0]->g1.body[0].body[0]"."""
     doc = ExperimentDoc.model_validate(
         {
             "doc_version": 1,
             "name": "for-each-inside-plain-group-body",
             "description": None,
-            "roles": {},
             "workflow": {
-                "schema_version": 1,
+                "schema_version": 2,
                 "groups": {
                     "g1": {
                         "body": [
                             {
                                 "for_each": {
-                                    "var": "t",
-                                    "in": [1, 2],
+                                    "vars": [{"name": "t", "kind": "int"}],
+                                    "in": [{"t": 1}, {"t": 2}],
                                     "body": [
                                         {
                                             "compute": {
@@ -325,7 +322,7 @@ def test_a_for_each_inside_a_plain_groups_own_body_remaps_the_tail_index() -> No
 
 
 def test_a_doubly_nested_plain_group_remaps_every_segment() -> None:
-    """Regression guard for the general N-segment case: validate.py:894 recurses when a
+    """Regression guard for the general N-segment case: validate.py recurses when a
     plain group_ref's body itself contains another plain group_ref, building a
     three-segment compound path "blocks[0]->g1.body[0]->g2.body[i]". Every "->" segment
     must be remapped with its own trace-key spelling, not just the head -- here it is the
@@ -336,17 +333,16 @@ def test_a_doubly_nested_plain_group_remaps_every_segment() -> None:
             "doc_version": 1,
             "name": "doubly-nested-plain-groups",
             "description": None,
-            "roles": {},
             "workflow": {
-                "schema_version": 1,
+                "schema_version": 2,
                 "groups": {
                     "g1": {"body": [{"group_ref": {"name": "g2"}}]},
                     "g2": {
                         "body": [
                             {
                                 "for_each": {
-                                    "var": "t",
-                                    "in": [1, 2],
+                                    "vars": [{"name": "t", "kind": "int"}],
+                                    "in": [{"t": 1}, {"t": 2}],
                                     "body": [
                                         {
                                             "compute": {
@@ -379,9 +375,8 @@ def test_an_unmappable_diagnostic_path_passes_through_unchanged() -> None:
             "doc_version": 1,
             "name": "recursive-group",
             "description": None,
-            "roles": {},
             "workflow": {
-                "schema_version": 1,
+                "schema_version": 2,
                 "groups": {"selfref": {"body": [{"group_ref": {"name": "selfref"}}]}},
                 "blocks": [{"group_ref": {"name": "selfref"}}],
             },
@@ -401,29 +396,36 @@ def test_a_spaced_group_name_still_dedups_to_the_authored_path() -> None:
     inside the group's body produces one diagnostic per copy at two different expanded
     indices, dedup (keyed on the post-remap path) never collapsed them: 2 diagnostics
     instead of 1, at 'body[0]' and 'body[1]' rather than the single authored 'body[0].body[0]'.
-    Downstream, resolveDiagnosticPath (quote-aware since Task 8) would happily resolve
-    'body[1]' onto the tree's authored body[1] -- the unrelated `wait` block, not the
-    command inside the for_each that was actually flagged. A non-identifier group name is
-    real, reachable state: GROUP_NAME_RE (docStore.ts) guards only addGroup/renameGroup,
-    never import (convert.ts loads keys verbatim), and this is the increment's headline use
-    case (hand-authored/imported JSON)."""
+    A non-identifier group name is real, reachable state: GROUP_NAME_RE (docStore.ts)
+    guards only addGroup/renameGroup, never import (convert.ts loads keys verbatim), and
+    this is the increment's headline use case (hand-authored/imported JSON).
+
+    `wash cycle` is a PLAIN group (no params/locals) so it survives expansion as a
+    `w.groups` entry and the SIMPLE `record`-writes-undeclared-stream check (which walks
+    `_iter_all_blocks` directly, not the path-sensitive "->" walker) reports its raw,
+    un-remapped path as the literal quoted head "groups['wash cycle'].body[i]" -- no
+    "->" and no trailing " <context>" suffix, so the only thing standing between a correct
+    remap and a corrupted one is `_quoted_group_head_end`'s scan-from-past-the-quote.
+    Verified this is load-bearing, not incidental: stubbing `_quoted_group_head_end` to
+    always return 0 (the pre-fix behavior) turns this into 2 diagnostics with the raw,
+    unmapped `groups['wash cycle'].body[0]`/`.body[1]` paths instead of 1 authored one."""
     doc = ExperimentDoc.model_validate(
         {
             "doc_version": 1,
             "name": "spaced-group-name",
             "description": None,
-            "roles": {},
             "workflow": {
-                "schema_version": 1,
+                "schema_version": 2,
+                "streams": {"ok_stream": {"units": None}},
                 "groups": {
                     "wash cycle": {
                         "body": [
                             {
                                 "for_each": {
-                                    "var": "t",
-                                    "in": [1, 2],
+                                    "vars": [{"name": "t", "kind": "int"}],
+                                    "in": [{"t": 1}, {"t": 2}],
                                     "body": [
-                                        {"command": {"device": "FE", "verb": "nope_verb"}}
+                                        {"record": {"into": "nope_stream", "value": 1}}
                                     ],
                                 }
                             },
@@ -443,8 +445,8 @@ def test_a_spaced_group_name_still_dedups_to_the_authored_path() -> None:
 def test_dedup_key_includes_the_message_not_just_category_and_path() -> None:
     """Minor 1 (final W9 review): two per-copy diagnostics that remap to the SAME authored
     path but carry DIFFERENT messages must both survive -- only exact duplicates collapse.
-    Here a for_each's 'into' hole is substituted with the loop variable itself, so each
-    copy names a different (equally unusable) binding: 'compute into '1'/'2' is not a
+    Here a for_each's `t: string` var is substituted whole into a compute `into` hole, so
+    each copy names a different (equally unusable) binding: 'compute into '1'/'2' is not a
     usable binding name'. Dropping `message` from the dedup key would wrongly collapse
     these two distinct diagnostics into one, silently hiding one copy's report."""
     doc = ExperimentDoc.model_validate(
@@ -452,14 +454,13 @@ def test_dedup_key_includes_the_message_not_just_category_and_path() -> None:
             "doc_version": 1,
             "name": "distinct-messages-one-path",
             "description": None,
-            "roles": {},
             "workflow": {
-                "schema_version": 1,
+                "schema_version": 2,
                 "blocks": [
                     {
                         "for_each": {
-                            "var": "t",
-                            "in": [1, 2],
+                            "vars": [{"name": "t", "kind": "string"}],
+                            "in": [{"t": "1"}, {"t": "2"}],
                             "body": [{"compute": {"into": "{t}", "value": 1}}],
                         }
                     }
@@ -480,24 +481,23 @@ def test_dedup_key_includes_the_message_not_just_category_and_path() -> None:
 def test_a_plain_group_calling_a_parametrized_group_does_not_corrupt_the_path() -> None:
     """Minor 2 (final W9 review): `_remap_group_segment`'s `not mapped.startswith(prefix)`
     containment guard is load-bearing. Plain group G's body calls parametrized group P
-    (with matching args), so expand.py's group-body pre-pass inlines P's body INTO G's
-    body before G is ever referenced; the trace key for G's slot then points into P's
-    authored body, a DIFFERENT group entirely. Without the guard, the buggy slice produces
-    'G.body[0]' -- a plausible-looking but WRONG path (that slot in G is the group_ref to
-    P, not the compute block actually flagged). With the guard, the raw compound path is
-    carried through unchanged: unclickable, but honest (design §5.3's documented
-    passthrough) -- never guess at the wrong block."""
+    (with a matching typed `x: int` arg), so expand.py's group-body pre-pass inlines P's
+    body INTO G's body before G is ever referenced; the trace key for G's slot then points
+    into P's authored body, a DIFFERENT group entirely. Without the guard, the buggy slice
+    produces 'G.body[0]' -- a plausible-looking but WRONG path (that slot in G is the
+    group_ref to P, not the compute block actually flagged). With the guard, the raw
+    compound path is carried through unchanged: unclickable, but honest (design §5.3's
+    documented passthrough) -- never guess at the wrong block."""
     doc = ExperimentDoc.model_validate(
         {
             "doc_version": 1,
             "name": "plain-group-calling-parametrized-group",
             "description": None,
-            "roles": {},
             "workflow": {
-                "schema_version": 1,
+                "schema_version": 2,
                 "groups": {
                     "P": {
-                        "params": ["x"],
+                        "params": [{"name": "x", "kind": "int"}],
                         "body": [
                             {"compute": {"into": "y", "value": "nope_undeclared_thing"}}
                         ],

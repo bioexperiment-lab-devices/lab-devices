@@ -14,7 +14,7 @@ const content = (name: string) => ({
 })
 
 const draft = (serverId: string | null, dirty: boolean, name = 'doc'): Draft => ({
-  v: 1,
+  v: 2,
   serverId,
   // A dirty draft's savedSnapshot deliberately disagrees with its content.
   savedSnapshot: dirty ? 'STALE' : JSON.stringify(content(name)),
@@ -61,7 +61,7 @@ describe('decideBoot', () => {
       defaults: { retry: { attempts: 1 } },
     }
     const d: Draft = {
-      v: 1,
+      v: 2,
       serverId: 'X',
       savedSnapshot: snapshotOf(orderedContent),
       content: orderedContent,

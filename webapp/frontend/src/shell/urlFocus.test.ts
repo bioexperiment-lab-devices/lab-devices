@@ -21,7 +21,7 @@ const load = (): void =>
       roles: {},
       streams: {},
       tree: [wait('w1'), wait('w2')],
-      groups: { dose: { params: [], body: [wait('g1'), wait('g2')] } },
+      groups: { dose: { params: [], locals: {}, body: [wait('g1'), wait('g2')] } },
     },
     'srv1',
   )

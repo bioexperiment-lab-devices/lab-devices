@@ -129,11 +129,11 @@ describe('treeToDoc', () => {
       doc_version: 1,
       name: 'Retry test',
       description: null,
-      roles: { od_meter: { type: 'densitometer' } },
       workflow: {
-        schema_version: 1,
+        schema_version: 2,
         metadata: { name: 'Retry test' },
         persistence: { default: 'in_memory', format: 'jsonl' },
+        roles: { od_meter: { type: 'densitometer' } },
         streams: {},
         blocks,
       },
@@ -149,9 +149,8 @@ describe('treeToDoc', () => {
       doc_version: 1,
       name: 'Defaults test',
       description: null,
-      roles: {},
       workflow: {
-        schema_version: 1,
+        schema_version: 2,
         metadata: { name: 'Defaults test' },
         persistence: { default: 'in_memory', format: 'jsonl' },
         streams: {},
@@ -171,9 +170,8 @@ describe('treeToDoc', () => {
       doc_version: 1,
       name: 'Metadata test',
       description: null,
-      roles: {},
       workflow: {
-        schema_version: 1,
+        schema_version: 2,
         metadata: {
           name: 'Metadata test',
           author: 'lab-devices examples',
@@ -197,9 +195,8 @@ describe('treeToDoc', () => {
       doc_version: 1,
       name: 'Original name',
       description: null,
-      roles: {},
       workflow: {
-        schema_version: 1,
+        schema_version: 2,
         metadata: { name: 'Original name', author: 'someone', description: 'about this doc' },
         persistence: { default: 'in_memory', format: 'jsonl' },
         streams: {},
@@ -225,9 +222,8 @@ describe('treeToDoc', () => {
       doc_version: 1,
       name: 'Persistence test',
       description: null,
-      roles: {},
       workflow: {
-        schema_version: 1,
+        schema_version: 2,
         metadata: { name: 'Persistence test' },
         persistence: { default: 'disk' },
         streams: {},
@@ -251,9 +247,8 @@ describe('treeToDoc', () => {
       doc_version: 1,
       name: 'Stream persistence test',
       description: null,
-      roles: {},
       workflow: {
-        schema_version: 1,
+        schema_version: 2,
         metadata: { name: 'Stream persistence test' },
         persistence: { default: 'in_memory', format: 'jsonl' },
         streams: { od: { units: 'AU', persistence: 'disk' } },
@@ -312,9 +307,8 @@ describe('control blocks', () => {
     doc_version: 1,
     name: 'control',
     description: null,
-    roles: {},
     workflow: {
-      schema_version: 1,
+      schema_version: 2,
       metadata: { name: 'control' },
       persistence: { default: 'in_memory', format: 'jsonl' },
       streams: { c_series: { units: null } },
@@ -361,64 +355,74 @@ describe('control blocks', () => {
 })
 
 describe('repetition blocks', () => {
-  // Key order mirrors the engine's canonical order (serialize.py:426-450): schema_version,
-  // metadata, persistence, defaults, streams, groups, blocks. `defaults`/`groups` are spread
-  // in at their canonical position (conditionally, so an absent one is omitted) rather than
-  // via a trailing `...workflow` spread — a trailing spread only overwrites a key's value in
-  // place when the key already exists in the base literal, but `groups` doesn't, so it would
-  // land wherever the spread appears (after `blocks`) instead of before it.
+  // Key order mirrors the engine's canonical order (workflow_to_dict): schema_version,
+  // metadata, persistence, defaults, roles, streams, groups, blocks. `defaults`/`roles`/`groups`
+  // are spread in at their canonical position (conditionally, so an absent one is omitted)
+  // rather than via a trailing `...workflow` spread — a trailing spread only overwrites a key's
+  // value in place when the key already exists in the base literal, but `groups`/`roles` don't,
+  // so one would land wherever the spread appears (after `blocks`) instead of before it.
   const doc = (workflow: Partial<WorkflowJson>): ExperimentDocJson => ({
     doc_version: 1,
     name: 'macro',
     description: null,
-    roles: {},
     workflow: {
-      schema_version: workflow.schema_version ?? 1,
+      schema_version: workflow.schema_version ?? 2,
       metadata: workflow.metadata ?? { name: 'macro' },
       persistence: workflow.persistence ?? { default: 'in_memory', format: 'jsonl' },
       ...(workflow.defaults !== undefined ? { defaults: workflow.defaults } : {}),
+      ...(workflow.roles !== undefined ? { roles: workflow.roles } : {}),
       streams: workflow.streams ?? {},
       ...(workflow.groups !== undefined ? { groups: workflow.groups } : {}),
       blocks: workflow.blocks ?? [],
     },
   })
 
-  it('round-trips a for_each with scalar items', () => {
+  it('round-trips a for_each with typed vars and rows', () => {
+    const input = doc({ blocks: [{ for_each: {
+      vars: [{ name: 'tube', kind: 'int' }],
+      in: [{ tube: 1 }, { tube: 2 }, { tube: 3 }],
+      body: [{ wait: { duration: '{tube}s' } }],
+    } }] })
+    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
+  })
+
+  it('round-trips typed group params, locals, and a group_ref with as + args', () => {
     const input = doc({
-      blocks: [{ for_each: { var: 'tube', in: [1, 2, 3], body: [{ wait: { duration: '{tube}s' } }] } }],
+      groups: { service: {
+        params: [{ name: 'tube', kind: 'int' }, { name: 'od', kind: 'stream' }],
+        locals: { c: { kind: 'binding', init: '0' }, c_series: { kind: 'stream', units: 'x_MIC' } },
+        body: [{ compute: { into: '{c}', value: 'c * 0.9' } }],
+      } },
+      blocks: [{ group_ref: { name: 'service', as: 'tube_{tube}', args: { tube: 1, od: 'od_1' } } }],
     })
     expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
   })
 
-  it('round-trips a for_each with object items and no var', () => {
-    const input = doc({
-      blocks: [{ for_each: { in: [{ tube: 1, port: 2 }], body: [{ wait: { duration: '{tube}s' } }] } }],
-    })
+  it('round-trips a plain param-less, as-less group_ref unchanged', () => {
+    const input = doc({ groups: { wash: { body: [{ wait: { duration: '1s' } }] } },
+      blocks: [{ group_ref: { name: 'wash' } }] })
     expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
   })
 
-  it('round-trips parametrized groups and a group_ref with args', () => {
-    const input = doc({
-      groups: { service: { params: ['tube'], body: [{ wait: { duration: '{tube}s' } }] } },
-      blocks: [{ group_ref: { name: 'service', args: { tube: 1 } } }],
-    })
-    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
-  })
-
-  it('round-trips a plain param-less group_ref unchanged', () => {
-    const input = doc({
-      groups: { wash: { body: [{ wait: { duration: '1s' } }] } },
-      blocks: [{ group_ref: { name: 'wash' } }],
-    })
-    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
-  })
-
-  it('parses a for_each into a node with a body slot', () => {
-    const tree = docToTree(
-      doc({ blocks: [{ for_each: { var: 't', in: [1], body: [{ wait: { duration: '1s' } }] } }] }),
-    ).tree
-    expect(tree[0]).toMatchObject({ kind: 'for_each', var: 't', items: [1] })
+  it('parses a for_each into a node with typed vars/rows and a body slot', () => {
+    const tree = docToTree(doc({ blocks: [{ for_each: {
+      vars: [{ name: 't', kind: 'int' }], in: [{ t: 1 }], body: [{ wait: { duration: '1s' } }],
+    } }] })).tree
+    expect(tree[0]).toMatchObject({ kind: 'for_each', vars: [{ name: 't', kind: 'int' }], rows: [{ t: 1 }] })
     expect((tree[0] as ForEachNode).body).toHaveLength(1)
+  })
+
+  it('emits roles inside the workflow, not the envelope', () => {
+    const out = treeToDoc(docToTree(doc({ blocks: [] })))
+    expect('roles' in out).toBe(false)
+    const withRole = treeToDoc({ name: 'x', description: null, roles: { p: { type: 'pump' } }, streams: {}, tree: [] })
+    expect(withRole.workflow.roles).toEqual({ p: { type: 'pump' } })
+    expect(Object.keys(withRole.workflow)).toEqual(['schema_version', 'metadata', 'persistence', 'roles', 'streams', 'blocks'])
+  })
+
+  it('round-trips a role carrying an optional direct device binding', () => {
+    const input = doc({ roles: { medium_pump: { type: 'pump', device: 'pump_2' } }, blocks: [] })
+    expect(JSON.stringify(treeToDoc(docToTree(input)))).toBe(JSON.stringify(input))
   })
 
   it('omits groups entirely when the doc has none', () => {

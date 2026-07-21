@@ -28,10 +28,10 @@ const tree: BlockNode[] = [
 ]
 
 const groups: GroupsMap = {
-  dose: { params: [], body: [wait('g1'), wait('g2')] },
+  dose: { body: [wait('g1'), wait('g2')] },
   // A name carrying BOTH quote characters: paths.ts's quoteGroupName cannot spell it, so
   // pathForUid returns null for anything inside it.
-  [`it's "odd"`]: { params: [], body: [wait('q1')] },
+  [`it's "odd"`]: { body: [wait('q1')] },
 }
 
 const view = (over: Partial<SyncView> = {}): SyncView => ({
@@ -232,7 +232,7 @@ describe('viewFromUrl', () => {
     it('still accepts a group that genuinely OWNS one of those names', () => {
       // The rule is ownership, not a denylist of names: a group really called `toString` is
       // legal (convert.ts loads keys verbatim) and must still open.
-      const shadowed: GroupsMap = { ...groups, toString: { params: [], body: [wait('t1')] } }
+      const shadowed: GroupsMap = { ...groups, toString: { body: [wait('t1')] } }
       expect(viewFromUrl(url({ scope: 'toString' }), tree, shadowed).scope).toBe('toString')
     })
   })

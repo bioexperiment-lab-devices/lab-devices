@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import copy
 import dataclasses
 import json
 import logging
@@ -25,13 +26,11 @@ from lab_devices.experiment import (
     WorkflowLoadError,
     workflow_from_dict,
 )
-from lab_devices.experiment.expand import expand_dict
 
 from experiment_studio.db import Database
 from experiment_studio.docs_store import ExperimentDoc, ExperimentsStore
 from experiment_studio.inputs import WebInputProvider
 from experiment_studio.records import RecordsStore
-from experiment_studio.roles import substitute
 from experiment_studio.sinks import TeeRunLogSink
 
 _LOG = logging.getLogger(__name__)
@@ -98,20 +97,19 @@ def _diag(role: str, message: str) -> dict[str, str]:
     return {"category": "mapping", "path": f"roles[{role!r}]", "message": message}
 
 
-def _mapping_diagnostics(
+def _mapping_shape_diagnostics(
     doc: ExperimentDoc, role_mapping: dict[str, str]
 ) -> list[dict[str, str]]:
-    """§7.1.2 shape checks (roster existence is checked separately, needs the lab)."""
+    """§7.1.2 lab-independent checks: every declared role is mapped, and no mapping key names
+    an undeclared role. Device EXISTENCE and TYPE need the live roster (the engine can't see
+    the lab) and are checked in `_start_checked`."""
+    roles = doc.workflow.get("roles", {})
+    roles = roles if isinstance(roles, dict) else {}
     diagnostics: list[dict[str, str]] = []
-    for role, spec in doc.roles.items():
-        device_id = role_mapping.get(role)
-        if device_id is None:
+    for role in roles:
+        if role_mapping.get(role) is None:
             diagnostics.append(_diag(role, f"role {role!r} is not mapped to a device"))
-        elif device_id.rsplit("_", 1)[0] != spec.type:
-            diagnostics.append(
-                _diag(role, f"device {device_id!r} is not a {spec.type!r}")
-            )
-    for extra in sorted(set(role_mapping) - set(doc.roles)):
+    for extra in sorted(set(role_mapping) - set(roles)):
         diagnostics.append(_diag(extra, f"mapping references unknown role {extra!r}"))
     return diagnostics
 
@@ -262,7 +260,7 @@ class RunManager:
             raise RunActiveError(active.run_id)
         stored = await ExperimentsStore(self._db).get(experiment_id)
         doc = ExperimentDoc.model_validate(stored["doc"])
-        diagnostics = _mapping_diagnostics(doc, role_mapping)
+        diagnostics = _mapping_shape_diagnostics(doc, role_mapping)
         if diagnostics:
             raise PreflightError(diagnostics)
         info = await self._registry.lookup(lab)
@@ -284,24 +282,25 @@ class RunManager:
         lab: str,
         role_mapping: dict[str, str],
     ) -> str:
-        present = {device.id for device in await client.list_devices() if device.id}
-        roster_diags = [
-            _diag(role, f"device {device_id!r} not found in lab {lab!r}")
-            for role, device_id in sorted(role_mapping.items())
-            if device_id not in present
-        ]
+        roster = {
+            device.id: device.type
+            for device in await client.list_devices()
+            if device.id
+        }
+        roles = doc.workflow.get("roles", {})
+        roles = roles if isinstance(roles, dict) else {}
+        roster_diags: list[dict[str, str]] = []
+        for role, device_id in sorted(role_mapping.items()):
+            spec = roles.get(role)
+            rtype = spec.get("type") if isinstance(spec, dict) else None
+            if device_id not in roster:
+                roster_diags.append(_diag(role, f"device {device_id!r} not found in lab {lab!r}"))
+            elif roster[device_id] != rtype:
+                roster_diags.append(_diag(role, f"device {device_id!r} is not a {rtype!r}"))
         if roster_diags:
             raise PreflightError(roster_diags)
-        try:
-            expanded = expand_dict(doc.workflow)  # for_each/group(tube) -> concrete roles (§9)
-        except WorkflowLoadError as exc:
-            raise PreflightError(
-                [{"category": "expansion", "path": "workflow", "message": str(exc)}]
-            ) from exc
-        substituted, ref_diags = substitute(expanded, role_mapping)
-        if ref_diags:
-            raise PreflightError(ref_diags)
-        _force_disk_persistence(substituted)
+        workflow_dict = copy.deepcopy(doc.workflow)
+        _force_disk_persistence(workflow_dict)  # §7.2 still applies to the run copy
 
         run_id = str(uuid4())
         dir_rel = f"runs/{run_id}"
@@ -321,9 +320,7 @@ class RunManager:
         )
         try:
             (artifact_dir / "doc.json").write_text(json.dumps(stored["doc"], indent=2))
-            (artifact_dir / "workflow.json").write_text(
-                json.dumps(substituted, indent=2)
-            )
+            (artifact_dir / "workflow.json").write_text(json.dumps(workflow_dict, indent=2))
 
             tee = TeeRunLogSink()
             inputs = WebInputProvider()
@@ -331,12 +328,13 @@ class RunManager:
                 log_sink=tee,
                 input_provider=inputs,
                 output_dir=artifact_dir,
+                role_mapping=role_mapping,
                 **self._run_options,
             )
             try:
-                # construction runs the engine validator against the REAL device ids —
-                # this is the real-mapping re-validation (two roles on one device etc.)
-                run = ExperimentRun(client, workflow_from_dict(substituted), options)
+                # The engine resolves roles (injectivity BEFORE validate), validates against the
+                # real mapping, and expands (design 2026-07-20 §5.4).
+                run = ExperimentRun(client, workflow_from_dict(workflow_dict), options)
             except (ValidationError, WorkflowLoadError) as exc:
                 diagnostics = _engine_diagnostics(exc)
                 ended_at = _utc_now()

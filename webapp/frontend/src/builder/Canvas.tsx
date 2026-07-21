@@ -160,7 +160,9 @@ function ScopeSwitcher() {
         {groupNames.map((g) => (
           <option key={g} value={g}>
             {g}
-            {groups[g].params.length > 0 ? `(${groups[g].params.join(', ')})` : ''}
+            {groups[g].params.length > 0
+              ? `(${groups[g].params.map((p) => p.name).join(', ')})`
+              : ''}
           </option>
         ))}
       </select>

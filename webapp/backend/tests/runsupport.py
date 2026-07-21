@@ -59,18 +59,21 @@ def make_doc(
     roles: dict[str, dict[str, str]] | None = None,
     streams: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    """A schema-2 experiment doc. Roles live INSIDE the workflow now (design 2026-07-20 §5);
+    the envelope carries no `roles` key. `device:` fields hold role names the engine resolves
+    via RunOptions.role_mapping at run start."""
     return {
         "doc_version": 1,
         "name": name,
-        "roles": (
-            roles
-            if roles is not None
-            else {"feed": {"type": "pump"}, "meter": {"type": "densitometer"}}
-        ),
         "workflow": {
-            "schema_version": 1,
+            "schema_version": 2,
             "metadata": {"name": name},
             "persistence": {"default": "in_memory", "format": "jsonl"},
+            "roles": (
+                roles
+                if roles is not None
+                else {"feed": {"type": "pump"}, "meter": {"type": "densitometer"}}
+            ),
             "streams": streams if streams is not None else {"od": {"units": "AU"}},
             "blocks": blocks,
         },

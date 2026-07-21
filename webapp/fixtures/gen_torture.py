@@ -203,9 +203,11 @@ def build() -> dict[str, Any]:
         {"alarm": {"if": "od_01 > 0.95", "message": LONG_MSG}},
 
         # --- repetition ------------------------------------------------------------------------
-        {"for_each": {"var": "tube", "in": [1, 2, 3],
+        {"for_each": {"vars": [{"name": "tube", "kind": "int"}],
+                      "in": [{"tube": 1}, {"tube": 2}, {"tube": 3}],
                       "body": [meas(METERS[0], "measure", into="od_01")]}},
-        {"for_each": {"in": [{"tube": 1, "port": 2}, {"tube": 2, "port": 3}],
+        {"for_each": {"vars": [{"name": "tube", "kind": "int"}, {"name": "port", "kind": "int"}],
+                      "in": [{"tube": 1, "port": 2}, {"tube": 2, "port": 3}],
                       "body": [cmd(VALVES[0], "set_position", position=1)]}},
 
         # --- group refs, incl. the spaced name --------------------------------------------------
@@ -233,14 +235,14 @@ def build() -> dict[str, Any]:
     ]
 
     groups: dict[str, Any] = {
-        "service": {"params": ["tube"], "body": [
+        "service": {"params": [{"name": "tube", "kind": "int"}], "body": [
             cmd(PUMPS[0], "dispense", volume_ml=1.0, speed_ml_min=2.0),
             {"wait": {"duration": "10s"}},
         ]},
         # The W9 compound-path trap: a space inside a structural token. repr() puts no
         # restriction on group names and import never enforces one — GROUP_NAME_RE guards only
         # addGroup/renameGroup. Compound + bare + spaced fails closed, by documented design.
-        "wash cycle": {"params": ["port"], "body": [
+        "wash cycle": {"params": [{"name": "port", "kind": "int"}], "body": [
             cmd(VALVES[0], "set_position", position=1),
             cmd(PUMPS[1], "dispense", volume_ml=5.0, speed_ml_min=5.0),
         ]},
@@ -248,7 +250,10 @@ def build() -> dict[str, Any]:
             blk("wait", {"duration": "5s"}, label=LONG_LABEL_GROUP_WAIT),
         ]},
         "empty_body_group": {"body": []},
-        "deep_group": {"params": ["a", "b", "c", "d", "e"], "body": [deep_nest(4)]},
+        "deep_group": {
+            "params": [{"name": n, "kind": "int"} for n in ("a", "b", "c", "d", "e")],
+            "body": [deep_nest(4)],
+        },
     }
     assert len(groups) >= 5, f"need >= 5 groups, got {len(groups)}"
 
@@ -261,10 +266,10 @@ def build() -> dict[str, Any]:
             "binding references so ProblemsPanel has something to render. Regenerate with "
             "`python3 webapp/fixtures/gen_torture.py`."
         ),
-        "roles": roles,
         "workflow": {
-            "schema_version": 1,
+            "schema_version": 2,
             "metadata": {"author": "ui-audit", "description": "torture"},
+            "roles": roles,
             "streams": streams,
             "groups": groups,
             "blocks": blocks,

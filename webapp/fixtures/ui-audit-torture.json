@@ -2,58 +2,58 @@
   "doc_version": 1,
   "name": "UI audit torture",
   "description": "Boundary-stress fixture for the UI audit (design 2026-07-17 \u00a76.2). NOT a runnable experiment and NOT a design reference \u2014 it deliberately contains invalid stream and binding references so ProblemsPanel has something to render. Regenerate with `python3 webapp/fixtures/gen_torture.py`.",
-  "roles": {
-    "pump_01": {
-      "type": "pump"
-    },
-    "pump_02": {
-      "type": "pump"
-    },
-    "pump_03": {
-      "type": "pump"
-    },
-    "pump_04": {
-      "type": "pump"
-    },
-    "pump_05": {
-      "type": "pump"
-    },
-    "pump_06": {
-      "type": "pump"
-    },
-    "valve_01": {
-      "type": "valve"
-    },
-    "valve_02": {
-      "type": "valve"
-    },
-    "valve_03": {
-      "type": "valve"
-    },
-    "valve_04": {
-      "type": "valve"
-    },
-    "valve_05": {
-      "type": "valve"
-    },
-    "od_meter_01": {
-      "type": "densitometer"
-    },
-    "od_meter_02": {
-      "type": "densitometer"
-    },
-    "od_meter_03": {
-      "type": "densitometer"
-    },
-    "role_nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn": {
-      "type": "pump"
-    }
-  },
   "workflow": {
-    "schema_version": 1,
+    "schema_version": 2,
     "metadata": {
       "author": "ui-audit",
       "description": "torture"
+    },
+    "roles": {
+      "pump_01": {
+        "type": "pump"
+      },
+      "pump_02": {
+        "type": "pump"
+      },
+      "pump_03": {
+        "type": "pump"
+      },
+      "pump_04": {
+        "type": "pump"
+      },
+      "pump_05": {
+        "type": "pump"
+      },
+      "pump_06": {
+        "type": "pump"
+      },
+      "valve_01": {
+        "type": "valve"
+      },
+      "valve_02": {
+        "type": "valve"
+      },
+      "valve_03": {
+        "type": "valve"
+      },
+      "valve_04": {
+        "type": "valve"
+      },
+      "valve_05": {
+        "type": "valve"
+      },
+      "od_meter_01": {
+        "type": "densitometer"
+      },
+      "od_meter_02": {
+        "type": "densitometer"
+      },
+      "od_meter_03": {
+        "type": "densitometer"
+      },
+      "role_nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn": {
+        "type": "pump"
+      }
     },
     "streams": {
       "od_01": {
@@ -156,7 +156,10 @@
     "groups": {
       "service": {
         "params": [
-          "tube"
+          {
+            "name": "tube",
+            "kind": "int"
+          }
         ],
         "body": [
           {
@@ -178,7 +181,10 @@
       },
       "wash cycle": {
         "params": [
-          "port"
+          {
+            "name": "port",
+            "kind": "int"
+          }
         ],
         "body": [
           {
@@ -217,11 +223,26 @@
       },
       "deep_group": {
         "params": [
-          "a",
-          "b",
-          "c",
-          "d",
-          "e"
+          {
+            "name": "a",
+            "kind": "int"
+          },
+          {
+            "name": "b",
+            "kind": "int"
+          },
+          {
+            "name": "c",
+            "kind": "int"
+          },
+          {
+            "name": "d",
+            "kind": "int"
+          },
+          {
+            "name": "e",
+            "kind": "int"
+          }
         ],
         "body": [
           {
@@ -744,11 +765,22 @@
       },
       {
         "for_each": {
-          "var": "tube",
+          "vars": [
+            {
+              "name": "tube",
+              "kind": "int"
+            }
+          ],
           "in": [
-            1,
-            2,
-            3
+            {
+              "tube": 1
+            },
+            {
+              "tube": 2
+            },
+            {
+              "tube": 3
+            }
           ],
           "body": [
             {
@@ -763,6 +795,16 @@
       },
       {
         "for_each": {
+          "vars": [
+            {
+              "name": "tube",
+              "kind": "int"
+            },
+            {
+              "name": "port",
+              "kind": "int"
+            }
+          ],
           "in": [
             {
               "tube": 1,

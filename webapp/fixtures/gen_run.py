@@ -86,11 +86,11 @@ def build() -> dict[str, Any]:
             "Run tab's post-preflight states and the Records viewer are reachable. NOT a "
             "realistic experiment. Regenerate with `python3 webapp/fixtures/gen_run.py`."
         ),
-        "roles": {"feed": {"type": "pump"}, "meter": {"type": "densitometer"}},
         "workflow": {
-            "schema_version": 1,
+            "schema_version": 2,
             "metadata": {"name": "UI audit run"},
             "persistence": {"default": "in_memory", "format": "jsonl"},
+            "roles": {"feed": {"type": "pump"}, "meter": {"type": "densitometer"}},
             "streams": {"od": {"units": "AU"}},
             "blocks": blocks,
         },

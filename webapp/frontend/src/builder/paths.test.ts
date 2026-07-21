@@ -92,7 +92,7 @@ describe('resolveDiagnosticPath', () => {
   })
 
   it('resolves a group body path to the group scope', () => {
-    const groups: GroupsMap = { service: { params: ['tube'], body: [waitNode] } }
+    const groups: GroupsMap = { service: { body: [waitNode] } }
     expect(resolveDiagnosticPath([], groups, "groups['service'].body[0]")).toMatchObject({
       uid: waitNode.uid,
       scope: 'service',
@@ -103,7 +103,6 @@ describe('resolveDiagnosticPath', () => {
     const inner = wait('inner')
     const groups: GroupsMap = {
       service: {
-        params: [],
         body: [
           {
             uid: 'l2', kind: 'loop', mode: 'count', count: 1, until: '', check: 'after',
@@ -119,12 +118,12 @@ describe('resolveDiagnosticPath', () => {
   })
 
   it('returns uid null (not the wrong block) for an out-of-range group-body index', () => {
-    const groups: GroupsMap = { service: { params: [], body: [waitNode] } }
+    const groups: GroupsMap = { service: { body: [waitNode] } }
     expect(resolveDiagnosticPath([], groups, "groups['service'].body[5]").uid).toBeNull()
   })
 
   it('accepts a double-quoted group name — Python repr flips quote style for an apostrophe', () => {
-    const groups: GroupsMap = { "o'brien": { params: [], body: [waitNode] } }
+    const groups: GroupsMap = { "o'brien": { body: [waitNode] } }
     const r = resolveDiagnosticPath([], groups, `groups["o'brien"].body[0]`)
     expect(r).toMatchObject({ uid: waitNode.uid, scope: "o'brien" })
   })
@@ -133,7 +132,7 @@ describe('resolveDiagnosticPath', () => {
     // Pre-fix, `path.indexOf(' ')` found the space INSIDE the quoted name and mistook it
     // for a suffix boundary that does not exist, leaving `structural` as the truncated
     // `groups['a` — uid null even though there is no compound/suffix anywhere in this path.
-    const groups: GroupsMap = { 'a b': { params: [], body: [waitNode] } }
+    const groups: GroupsMap = { 'a b': { body: [waitNode] } }
     const r = resolveDiagnosticPath([], groups, "groups['a b'].body[0]")
     expect(r).toMatchObject({ uid: waitNode.uid, scope: 'a b' })
   })
@@ -142,13 +141,13 @@ describe('resolveDiagnosticPath', () => {
     // Pre-fix, `structural.lastIndexOf('->')` found the arrow INSIDE the quoted name and
     // took the direct group-scope path for a compound one, whose GROUP_SEGMENT_RE then
     // failed on the mangled remainder — uid null for a fully direct, non-compound path.
-    const groups: GroupsMap = { 'a->b': { params: [], body: [waitNode] } }
+    const groups: GroupsMap = { 'a->b': { body: [waitNode] } }
     const r = resolveDiagnosticPath([], groups, "groups['a->b'].body[0]")
     expect(r).toMatchObject({ uid: waitNode.uid, scope: 'a->b' })
   })
 
   it('resolves a group name containing a space AND carries a context suffix (Finding 1)', () => {
-    const groups: GroupsMap = { 'a b': { params: [], body: [waitNode] } }
+    const groups: GroupsMap = { 'a b': { body: [waitNode] } }
     const r = resolveDiagnosticPath([], groups, "groups['a b'].body[0] compute value")
     expect(r).toMatchObject({ uid: waitNode.uid, scope: 'a b' })
   })
@@ -157,7 +156,7 @@ describe('resolveDiagnosticPath', () => {
     // validate.py:894/:940 f"{path}->{b.name}.body" — a plain group's body is expanded in
     // place (expand.py:270-274), so the call-site prefix before `->` is context only; the
     // authored, editable location is inside the group, which is where scope must switch to.
-    const groups: GroupsMap = { mygroup: { params: [], body: [waitNode] } }
+    const groups: GroupsMap = { mygroup: { body: [waitNode] } }
     const r = resolveDiagnosticPath(tree, groups, 'blocks[0].children[1]->mygroup.body[0] compute value')
     expect(r).toMatchObject({ uid: waitNode.uid, scope: 'mygroup' })
   })
@@ -171,8 +170,8 @@ describe('resolveDiagnosticPath', () => {
     // as the cross-language seam for Finding 1: the head's embedded space must not be
     // mistaken for the suffix boundary, nor should it hide the real compound arrow.
     const groups: GroupsMap = {
-      'param group': { params: ['tube'], body: [] },
-      plaingroup: { params: [], body: [waitNode] },
+      'param group': { body: [] },
+      plaingroup: { body: [waitNode] },
     }
     const r = resolveDiagnosticPath(
       [],
@@ -185,15 +184,15 @@ describe('resolveDiagnosticPath', () => {
   it('resolves a doubly-compound path to the INNERMOST group, not the first', () => {
     const inner = wait('g2w0')
     const groups: GroupsMap = {
-      g1: { params: [], body: [wait('g1w0')] },
-      g2: { params: [], body: [inner] },
+      g1: { body: [wait('g1w0')] },
+      g2: { body: [inner] },
     }
     const r = resolveDiagnosticPath(tree, groups, 'blocks[0]->g1.body[0]->g2.body[0]')
     expect(r).toMatchObject({ uid: inner.uid, scope: 'g2' })
   })
 
   it('returns uid null (not the wrong block) for an out-of-range index in a compound path', () => {
-    const groups: GroupsMap = { mygroup: { params: [], body: [waitNode] } }
+    const groups: GroupsMap = { mygroup: { body: [waitNode] } }
     expect(
       resolveDiagnosticPath(tree, groups, 'blocks[0]->mygroup.body[5]').uid,
     ).toBeNull()
@@ -204,7 +203,8 @@ describe('resolveDiagnosticPath', () => {
     // this pins that behavior against a regression.
     const innerNode = wait('inner')
     const forEachNode: ForEachNode = {
-      uid: 'fe', kind: 'for_each', var: 'tube', items: [1, 2, 3], body: [innerNode], ...base,
+      uid: 'fe', kind: 'for_each', vars: [{ name: 'tube', kind: 'int' }],
+      rows: [{ tube: 1 }, { tube: 2 }, { tube: 3 }], body: [innerNode], ...base,
     }
     expect(resolveDiagnosticPath([forEachNode], {}, 'blocks[0].body[0]').uid).toBe(innerNode.uid)
   })
@@ -224,8 +224,7 @@ const singleWaitDoc = () =>
     doc_version: 1,
     name: 't',
     description: null,
-    roles: {},
-    workflow: { schema_version: 1, blocks: [{ wait: { duration: '1s' } }] },
+    workflow: { schema_version: 2, blocks: [{ wait: { duration: '1s' } }] },
   }) as unknown as ExperimentDocJson
 
 describe('pathForUid', () => {
@@ -249,7 +248,7 @@ describe('pathForUid', () => {
     // That form describes a group RENDERED at a call site, not an authored location, so it
     // has no writer (design §4.1). Every path this file emits addresses where the node was
     // AUTHORED: the main tree, or the group's own body.
-    const groups: GroupsMap = { mygroup: { params: [], body: [waitNode] } }
+    const groups: GroupsMap = { mygroup: { body: [waitNode] } }
     const path = pathForUid(tree, groups, waitNode.uid)
     expect(path).toBe("groups['mygroup'].body[0]")
     expect(path).not.toContain('->')
@@ -292,7 +291,7 @@ describe('pathForUid', () => {
     'round-trips inside a group named %j',
     (name) => {
       const groups: GroupsMap = {
-        [name]: { params: [], body: docToTree(singleWaitDoc()).tree },
+        [name]: { body: docToTree(singleWaitDoc()).tree },
       }
       const uid = groups[name].body[0].uid
       const path = pathForUid([], groups, uid)
@@ -309,7 +308,7 @@ describe('pathForUid', () => {
     // spelling would be misparsed. Emitting nothing beats emitting a path that resolves to
     // the wrong node (or to null) downstream.
     const name = `a'b"c`
-    const groups: GroupsMap = { [name]: { params: [], body: [waitNode] } }
+    const groups: GroupsMap = { [name]: { body: [waitNode] } }
     expect(pathForUid([], groups, waitNode.uid)).toBeNull()
   })
 })
@@ -330,7 +329,7 @@ describe('mapDiagnostics', () => {
   })
 
   it('resolves a group-scope diagnostic and carries its scope through', () => {
-    const groups: GroupsMap = { service: { params: [], body: [waitNode] } }
+    const groups: GroupsMap = { service: { body: [waitNode] } }
     const mapped = mapDiagnostics(tree, groups, [
       { category: 'roles', path: "groups['service'].body[0]", message: 'unknown role' },
     ])

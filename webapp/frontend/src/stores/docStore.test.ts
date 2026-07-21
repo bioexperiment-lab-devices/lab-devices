@@ -25,7 +25,7 @@ import {
 const store = () => useDocStore.getState()
 
 const groupRef = (uid: string, name: string): GroupRefNode => ({
-  uid, kind: 'group_ref', name, args: {}, label: null, gapAfter: null, startOffset: null,
+  uid, kind: 'group_ref', name, as: null, args: {}, label: null, gapAfter: null, startOffset: null,
 })
 
 const cmd = (uid: string, device: string): CommandNode => ({
@@ -127,8 +127,7 @@ describe('docStore', () => {
     loadDoc(
       docToTree({
         doc_version: 1, name: 'Loaded', description: null,
-        roles: { p: { type: 'pump' } },
-        workflow: { schema_version: 1, blocks: [] },
+        workflow: { schema_version: 2, roles: { p: { type: 'pump' } }, blocks: [] },
       }),
       'id-123',
     )
@@ -147,9 +146,9 @@ describe('docStore', () => {
     '(I1 — cross-document contamination introduced by the Task 8 carry-through fix)', () => {
     loadDoc(
       docToTree({
-        doc_version: 1, name: 'A', description: null, roles: {},
+        doc_version: 1, name: 'A', description: null,
         workflow: {
-          schema_version: 1,
+          schema_version: 2,
           persistence: { default: 'disk' },
           defaults: { retry: { attempts: 3, backoff: '2s' } },
           streams: {},
@@ -163,8 +162,8 @@ describe('docStore', () => {
 
     loadDoc(
       docToTree({
-        doc_version: 1, name: 'B', description: null, roles: {},
-        workflow: { schema_version: 1, streams: {}, blocks: [] },
+        doc_version: 1, name: 'B', description: null,
+        workflow: { schema_version: 2, streams: {}, blocks: [] },
       }),
       'b-id',
     )
@@ -180,9 +179,9 @@ describe('docStore', () => {
     // change to either reads CLEAN and is silently lost on navigate-away.
     loadDoc(
       docToTree({
-        doc_version: 1, name: 'A', description: null, roles: {},
+        doc_version: 1, name: 'A', description: null,
         workflow: {
-          schema_version: 1,
+          schema_version: 2,
           defaults: { retry: { attempts: 3, backoff: '2s' } },
           streams: {},
           blocks: [],
@@ -202,9 +201,9 @@ describe('docStore', () => {
   it('newDoc() also starts clean of whatever the previously open document carried', () => {
     loadDoc(
       docToTree({
-        doc_version: 1, name: 'A', description: null, roles: {},
+        doc_version: 1, name: 'A', description: null,
         workflow: {
-          schema_version: 1,
+          schema_version: 2,
           persistence: { default: 'disk' },
           defaults: { retry: { attempts: 3 } },
           streams: {},
@@ -223,9 +222,9 @@ describe('docStore', () => {
     'defaults/persistence (I1) — otherwise doc B would inherit doc A\'s author/description', () => {
     loadDoc(
       docToTree({
-        doc_version: 1, name: 'A', description: null, roles: {},
+        doc_version: 1, name: 'A', description: null,
         workflow: {
-          schema_version: 1,
+          schema_version: 2,
           metadata: { name: 'A', author: 'someone', description: 'about A' },
           streams: {},
           blocks: [],
@@ -237,8 +236,8 @@ describe('docStore', () => {
 
     loadDoc(
       docToTree({
-        doc_version: 1, name: 'B', description: null, roles: {},
-        workflow: { schema_version: 1, streams: {}, blocks: [] },
+        doc_version: 1, name: 'B', description: null,
+        workflow: { schema_version: 2, streams: {}, blocks: [] },
       }),
       'b-id',
     )
@@ -250,9 +249,9 @@ describe('docStore', () => {
     'author/description must not read clean after being edited underneath the store', () => {
     loadDoc(
       docToTree({
-        doc_version: 1, name: 'A', description: null, roles: {},
+        doc_version: 1, name: 'A', description: null,
         workflow: {
-          schema_version: 1,
+          schema_version: 2,
           metadata: { name: 'A', author: 'someone' },
           streams: {},
           blocks: [],
@@ -295,14 +294,13 @@ describe('docStore', () => {
         doc_version: 1,
         name: 'macro',
         description: null,
-        roles: {},
         workflow: {
-          schema_version: 1,
+          schema_version: 2,
           metadata: { name: 'macro' },
           persistence: { default: 'in_memory', format: 'jsonl' },
           streams: {},
           groups: {
-            service: { params: ['tube'], body: [{ wait: { duration: '{tube}s' } }] },
+            service: { params: [{ name: 'tube', kind: 'int' }], body: [{ wait: { duration: '{tube}s' } }] },
           },
           blocks: [
             { group_ref: { name: 'service', args: { tube: 1 } } },
@@ -498,9 +496,9 @@ describe('docStore', () => {
     it('the dirty-check covers groups — editing inside a group scope must not read clean', () => {
       loadDoc(
         docToTree({
-          doc_version: 1, name: 'macro', description: null, roles: {},
+          doc_version: 1, name: 'macro', description: null,
           workflow: {
-            schema_version: 1,
+            schema_version: 2,
             streams: {},
             groups: { service: { params: [], body: [] } },
             blocks: [],
@@ -512,6 +510,20 @@ describe('docStore', () => {
       store().setScope('service')
       store().insertBlock(newPaletteNode('wait'), { parentUid: null, slot: 'blocks', index: 0 })
       expect(selectDirty(store())).toBe(true)
+    })
+
+    it('setGroupParams stores typed decls; setGroupLocals stores locals; both round-trip and dirty', () => {
+      loadDoc(docToTree({ doc_version: 1, name: 'g', description: null,
+        workflow: { schema_version: 2, groups: { svc: { body: [] } }, blocks: [] } }), 'id')
+      expect(selectDirty(store())).toBe(false)
+      store().setGroupParams('svc', [{ name: 'tube', kind: 'int' }, { name: 'm', kind: 'role', device_type: 'densitometer' }])
+      store().setGroupLocals('svc', { c: { kind: 'binding', init: '0' } })
+      expect(store().groups.svc.params).toEqual([{ name: 'tube', kind: 'int' }, { name: 'm', kind: 'role', device_type: 'densitometer' }])
+      expect(store().groups.svc.locals).toEqual({ c: { kind: 'binding', init: '0' } })
+      expect(selectDirty(store())).toBe(true)
+      const out = selectDoc(store()).workflow.groups!.svc
+      expect(out.params).toEqual([{ name: 'tube', kind: 'int' }, { name: 'm', kind: 'role', device_type: 'densitometer' }])
+      expect(out.locals).toEqual({ c: { kind: 'binding', init: '0' } })
     })
   })
 })
@@ -535,7 +547,7 @@ describe('loadDoc view rehydration', () => {
   })
 
   it('rehydrates scope, selection and the collapsed map from a draft view', () => {
-    loadDoc({ ...emptyDocContent(), name: 'a', groups: { dose: { params: [], body: [] } } }, 'srv1', {
+    loadDoc({ ...emptyDocContent(), name: 'a', groups: { dose: { params: [], locals: {}, body: [] } } }, 'srv1', {
       scope: 'dose',
       selectedUid: 'u7',
       collapsed: { u7: true },

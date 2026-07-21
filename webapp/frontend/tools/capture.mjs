@@ -383,6 +383,103 @@ const states = [
       }
     },
   },
+  {
+    name: 'group-scope-typed-properties',
+    description:
+      "the group-scope Inspector with nothing selected: groups.service's typed param table " +
+      '(tube:int, od:stream) and locals table (7 bindings/streams with init/units) — the S3 ' +
+      'typed editors replacing the S2 read-only <ul> summaries.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.morbidostat)
+      await selectScope(page, 'service')
+      // The typed editors render one name TextField per declared param/local (placeholder
+      // "name"); the S2 shim rendered plain read-only <li> text and had none of these. Pinned
+      // to morbidostat's actual counts (2 params + 7 locals) rather than ">0" so a row silently
+      // failing to render is caught, not just total absence.
+      const nameFields = await page.evaluate(
+        () => document.querySelectorAll('input[placeholder="name"]').length,
+      )
+      if (nameFields !== 9) {
+        throw new Error(
+          `group scope Inspector rendered ${nameFields} typed name fields, expected 9 (2 params + 7 locals)`,
+        )
+      }
+    },
+  },
+  {
+    name: 'group-ref-kind-aware-args',
+    description:
+      "a group_ref block ('service(tube={tube}, od={od})') selected: `as` marked required " +
+      "(the group declares locals) and one kind-aware arg editor per param — od (stream) " +
+      "renders as a StreamIntoPicker for an ORDINARY stream value, but both tube and od here " +
+      'hold a `{name}` hole (this group_ref lives inside the tube/od for_each, whose body ' +
+      "substitutes its own vars), so ArgField's hole handling must divert both to a mono text " +
+      'field showing the hole literally instead of a picker/NumberField that cannot represent ' +
+      'it (fix wave finding 1: StreamIntoPicker\'s <select> has no matching <option> for a ' +
+      "hole, so it silently displayed the FIRST declared stream — od_1 — instead of {od}).",
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.morbidostat)
+      await selectBlock(page, /^service\(tube=/)
+      const asRequired = await page.evaluate(() =>
+        [...document.querySelectorAll('label')].some(
+          (l) => (l.textContent ?? '').includes('As (call-site prefix)') && (l.textContent ?? '').includes('*'),
+        ),
+      )
+      if (!asRequired) {
+        throw new Error('`as` was not marked required for a group that declares locals')
+      }
+      // Both args are holes here, not literals: `tube` (int) must show "{tube}" in a text
+      // field (a NumberField cannot hold a string at all) and `od` (stream) must show "{od}"
+      // in a text field rather than StreamIntoPicker's <select>, whose options are only real
+      // stream names — none of which is "{od}", so the browser would otherwise fall back to
+      // silently selecting the first one (finding 1).
+      const holeInputValues = await page.evaluate(() =>
+        [...document.querySelectorAll('input')].map((i) => i.value),
+      )
+      if (!holeInputValues.includes('{tube}')) {
+        throw new Error("group_ref args did not display the 'tube' (int) arg's hole {tube} in a text field")
+      }
+      if (!holeInputValues.includes('{od}')) {
+        throw new Error("group_ref args did not display the 'od' (stream) arg's hole {od} in a text field")
+      }
+      // And the od arg must NOT still be showing StreamIntoPicker's select — that's the exact
+      // regression this fix removes (a <select> silently landing on od_1 instead).
+      const streamPickerStillShown = await page.evaluate(() =>
+        [...document.querySelectorAll('select')].some((sel) =>
+          [...sel.options].some((o) => o.value === '__new__'),
+        ),
+      )
+      if (streamPickerStillShown) {
+        throw new Error("group_ref's 'od' arg still rendered StreamIntoPicker's select despite holding a hole")
+      }
+    },
+  },
+  {
+    name: 'for-each-role-grid',
+    description:
+      'the outer for_each (tube:int, meter:role<densitometer>, od:stream) selected: the typed ' +
+      'vars editor plus the typed row grid, whose `meter` column is a role <select> filtered ' +
+      'to densitometer roles — the case design §9.2 calls out by name.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.morbidostat)
+      await selectBlock(page, /^∀For each tube, meter,/)
+      const gridPresent = (await page.locator('table').count()) > 0
+      if (!gridPresent) {
+        throw new Error('for_each Inspector did not render the row grid')
+      }
+      const roleColumnFiltered = await page.evaluate(() =>
+        [...document.querySelectorAll('table select')].some((sel) =>
+          [...sel.options].some((o) => o.value === 'od_meter_1'),
+        ),
+      )
+      if (!roleColumnFiltered) {
+        throw new Error("for_each grid did not render a role-filtered select for the 'meter' column")
+      }
+    },
+  },
 ]
 
 const SETUP_HELP =
