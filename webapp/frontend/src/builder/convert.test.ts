@@ -130,7 +130,7 @@ describe('treeToDoc', () => {
       name: 'Retry test',
       description: null,
       workflow: {
-        schema_version: 2,
+        schema_version: 3,
         metadata: { name: 'Retry test' },
         persistence: { default: 'in_memory', format: 'jsonl' },
         roles: { od_meter: { type: 'densitometer' } },
@@ -150,7 +150,7 @@ describe('treeToDoc', () => {
       name: 'Defaults test',
       description: null,
       workflow: {
-        schema_version: 2,
+        schema_version: 3,
         metadata: { name: 'Defaults test' },
         persistence: { default: 'in_memory', format: 'jsonl' },
         streams: {},
@@ -171,7 +171,7 @@ describe('treeToDoc', () => {
       name: 'Metadata test',
       description: null,
       workflow: {
-        schema_version: 2,
+        schema_version: 3,
         metadata: {
           name: 'Metadata test',
           author: 'lab-devices examples',
@@ -196,7 +196,7 @@ describe('treeToDoc', () => {
       name: 'Original name',
       description: null,
       workflow: {
-        schema_version: 2,
+        schema_version: 3,
         metadata: { name: 'Original name', author: 'someone', description: 'about this doc' },
         persistence: { default: 'in_memory', format: 'jsonl' },
         streams: {},
@@ -223,7 +223,7 @@ describe('treeToDoc', () => {
       name: 'Persistence test',
       description: null,
       workflow: {
-        schema_version: 2,
+        schema_version: 3,
         metadata: { name: 'Persistence test' },
         persistence: { default: 'disk' },
         streams: {},
@@ -248,7 +248,7 @@ describe('treeToDoc', () => {
       name: 'Stream persistence test',
       description: null,
       workflow: {
-        schema_version: 2,
+        schema_version: 3,
         metadata: { name: 'Stream persistence test' },
         persistence: { default: 'in_memory', format: 'jsonl' },
         streams: { od: { units: 'AU', persistence: 'disk' } },
@@ -308,7 +308,7 @@ describe('control blocks', () => {
     name: 'control',
     description: null,
     workflow: {
-      schema_version: 2,
+      schema_version: 3,
       metadata: { name: 'control' },
       persistence: { default: 'in_memory', format: 'jsonl' },
       streams: { c_series: { units: null } },
@@ -366,7 +366,7 @@ describe('repetition blocks', () => {
     name: 'macro',
     description: null,
     workflow: {
-      schema_version: workflow.schema_version ?? 2,
+      schema_version: workflow.schema_version ?? 3,
       metadata: workflow.metadata ?? { name: 'macro' },
       persistence: workflow.persistence ?? { default: 'in_memory', format: 'jsonl' },
       ...(workflow.defaults !== undefined ? { defaults: workflow.defaults } : {}),

@@ -224,7 +224,7 @@ const singleWaitDoc = () =>
     doc_version: 1,
     name: 't',
     description: null,
-    workflow: { schema_version: 2, blocks: [{ wait: { duration: '1s' } }] },
+    workflow: { schema_version: 3, blocks: [{ wait: { duration: '1s' } }] },
   }) as unknown as ExperimentDocJson
 
 describe('pathForUid', () => {

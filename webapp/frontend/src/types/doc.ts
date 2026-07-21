@@ -106,11 +106,13 @@ export interface GroupRefBody {
 export interface ComputeBody {
   into: string
   value: ParamValue
+  as?: string | null // unit cast for the bound value (type-system design 2026-07-21 §6)
 }
 
 export interface RecordBody {
   into: string
   value: ParamValue
+  as?: string | null // unit cast; must match the target stream's unit
 }
 
 /** abort raises AbortSignalError (run status 'aborted'); alarm flags and continues. Both
@@ -161,7 +163,7 @@ export interface StreamDeclJson {
 }
 
 export interface WorkflowJson {
-  schema_version: number // now 2
+  schema_version: number // now 3 (statically typed, unit-checked; design 2026-07-21)
   metadata?: Record<string, unknown>
   persistence?: Record<string, unknown>
   roles?: Record<string, RoleDeclJson> // roles LIVE HERE now (schema 2)

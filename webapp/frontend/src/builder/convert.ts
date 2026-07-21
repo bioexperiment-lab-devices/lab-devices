@@ -80,7 +80,7 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
     throw new DocConvertError(`unsupported doc_version ${String(doc.doc_version)}`)
   }
   const wf = doc.workflow
-  if (wf.schema_version !== 2) {
+  if (wf.schema_version !== 3) {
     throw new DocConvertError(`unsupported workflow schema_version ${String(wf.schema_version)}`)
   }
   const groups: NonNullable<DocContent['groups']> = {}
@@ -191,11 +191,11 @@ function blockToNode(block: BlockJson): BlockNode {
     }
     case 'compute': {
       const b = block.compute as ComputeBody
-      return { ...base, kind, into: b.into, value: b.value }
+      return { ...base, kind, into: b.into, value: b.value, as: b.as ?? null }
     }
     case 'record': {
       const b = block.record as RecordBody
-      return { ...base, kind, into: b.into, value: b.value }
+      return { ...base, kind, into: b.into, value: b.value, as: b.as ?? null }
     }
     case 'abort': {
       const b = block.abort as AbortBody
@@ -257,7 +257,7 @@ export function treeToDoc(content: DocContent): ExperimentDocJson {
   // assigned afterward — an object-literal-plus-post-assignment cannot land a conditional key
   // ahead of keys that must appear unconditionally after it.
   const workflow: WorkflowJson = {
-    schema_version: 2,
+    schema_version: 3,
     // content.name stays authoritative for metadata.name (the builder edits the doc name,
     // which is mirrored here) — re-assigning an existing key via spread keeps its original
     // position, so a carried-in metadata.author/description keeps its place after name.
@@ -335,10 +335,10 @@ export function nodeToBlock(node: BlockNode): BlockJson {
       break
     }
     case 'compute':
-      out.compute = { into: node.into, value: node.value }
+      out.compute = { into: node.into, value: node.value, ...(node.as != null ? { as: node.as } : {}) }
       break
     case 'record':
-      out.record = { into: node.into, value: node.value }
+      out.record = { into: node.into, value: node.value, ...(node.as != null ? { as: node.as } : {}) }
       break
     case 'abort':
       out.abort = { if: node.condition, message: node.message }

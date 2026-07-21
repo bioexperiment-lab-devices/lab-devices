@@ -127,7 +127,7 @@ describe('docStore', () => {
     loadDoc(
       docToTree({
         doc_version: 1, name: 'Loaded', description: null,
-        workflow: { schema_version: 2, roles: { p: { type: 'pump' } }, blocks: [] },
+        workflow: { schema_version: 3, roles: { p: { type: 'pump' } }, blocks: [] },
       }),
       'id-123',
     )
@@ -148,7 +148,7 @@ describe('docStore', () => {
       docToTree({
         doc_version: 1, name: 'A', description: null,
         workflow: {
-          schema_version: 2,
+          schema_version: 3,
           persistence: { default: 'disk' },
           defaults: { retry: { attempts: 3, backoff: '2s' } },
           streams: {},
@@ -163,7 +163,7 @@ describe('docStore', () => {
     loadDoc(
       docToTree({
         doc_version: 1, name: 'B', description: null,
-        workflow: { schema_version: 2, streams: {}, blocks: [] },
+        workflow: { schema_version: 3, streams: {}, blocks: [] },
       }),
       'b-id',
     )
@@ -181,7 +181,7 @@ describe('docStore', () => {
       docToTree({
         doc_version: 1, name: 'A', description: null,
         workflow: {
-          schema_version: 2,
+          schema_version: 3,
           defaults: { retry: { attempts: 3, backoff: '2s' } },
           streams: {},
           blocks: [],
@@ -203,7 +203,7 @@ describe('docStore', () => {
       docToTree({
         doc_version: 1, name: 'A', description: null,
         workflow: {
-          schema_version: 2,
+          schema_version: 3,
           persistence: { default: 'disk' },
           defaults: { retry: { attempts: 3 } },
           streams: {},
@@ -224,7 +224,7 @@ describe('docStore', () => {
       docToTree({
         doc_version: 1, name: 'A', description: null,
         workflow: {
-          schema_version: 2,
+          schema_version: 3,
           metadata: { name: 'A', author: 'someone', description: 'about A' },
           streams: {},
           blocks: [],
@@ -237,7 +237,7 @@ describe('docStore', () => {
     loadDoc(
       docToTree({
         doc_version: 1, name: 'B', description: null,
-        workflow: { schema_version: 2, streams: {}, blocks: [] },
+        workflow: { schema_version: 3, streams: {}, blocks: [] },
       }),
       'b-id',
     )
@@ -251,7 +251,7 @@ describe('docStore', () => {
       docToTree({
         doc_version: 1, name: 'A', description: null,
         workflow: {
-          schema_version: 2,
+          schema_version: 3,
           metadata: { name: 'A', author: 'someone' },
           streams: {},
           blocks: [],
@@ -295,7 +295,7 @@ describe('docStore', () => {
         name: 'macro',
         description: null,
         workflow: {
-          schema_version: 2,
+          schema_version: 3,
           metadata: { name: 'macro' },
           persistence: { default: 'in_memory', format: 'jsonl' },
           streams: {},
@@ -498,7 +498,7 @@ describe('docStore', () => {
         docToTree({
           doc_version: 1, name: 'macro', description: null,
           workflow: {
-            schema_version: 2,
+            schema_version: 3,
             streams: {},
             groups: { service: { params: [], body: [] } },
             blocks: [],
@@ -514,7 +514,7 @@ describe('docStore', () => {
 
     it('setGroupParams stores typed decls; setGroupLocals stores locals; both round-trip and dirty', () => {
       loadDoc(docToTree({ doc_version: 1, name: 'g', description: null,
-        workflow: { schema_version: 2, groups: { svc: { body: [] } }, blocks: [] } }), 'id')
+        workflow: { schema_version: 3, groups: { svc: { body: [] } }, blocks: [] } }), 'id')
       expect(selectDirty(store())).toBe(false)
       store().setGroupParams('svc', [{ name: 'tube', kind: 'int' }, { name: 'm', kind: 'role', device_type: 'densitometer' }])
       store().setGroupLocals('svc', { c: { kind: 'binding', init: '0' } })

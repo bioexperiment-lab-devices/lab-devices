@@ -3,7 +3,7 @@
   "name": "Broken workflow",
   "description": null,
   "workflow": {
-    "schema_version": 2,
+    "schema_version": 3,
     "roles": {"feed_pump": {"type": "pump"}, "od_meter": {"type": "densitometer"}},
     "blocks": [
       {"serial": {"children": [

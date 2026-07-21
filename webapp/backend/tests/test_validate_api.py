@@ -85,26 +85,26 @@ def _doc(workflow: dict[str, Any], roles: dict[str, Any] | None = None) -> dict[
     return {"doc_version": 1, "name": "t", "description": None, "workflow": wf}
 
 
-async def test_schema_two_is_accepted(client: httpx.AsyncClient) -> None:
-    """The former 'reject schema 2' test: schema 2 is now the supported version."""
-    resp = await client.post("/api/validate", json=_doc({"schema_version": 2, "blocks": []}))
+async def test_schema_three_is_accepted(client: httpx.AsyncClient) -> None:
+    """Schema 3 is the supported version (statically typed, unit-checked)."""
+    resp = await client.post("/api/validate", json=_doc({"schema_version": 3, "blocks": []}))
     assert resp.json() == {"ok": True, "diagnostics": []}
 
 
 async def test_unsupported_schema_version_is_schema_diagnostic(
     client: httpx.AsyncClient,
 ) -> None:
-    resp = await client.post("/api/validate", json=_doc({"schema_version": 3, "blocks": []}))
+    resp = await client.post("/api/validate", json=_doc({"schema_version": 2, "blocks": []}))
     body = resp.json()
     assert body["ok"] is False
     diag = body["diagnostics"][0]
     assert diag["category"] == "schema" and diag["path"] == "workflow"
-    assert "unsupported schema_version 3; expected 2" in diag["message"]
+    assert "unsupported schema_version 2; expected 3" in diag["message"]
 
 
 async def test_bad_expression_grammar_is_schema_diagnostic(client: httpx.AsyncClient) -> None:
     workflow = {
-        "schema_version": 2,
+        "schema_version": 3,
         "streams": {"od": {"units": "AU"}},
         "blocks": [
             {"loop": {"until": "mean(od[-3:]) > 0.6", "body": [{"wait": {"duration": "1s"}}]}},
@@ -120,7 +120,7 @@ async def test_bad_expression_grammar_is_schema_diagnostic(client: httpx.AsyncCl
 
 def _parallel_stop(device_a: str, device_b: str) -> dict[str, Any]:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "blocks": [
             {"parallel": {"children": [
                 {"command": {"device": device_a, "verb": "stop"}},
@@ -156,7 +156,7 @@ async def test_for_each_typed_role_var_validates_clean(client: httpx.AsyncClient
     """A for_each over a typed role<densitometer> column replaces v1 od_meter_{t} string
     surgery (design §4). Concrete role names are declared, so it validates clean unbound (§5.4)."""
     workflow = {
-        "schema_version": 2,
+        "schema_version": 3,
         "roles": {"od_meter_1": {"type": "densitometer"}, "od_meter_2": {"type": "densitometer"}},
         "streams": {"od_1": {"units": "AU"}, "od_2": {"units": "AU"}},
         "blocks": [
@@ -176,7 +176,7 @@ async def test_for_each_typed_role_var_validates_clean(client: httpx.AsyncClient
 
 async def test_malformed_for_each_yields_expansion_diagnostic(client: httpx.AsyncClient) -> None:
     workflow = {
-        "schema_version": 2,
+        "schema_version": 3,
         "blocks": [{"for_each": {
             "vars": [{"name": "t", "kind": "int"}], "in": [],
             "body": [{"wait": {"duration": "1s"}}],
@@ -195,7 +195,7 @@ async def test_non_object_group_ref_body_yields_diagnostic_not_500(
     client: httpx.AsyncClient,
 ) -> None:
     resp = await client.post(
-        "/api/validate", json=_doc({"schema_version": 2, "blocks": [{"group_ref": 42}]})
+        "/api/validate", json=_doc({"schema_version": 3, "blocks": [{"group_ref": 42}]})
     )
     assert resp.status_code == 200
     body = resp.json()

@@ -106,12 +106,14 @@ export interface ComputeNode extends NodeBase {
   kind: 'compute'
   into: string
   value: ParamValue
+  as?: string | null // unit cast, carried opaquely (no builder UI yet; design 2026-07-21 §6)
 }
 
 export interface RecordNode extends NodeBase {
   kind: 'record'
   into: string
   value: ParamValue
+  as?: string | null // unit cast, carried opaquely
 }
 
 /** `condition` mirrors BranchNode.condition: the JSON key is `if` (a reserved word), and

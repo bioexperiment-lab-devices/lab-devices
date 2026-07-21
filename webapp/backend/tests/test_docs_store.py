@@ -28,7 +28,7 @@ def make_doc(name: str = "OD growth curve", **overrides: Any) -> ExperimentDoc:
         "doc_version": 1,
         "name": name,
         "description": "demo",
-        "workflow": {"schema_version": 2, "roles": {"feed_pump": {"type": "pump"}}, "blocks": []},
+        "workflow": {"schema_version": 3, "roles": {"feed_pump": {"type": "pump"}}, "blocks": []},
     }
     payload.update(overrides)
     return ExperimentDoc.model_validate(payload)
@@ -148,10 +148,10 @@ def test_a_diagnostic_inside_a_for_each_body_reports_the_authored_path() -> None
             "name": "macro",
             "description": None,
             "workflow": {
-                "schema_version": 2,
+                "schema_version": 3,
                 "metadata": {"name": "macro"},
                 "roles": {"od_meter": {"type": "densitometer"}},
-                "streams": {"od_1": {"units": None}, "od_2": {"units": None}},
+                "streams": {"od_1": {"units": "unitless"}, "od_2": {"units": "unitless"}},
                 "blocks": [
                     {
                         "for_each": {
@@ -193,7 +193,7 @@ def test_a_plain_group_ref_under_for_each_reports_a_compound_authored_path() -> 
             "name": "plain-group-under-for-each",
             "description": None,
             "workflow": {
-                "schema_version": 2,
+                "schema_version": 3,
                 "groups": {
                     "mygroup": {
                         "body": [
@@ -232,7 +232,7 @@ def test_a_compound_path_reached_through_a_parametrized_group_remaps_the_call_si
             "name": "plain-group-under-parametrized-group",
             "description": None,
             "workflow": {
-                "schema_version": 2,
+                "schema_version": 3,
                 "groups": {
                     "plaingroup": {
                         "body": [
@@ -263,7 +263,7 @@ def test_a_diagnostic_with_no_arrow_remaps_by_identity_when_unduplicated() -> No
             "name": "no-arrow",
             "description": None,
             "workflow": {
-                "schema_version": 2,
+                "schema_version": 3,
                 "blocks": [
                     {"compute": {"into": "x", "value": "nope_undeclared_thing"}}
                 ],
@@ -291,7 +291,7 @@ def test_a_for_each_inside_a_plain_groups_own_body_remaps_the_tail_index() -> No
             "name": "for-each-inside-plain-group-body",
             "description": None,
             "workflow": {
-                "schema_version": 2,
+                "schema_version": 3,
                 "groups": {
                     "g1": {
                         "body": [
@@ -334,7 +334,7 @@ def test_a_doubly_nested_plain_group_remaps_every_segment() -> None:
             "name": "doubly-nested-plain-groups",
             "description": None,
             "workflow": {
-                "schema_version": 2,
+                "schema_version": 3,
                 "groups": {
                     "g1": {"body": [{"group_ref": {"name": "g2"}}]},
                     "g2": {
@@ -376,7 +376,7 @@ def test_an_unmappable_diagnostic_path_passes_through_unchanged() -> None:
             "name": "recursive-group",
             "description": None,
             "workflow": {
-                "schema_version": 2,
+                "schema_version": 3,
                 "groups": {"selfref": {"body": [{"group_ref": {"name": "selfref"}}]}},
                 "blocks": [{"group_ref": {"name": "selfref"}}],
             },
@@ -415,8 +415,8 @@ def test_a_spaced_group_name_still_dedups_to_the_authored_path() -> None:
             "name": "spaced-group-name",
             "description": None,
             "workflow": {
-                "schema_version": 2,
-                "streams": {"ok_stream": {"units": None}},
+                "schema_version": 3,
+                "streams": {"ok_stream": {"units": "unitless"}},
                 "groups": {
                     "wash cycle": {
                         "body": [
@@ -455,7 +455,7 @@ def test_dedup_key_includes_the_message_not_just_category_and_path() -> None:
             "name": "distinct-messages-one-path",
             "description": None,
             "workflow": {
-                "schema_version": 2,
+                "schema_version": 3,
                 "blocks": [
                     {
                         "for_each": {
@@ -494,7 +494,7 @@ def test_a_plain_group_calling_a_parametrized_group_does_not_corrupt_the_path() 
             "name": "plain-group-calling-parametrized-group",
             "description": None,
             "workflow": {
-                "schema_version": 2,
+                "schema_version": 3,
                 "groups": {
                     "P": {
                         "params": [{"name": "x", "kind": "int"}],

@@ -87,7 +87,7 @@ def build() -> dict[str, Any]:
             "realistic experiment. Regenerate with `python3 webapp/fixtures/gen_run.py`."
         ),
         "workflow": {
-            "schema_version": 2,
+            "schema_version": 3,
             "metadata": {"name": "UI audit run"},
             "persistence": {"default": "in_memory", "format": "jsonl"},
             "roles": {"feed": {"type": "pump"}, "meter": {"type": "densitometer"}},

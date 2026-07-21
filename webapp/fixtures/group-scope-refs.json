@@ -3,7 +3,7 @@
   "name": "Group scope refs probe",
   "description": null,
   "workflow": {
-    "schema_version": 2,
+    "schema_version": 3,
     "roles": { "top_pump": { "type": "pump" } },
     "streams": { "od_top": { "units": "AU" } },
     "groups": {

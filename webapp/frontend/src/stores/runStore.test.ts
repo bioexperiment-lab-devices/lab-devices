@@ -14,7 +14,7 @@ const RECORD = {
     persistence_errors: [], diagnostics: [], clock_origin: 0, started_at: '', ended_at: '',
     experiment_name: 'OD growth', lab: 'lab_a', role_mapping: {} },
   doc: { doc_version: 1, name: 'OD growth', description: null,
-    workflow: { schema_version: 2, blocks: [], streams: { od: { units: 'AU' } } } },
+    workflow: { schema_version: 3, blocks: [], streams: { od: { units: 'AU' } } } },
 }
 
 let sockets: { runId: string; handlers: RunSocketHandlers; connected: boolean }[]
