@@ -6,6 +6,7 @@ import {
   fieldDiagnostics,
   mapDiagnostics,
   pathForUid,
+  resolveDiagnosticNode,
   resolveDiagnosticPath,
   unclaimedDiagnostics,
   type GroupsMap,
@@ -122,7 +123,11 @@ describe('resolveDiagnosticPath', () => {
 
   it('returns uid null (not the wrong block) for an out-of-range group-body index', () => {
     const groups: GroupsMap = { service: { body: [waitNode] } }
-    expect(resolveDiagnosticPath([], groups, "groups['service'].body[5]").uid).toBeNull()
+    // scope is null too when the node does not resolve: an unresolved group path carries no
+    // editable location, so it must not report a scope (pre-refactor resolveDiagnosticPath
+    // parity — the shared resolveStructuralNode only tags scope when resolveTail found a node).
+    expect(resolveDiagnosticPath([], groups, "groups['service'].body[5]"))
+      .toMatchObject({ uid: null, scope: null })
   })
 
   it('accepts a double-quoted group name — Python repr flips quote style for an apostrophe', () => {
@@ -214,6 +219,22 @@ describe('resolveDiagnosticPath', () => {
 
   it('returns uid null for an out-of-range index rather than the wrong block', () => {
     expect(resolveDiagnosticPath(tree, {}, 'blocks[99]').uid).toBeNull()
+  })
+})
+
+describe('resolveDiagnosticNode', () => {
+  it('returns the node for a main-tree path', () => {
+    expect(resolveDiagnosticNode(tree, {}, 'blocks[0].children[1].body[0]')?.uid).toBe('w2')
+  })
+  it('returns the node for a group-scope path', () => {
+    // uses the same `groups` fixture the resolveDiagnosticPath group tests use
+    const groups: GroupsMap = { service: { body: [waitNode] } }
+    expect(resolveDiagnosticNode([], groups, "groups['service'].body[0]")?.uid)
+      .toBe(resolveDiagnosticPath([], groups, "groups['service'].body[0]").uid)
+  })
+  it('returns null for an unresolvable or role path', () => {
+    expect(resolveDiagnosticNode(tree, {}, 'blocks[9]')).toBeNull()
+    expect(resolveDiagnosticNode(tree, {}, "roles['Feed_Pump']")).toBeNull()
   })
 })
 

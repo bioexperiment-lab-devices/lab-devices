@@ -4,11 +4,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatElapsed } from '../records/format'
 import { describeEvent } from './describeEvent'
+import type { NamedBlock } from './blockName'
 
 export interface LogEvent {
   timestamp: number
   kind: string
   block_id: string | null
+  source_path: string | null
   data: Record<string, unknown>
 }
 
@@ -34,7 +36,12 @@ const KIND_COLOR: Record<string, string> = {
   alarm_raised: 'text-amber-800',
 }
 
-export function EventLog(props: { events: ReadonlyArray<LogEvent>; origin: number | null; rev: number }) {
+export function EventLog(props: {
+  events: ReadonlyArray<LogEvent>
+  origin: number | null
+  rev: number
+  nameFor?: (e: LogEvent) => NamedBlock | null
+}) {
   const box = useRef<HTMLDivElement | null>(null)
   const [hovered, setHovered] = useState(false)
 
@@ -56,17 +63,22 @@ export function EventLog(props: { events: ReadonlyArray<LogEvent>; origin: numbe
         </p>
       )}
       {shown.length === 0 && <p className="text-hint">no events yet</p>}
-      {shown.map((e, i) => (
-        <div key={`${props.events.length - shown.length + i}`} className="flex gap-2 py-px">
-          <span className="w-20 shrink-0 text-right text-caption">
-            {props.origin !== null ? `+${formatElapsed(e.timestamp - props.origin)}` : ''}
-          </span>
-          <span className={`min-w-0 flex-1 ${KIND_COLOR[e.kind] ?? 'text-slate-700'}`}>
-            {describeEvent(e)}
-            {e.block_id !== null && <span className="ml-1 text-caption">[{e.block_id}]</span>}
-          </span>
-        </div>
-      ))}
+      {shown.map((e, i) => {
+        const named = props.nameFor?.(e) ?? null
+        return (
+          <div key={`${props.events.length - shown.length + i}`} className="flex gap-2 py-px">
+            <span className="w-20 shrink-0 text-right text-caption">
+              {props.origin !== null ? `+${formatElapsed(e.timestamp - props.origin)}` : ''}
+            </span>
+            <span className={`min-w-0 flex-1 ${KIND_COLOR[e.kind] ?? 'text-slate-700'}`}>
+              {describeEvent(e)}
+              {named
+                ? <span title={named.path ?? undefined} className="ml-1 text-caption">— {named.text}</span>
+                : e.block_id !== null && <span className="ml-1 text-caption">[{e.block_id}]</span>}
+            </span>
+          </div>
+        )
+      })}
     </div>
   )
 }

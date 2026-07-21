@@ -530,3 +530,14 @@ def expand_dict_traced(workflow_dict: dict[str, Any]) -> tuple[dict[str, Any], d
 def expand_workflow(w: Workflow) -> Workflow:
     """AST-level expansion, for validate() and ExperimentRun (concrete-typed ASTs only)."""
     return workflow_from_dict(expand_dict(workflow_to_dict(w)))
+
+
+def expand_workflow_traced(w: Workflow) -> tuple[Workflow, dict[str, str]]:
+    """expand_workflow plus the expanded->authored source map (see expand_dict_traced).
+
+    The trace keys are exactly the structural paths assign_block_ids assigns on the
+    expanded tree, so RunContext can name any run event's authored block by
+    source_map.get(block_id). Many-to-one: every for_each copy traces to its one
+    authored body block."""
+    expanded, trace = expand_dict_traced(workflow_to_dict(w))
+    return workflow_from_dict(expanded), trace

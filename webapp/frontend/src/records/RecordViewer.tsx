@@ -7,6 +7,8 @@ import { useRecordsStore } from '../stores/recordsStore'
 import type { RecordEvent } from '../types/runs'
 import type { RecordDetail, RecordStreams } from '../types/records'
 import { EventLog } from '../run/EventLog'
+import { blockName } from '../run/blockName'
+import { docToTree } from '../builder/convert'
 import { StreamChart } from '../charts/StreamChart'
 import { StatusChip } from './RecordsTable'
 import { formatDuration, formatWhen } from './format'
@@ -54,6 +56,17 @@ export function RecordViewer(props: { id: string }) {
     t: s.t.map((t) => t - origin),
     v: s.v,
   }))
+
+  // Malformed/legacy snapshot: EventLog falls back to raw ids rather than crashing the viewer.
+  const resolved = (() => {
+    if (detail.doc === null) return null
+    try {
+      const { tree, groups } = docToTree(detail.doc)
+      return { tree, groups: groups ?? {} }
+    } catch {
+      return null
+    }
+  })()
 
   return (
     <div className="space-y-3">
@@ -135,7 +148,12 @@ export function RecordViewer(props: { id: string }) {
       )}
 
       <StreamChart series={series} />
-      <EventLog events={events} origin={events.length > 0 ? events[0].timestamp : null} rev={0} />
+      <EventLog
+        events={events}
+        origin={events.length > 0 ? events[0].timestamp : null}
+        rev={0}
+        nameFor={(e) => blockName(e, resolved?.tree ?? null, resolved?.groups ?? null)}
+      />
 
       <div className="rounded-lg border border-slate-200 bg-white p-3">
         <p className="mb-2 text-xs font-semibold text-caption">Workflow snapshot</p>

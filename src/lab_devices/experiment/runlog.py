@@ -14,6 +14,7 @@ class RunEvent:
     kind: str
     block_id: str | None = None
     data: dict[str, Any] = field(default_factory=dict)
+    source_path: str | None = None  # authored structural path (engine source map); None off-block
 
 
 class RunLogSink(Protocol):

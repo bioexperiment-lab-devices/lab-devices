@@ -39,6 +39,7 @@ export interface RunUiState {
   pendingInput: PendingInput | null
   inputError: string | null
   streamUnits: Record<string, string | null>
+  doc: ExperimentDocJson | null
   report: RecordReport | null
   recordName: string | null
   startBusy: boolean
@@ -112,16 +113,17 @@ export const useRunStore = create<RunUiState>()((set, get) => {
       lastWallMs: null,
       pendingInput: payload.pending_input,
       inputError: null,
+      doc: null,
       report: null,
       recordName: null,
       startError: null,
       startDiagnostics: null,
     })
     openSocket(payload.run_id) // connect immediately; WS replay from lastSeq covers the gap
-    // attach() awaits this so callers observe a fully adopted run (streamUnits included).
+    // attach() awaits this so callers observe a fully adopted run (streamUnits/doc included).
     return getRecord(payload.record_id)
-      .then((d) => set({ streamUnits: unitsOf(d.doc) }))
-      .catch(() => set({ streamUnits: {} }))
+      .then((d) => set({ streamUnits: unitsOf(d.doc), doc: d.doc }))
+      .catch(() => set({ streamUnits: {}, doc: null }))
   }
 
   return {
@@ -135,6 +137,7 @@ export const useRunStore = create<RunUiState>()((set, get) => {
     pendingInput: null,
     inputError: null,
     streamUnits: {},
+    doc: null,
     report: null,
     recordName: null,
     startBusy: false,
@@ -229,7 +232,7 @@ export const useRunStore = create<RunUiState>()((set, get) => {
       set({
         phase: 'idle', runId: null, recordId: null, experiment: null, lab: null,
         feed: emptyFeed(), lastWallMs: null, pendingInput: null, inputError: null,
-        streamUnits: {}, report: null, recordName: null,
+        streamUnits: {}, doc: null, report: null, recordName: null,
         startBusy: false, controlBusy: false, startError: null, startDiagnostics: null,
       })
     },

@@ -21,7 +21,7 @@ from lab_devices.experiment.errors import (
     WorkflowLoadError,
 )
 from lab_devices.experiment.execute import execute_blocks
-from lab_devices.experiment.expand import expand_workflow
+from lab_devices.experiment.expand import expand_workflow_traced
 from lab_devices.experiment.finalize import run_finalizer
 from lab_devices.experiment.persist import SinkSet
 from lab_devices.experiment.runlog import RunLogSink
@@ -134,7 +134,8 @@ class ExperimentRun:
         # and reporting it before the (slower, noisier) static pass keeps the two separable.
         role_devices = _resolve_roles(workflow, self._options.role_mapping)
         validate(workflow)  # the runtime's safety model IS the static proof (D6)
-        workflow = expand_workflow(workflow)  # run the concrete tree (design 2026-07-15 §4.4)
+        # run the concrete tree (design 2026-07-15 §4.4); trace names events (design §5.3)
+        workflow, trace = expand_workflow_traced(workflow)
         assign_block_ids(workflow)
         self._workflow = workflow
         state = RunState()
@@ -142,7 +143,7 @@ class ExperimentRun:
             state.streams[stream_name] = Stream()  # pre-created: count()==0 (§3)
         self._ctx = RunContext(
             client=client, workflow=workflow, state=state, options=self._options,
-            role_devices=role_devices,
+            role_devices=role_devices, source_map=trace,
         )
         self._task: asyncio.Task[object] | None = None
         self._started = False

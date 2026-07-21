@@ -25,7 +25,19 @@ def test_run_event_to_dict_shape():
         "timestamp": 12.5,
         "kind": "measure_recorded",
         "block_id": "blocks[0]",
+        "source_path": None,
         "data": {"stream": "OD", "value": 0.5},
+    }
+
+
+def test_run_event_to_dict_includes_source_path():
+    ev = RunEvent(12.5, "block_started", "blocks[3]", source_path="blocks[2].body[0]")
+    assert run_event_to_dict(ev) == {
+        "timestamp": 12.5,
+        "kind": "block_started",
+        "block_id": "blocks[3]",
+        "source_path": "blocks[2].body[0]",
+        "data": {},
     }
 
 
@@ -73,7 +85,13 @@ def test_jsonl_runlog_sink_writes_events(tmp_path: Path):
     sink.close()
     lines = (tmp_path / "run_log.jsonl").read_text().splitlines()
     parsed = [json.loads(x) for x in lines]
-    assert parsed[0] == {"timestamp": 0.0, "kind": "run_started", "block_id": None, "data": {}}
+    assert parsed[0] == {
+        "timestamp": 0.0,
+        "kind": "run_started",
+        "block_id": None,
+        "source_path": None,
+        "data": {},
+    }
     assert parsed[1]["kind"] == "measure_recorded"
     assert parsed[1]["data"] == {"stream": "OD", "value": 0.5}
 
@@ -104,10 +122,10 @@ def test_csv_runlog_sink_json_data_column(tmp_path: Path):
     sink.flush()
     sink.close()
     rows = list(csv.reader((tmp_path / "run_log.csv").read_text().splitlines()))
-    assert rows[0] == ["timestamp", "kind", "block_id", "data"]
+    assert rows[0] == ["timestamp", "kind", "block_id", "source_path", "data"]
     assert rows[1][0:3] == ["1.0", "measure_recorded", "blocks[0]"]
-    assert json.loads(rows[1][3]) == {"stream": "OD", "value": 0.5}
-    assert rows[2] == ["0.0", "run_started", "", "{}"]  # None block_id -> empty column
+    assert json.loads(rows[1][4]) == {"stream": "OD", "value": 0.5}
+    assert rows[2] == ["0.0", "run_started", "", "", "{}"]  # None block_id/source_path -> empty
 
 
 def _wf(persistence: Persistence, streams: dict[str, StreamDecl]) -> Workflow:
