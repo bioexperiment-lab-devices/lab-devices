@@ -57,7 +57,7 @@ describe('runStore', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) =>
       url.includes('api/records/') ? json(RECORD) : json(ACTIVE)))
     await useRunStore.getState().attach()
-    push({ type: 'event', seq: 0, timestamp: 1, kind: 'run_started', block_id: null, data: {} })
+    push({ type: 'event', seq: 0, timestamp: 1, kind: 'run_started', block_id: null, source_path: null, data: {} })
     push({ type: 'status', seq: 1, status: 'completed' })
     sockets[0].handlers.onTerminal()
     await vi.waitFor(() => expect(useRunStore.getState().phase).toBe('terminal'))
@@ -74,11 +74,11 @@ describe('runStore', () => {
     }))
     await useRunStore.getState().attach()
     push({ type: 'event', seq: 0, timestamp: 1, kind: 'input_requested', block_id: 'b1',
-      data: { name: 'target' } })
+      source_path: 'blocks[0]', data: { name: 'target' } })
     await vi.waitFor(() =>
       expect(useRunStore.getState().pendingInput?.name).toBe('target'))
     push({ type: 'event', seq: 1, timestamp: 2, kind: 'input_bound', block_id: 'b1',
-      data: { name: 'target', value: 5 } })
+      source_path: 'blocks[0]', data: { name: 'target', value: 5 } })
     expect(useRunStore.getState().pendingInput).toBeNull()
   })
   it('adopts the already-active run on 409 run_active', async () => {
