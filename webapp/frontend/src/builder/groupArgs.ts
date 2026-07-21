@@ -50,7 +50,8 @@ export function emptyRow(vars: ParamDeclJson[]): Record<string, ParamValue> {
   return row
 }
 
-/** Mirrors the engine's `_WHOLE_HOLE_RE` (validate.py/expand.py, design 2026-07-20 §3): a
+/** Matches the engine's `_HOLE_RE` (expand.py:17) anchored like `_IDENT_RE` (validate.py:256),
+ * i.e. `_HOLE_RE.fullmatch` (design 2026-07-20 §3): a
  * group_ref/for_each arg carries a typed-substitution hole only when the ENTIRE string is
  * `{identifier}` — unlike the free-form `string` kind, a non-string-kind arg (int/number/bool)
  * or a reference-kind arg (role/stream/binding) never partially interpolates, so `{tube}` is a
