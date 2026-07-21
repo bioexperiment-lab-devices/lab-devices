@@ -670,6 +670,15 @@ def _collect_binding_types(w: Workflow, stream_units: Mapping[str, Unit]) -> dic
     return types
 
 
+def binding_types(w: Workflow) -> dict[str, BindingType]:
+    """Public: inferred (base, unit) of every binding in `w`, in document order — operator
+    inputs from their declared `type`, compute bindings from their `value` expression (an `as`
+    cast overrides the derived unit); a name written more than once takes the join of its
+    writers. Group-local bindings are concretely typed only on an EXPANDED workflow (their
+    per-instance qualified names); on a raw macro workflow they resolve to `unknown`."""
+    return _collect_binding_types(w, _stream_units(w))
+
+
 def _flag_ambiguous_refs(
     expr: Expr,
     ctx: str,
