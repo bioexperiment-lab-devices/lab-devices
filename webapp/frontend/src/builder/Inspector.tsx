@@ -571,6 +571,7 @@ function BlockForm({ node }: { node: BlockNode }) {
                 allowEmpty
                 onCommit={(v) => patchBlock(node.uid, { gapAfter: v })}
               />
+              <FieldDiags uid={node.uid} fields={['gap_after']} />
             </FieldRow>
           )}
           {timing.includes('startOffset') && (
@@ -580,6 +581,7 @@ function BlockForm({ node }: { node: BlockNode }) {
                 allowEmpty
                 onCommit={(v) => patchBlock(node.uid, { startOffset: v })}
               />
+              <FieldDiags uid={node.uid} fields={['start_offset']} />
             </FieldRow>
           )}
         </InspectorSection>
@@ -718,6 +720,7 @@ function RetrySection({ node }: { node: CommandNode | MeasureNode }) {
                   allowEmpty
                   onCommit={(v) => setRetry({ backoff: v ?? undefined })}
                 />
+                <FieldDiags uid={node.uid} fields={['retry backoff']} />
               </FieldRow>
             </>
           ) : null}
@@ -936,6 +939,7 @@ function WaitForm({ node }: { node: WaitNode }) {
   return (
     <FieldRow label="Duration" required>
       <DurationField value={node.duration} onCommit={(v) => patchBlock(node.uid, { duration: v ?? '' })} />
+      <FieldDiags uid={node.uid} fields={['wait duration']} />
     </FieldRow>
   )
 }
@@ -1089,6 +1093,7 @@ function LoopForm({ node }: { node: LoopNode }) {
       )}
       <FieldRow label="Pace (min. loop period)">
         <DurationField value={node.pace} allowEmpty onCommit={(v) => patchBlock(node.uid, { pace: v })} />
+        <FieldDiags uid={node.uid} fields={['loop pace']} />
       </FieldRow>
     </div>
   )

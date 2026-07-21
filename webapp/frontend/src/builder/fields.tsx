@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { DURATION_RE } from './params'
 import { controlClass, textAreaClass } from '../ui/controls'
 import { ExpressionEditor } from './ExpressionEditor'
 
@@ -116,22 +115,20 @@ export function DurationField(props: {
   allowEmpty?: boolean
   placeholder?: string
 }) {
-  const value = props.value ?? ''
-  const invalid = value !== '' && !DURATION_RE.test(value)
+  // A duration slot is a number<s> expression since schema v3 (engine #58): a literal
+  // (`30s`) or an expression (`cycle_min * 1min`). The editor's `expected='duration'`
+  // analysis replaces the old DURATION_RE-only amber message.
   return (
-    <div>
-      <TextField
-        mono
-        value={value}
-        placeholder={props.placeholder ?? 'e.g. 30s, 5min, 250ms, 1.5h'}
-        onCommit={(t) => {
-          const trimmed = t.trim()
-          if (trimmed === '' && props.allowEmpty) props.onCommit(null)
-          else props.onCommit(trimmed)
-        }}
-      />
-      {invalid && <p className="mt-0.5 text-[10px] text-amber-700">expected &lt;number&gt;ms|s|min|h</p>}
-    </div>
+    <ExpressionEditor
+      value={props.value ?? ''}
+      expected="duration"
+      placeholder={props.placeholder ?? 'e.g. 30s, 5min, or an expression'}
+      onCommit={(t) => {
+        const trimmed = t.trim()
+        if (trimmed === '' && props.allowEmpty) props.onCommit(null)
+        else props.onCommit(trimmed)
+      }}
+    />
   )
 }
 
