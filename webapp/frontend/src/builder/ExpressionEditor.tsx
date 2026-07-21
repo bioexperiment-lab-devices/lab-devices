@@ -288,7 +288,7 @@ function CompletionPopup(props: {
           <button
             type="button"
             className={
-              'flex w-full items-center justify-between gap-2 px-2 py-0.5 text-left ' +
+              'flex h-6 w-full items-center justify-between gap-2 px-2 text-left ' +
               (i === props.popup.index ? 'bg-blue-100 text-blue-700' : 'hover:bg-slate-100')
             }
             // preventDefault keeps textarea focus, so blur-commit doesn't fire pre-click.
@@ -313,9 +313,11 @@ function HelpPopover(props: {
   onWindow: (w: { example: string; fragment: string | null }) => void
 }) {
   const { help } = props
+  // h-6 keeps every clickable row/chip at IconButton's 24px hit-area floor (the probe's
+  // tiny-target rule flagged the first cut of these at 16px).
   const rowClass =
-    'flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left hover:bg-slate-100'
-  const chipClass = 'rounded px-1 font-mono hover:bg-slate-100'
+    'flex h-6 w-full items-center justify-between gap-2 rounded px-1 text-left hover:bg-slate-100'
+  const chipClass = 'inline-flex h-6 items-center rounded px-1 font-mono hover:bg-slate-100'
   const stop = (e: { preventDefault: () => void }) => e.preventDefault()
   return (
     <div className="absolute right-0 z-20 mt-1 w-72 rounded border border-slate-300 bg-white p-2 text-xs shadow-lg">
