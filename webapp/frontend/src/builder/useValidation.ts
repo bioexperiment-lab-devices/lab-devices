@@ -28,6 +28,7 @@ export function useValidation(): void {
           if (seq.current !== id) return
           const state = useDocStore.getState()
           state.setDiagnostics(mapDiagnostics(state.tree, state.groups, resp.diagnostics))
+          state.setBindingTypes(resp.binding_types ?? {})
           state.setValidationError(null)
           state.setValidating(false)
         })

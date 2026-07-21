@@ -4,7 +4,7 @@
 import { create } from 'zustand'
 import { useStore, type StoreApi } from 'zustand'
 import { temporal, type TemporalState } from 'zundo'
-import type { ExperimentDocJson, LocalDeclJson, ParamDeclJson, RoleDeclJson, WorkflowJson } from '../types/doc'
+import type { BindingTypeJson, ExperimentDocJson, LocalDeclJson, ParamDeclJson, RoleDeclJson, WorkflowJson } from '../types/doc'
 import type { MappedDiagnostic } from '../builder/paths'
 import { treeToDoc, type DocContent, type GroupDef } from '../builder/convert'
 import type { DraftView } from './draftStorage'
@@ -90,6 +90,7 @@ export interface EditorState extends DocSnapshot {
   scrollToUid: string | null
   collapsed: Record<string, boolean>
   diagnostics: MappedDiagnostic[]
+  bindingTypes: Record<string, BindingTypeJson>
   validating: boolean
   validationError: string | null
   setName: (name: string) => void
@@ -117,6 +118,7 @@ export interface EditorState extends DocSnapshot {
   select: (uid: string | null) => void
   toggleCollapsed: (uid: string) => void
   setDiagnostics: (diags: MappedDiagnostic[]) => void
+  setBindingTypes: (types: Record<string, BindingTypeJson>) => void
   setValidating: (v: boolean) => void
   setValidationError: (e: string | null) => void
   markSaved: (serverId: string, savedSnapshot?: string) => void
@@ -240,6 +242,7 @@ export const useDocStore = create<EditorState>()(
       scrollToUid: null,
       collapsed: {},
       diagnostics: [],
+      bindingTypes: {},
       validating: false,
       validationError: null,
 
@@ -422,6 +425,7 @@ export const useDocStore = create<EditorState>()(
       toggleCollapsed: (uid) =>
         set((s) => ({ collapsed: { ...s.collapsed, [uid]: !s.collapsed[uid] } })),
       setDiagnostics: (diagnostics) => set({ diagnostics }),
+      setBindingTypes: (bindingTypes) => set({ bindingTypes }),
       setValidating: (validating) => set({ validating }),
       setValidationError: (validationError) => set({ validationError }),
       markSaved: (serverId, savedSnapshot) =>
@@ -535,6 +539,7 @@ export function loadDoc(content: DocContent, serverId: string | null, view?: Dra
     scrollToUid: null,
     collapsed: view?.collapsed ?? {},
     diagnostics: [],
+    bindingTypes: {},
     validating: false,
     validationError: null,
   })

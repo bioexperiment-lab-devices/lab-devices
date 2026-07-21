@@ -18,13 +18,17 @@ def load_fixture(name: str) -> dict[str, Any]:
 async def test_valid_doc_is_clean(client: httpx.AsyncClient) -> None:
     resp = await client.post("/api/validate", json=load_fixture("valid-od-growth.json"))
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True, "diagnostics": []}
+    assert resp.json() == {"ok": True, "diagnostics": [], "binding_types": {}}
 
 
 async def test_valid_control_blocks_doc_is_clean(client: httpx.AsyncClient) -> None:
     resp = await client.post("/api/validate", json=load_fixture("valid-control-blocks.json"))
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True, "diagnostics": []}
+    body = resp.json()
+    assert body["ok"] is True and body["diagnostics"] == []
+    # emergency_stop is an operator_input bool; V/c are numeric-literal computes the engine
+    # does not type (it only types string-valued computes), so they may be absent.
+    assert body["binding_types"]["emergency_stop"] == {"base": "bool", "unit": "unitless"}
 
 
 async def test_morbidostat_example_is_clean(client: httpx.AsyncClient) -> None:
@@ -39,7 +43,10 @@ async def test_morbidostat_example_is_clean(client: httpx.AsyncClient) -> None:
     doc = json.loads((EXAMPLES / "morbidostat.json").read_text())
     resp = await client.post("/api/validate", json=doc)
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True, "diagnostics": []}
+    body = resp.json()
+    assert body["ok"] is True and body["diagnostics"] == []
+    assert body["binding_types"]["working_volume_ml"] == {"base": "int", "unit": "unitless"}
+    assert body["binding_types"]["od_min"] == {"base": "number", "unit": "unitless"}
 
 
 async def test_doc_level_diagnostics(client: httpx.AsyncClient) -> None:
@@ -59,6 +66,7 @@ async def test_doc_level_diagnostics(client: httpx.AsyncClient) -> None:
                 ),
             }
         ],
+        "binding_types": {},
     }
 
 
@@ -75,6 +83,7 @@ async def test_engine_diagnostics_pass_through_with_structural_paths(
             {"category": "declaration", "path": "blocks[0].children[1]",
              "message": "measure writes undeclared stream 'od'"},
         ],
+        "binding_types": {},
     }
 
 
@@ -88,7 +97,7 @@ def _doc(workflow: dict[str, Any], roles: dict[str, Any] | None = None) -> dict[
 async def test_schema_three_is_accepted(client: httpx.AsyncClient) -> None:
     """Schema 3 is the supported version (statically typed, unit-checked)."""
     resp = await client.post("/api/validate", json=_doc({"schema_version": 3, "blocks": []}))
-    assert resp.json() == {"ok": True, "diagnostics": []}
+    assert resp.json() == {"ok": True, "diagnostics": [], "binding_types": {}}
 
 
 async def test_unsupported_schema_version_is_schema_diagnostic(
@@ -133,7 +142,7 @@ def _parallel_stop(device_a: str, device_b: str) -> dict[str, Any]:
 async def test_distinct_roles_of_same_type_are_clean(client: httpx.AsyncClient) -> None:
     roles = {"feed": {"type": "pump"}, "waste": {"type": "pump"}}
     resp = await client.post("/api/validate", json=_doc(_parallel_stop("feed", "waste"), roles))
-    assert resp.json() == {"ok": True, "diagnostics": []}
+    assert resp.json() == {"ok": True, "diagnostics": [], "binding_types": {}}
 
 
 async def test_same_role_in_parallel_lanes_hits_engine_affinity_check(
@@ -171,7 +180,7 @@ async def test_for_each_typed_role_var_validates_clean(client: httpx.AsyncClient
         ],
     }
     resp = await client.post("/api/validate", json=_doc(workflow))
-    assert resp.json() == {"ok": True, "diagnostics": []}
+    assert resp.json() == {"ok": True, "diagnostics": [], "binding_types": {}}
 
 
 async def test_malformed_for_each_yields_expansion_diagnostic(client: httpx.AsyncClient) -> None:
@@ -188,6 +197,7 @@ async def test_malformed_for_each_yields_expansion_diagnostic(client: httpx.Asyn
         "ok": False,
         "diagnostics": [{"category": "expansion", "path": "workflow",
                          "message": "for_each 'in' must be a non-empty list"}],
+        "binding_types": {},
     }
 
 
@@ -199,4 +209,26 @@ async def test_non_object_group_ref_body_yields_diagnostic_not_500(
     )
     assert resp.status_code == 200
     body = resp.json()
+    assert body["ok"] is False and body["diagnostics"]
+
+
+async def test_validate_returns_binding_types(client: httpx.AsyncClient) -> None:
+    workflow = {
+        "schema_version": 3,
+        "blocks": [
+            {"operator_input": {"name": "n", "type": "int"}},
+            {"compute": {"into": "rate", "value": "1", "as": "AU/s"}},
+        ],
+    }
+    resp = await client.post("/api/validate", json=_doc(workflow))
+    body = resp.json()
+    assert body["binding_types"]["n"] == {"base": "int", "unit": "unitless"}
+    assert body["binding_types"]["rate"] == {"base": "int", "unit": "AU/s"}
+
+
+async def test_binding_types_empty_when_doc_fails_to_load(client: httpx.AsyncClient) -> None:
+    # unknown device type -> WorkflowLoadError -> no types, but diagnostics still returned
+    resp = await client.post("/api/validate", json=load_fixture("invalid-roles.json"))
+    body = resp.json()
+    assert body["binding_types"] == {}
     assert body["ok"] is False and body["diagnostics"]

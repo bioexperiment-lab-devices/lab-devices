@@ -200,7 +200,13 @@ export interface Diagnostic {
   message: string
 }
 
+export interface BindingTypeJson {
+  base: string
+  unit: string
+}
+
 export interface ValidateResponse {
   ok: boolean
   diagnostics: Diagnostic[]
+  binding_types?: Record<string, BindingTypeJson>
 }

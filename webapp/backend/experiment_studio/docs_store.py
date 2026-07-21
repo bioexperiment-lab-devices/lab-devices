@@ -16,6 +16,8 @@ from pydantic import BaseModel, Field
 from lab_devices.experiment import (
     ValidationError,
     WorkflowLoadError,
+    binding_types,
+    unit_str,
     validate,
     workflow_from_dict,
 )
@@ -269,3 +271,20 @@ def validate_doc(doc: ExperimentDoc) -> list[dict[str, str]]:
             trace,
         )
     return []
+
+
+def binding_types_for_doc(doc: ExperimentDoc) -> dict[str, dict[str, str]]:
+    """Inferred type of every binding, keyed by name, as {"base", "unit"} for the Bindings
+    panel. Runs the same expand -> parse pipeline as `validate_doc`; on any load error the map
+    is empty (the panel then shows names/writers/readers from the tree and dashes for type).
+    Keys are the expanded/qualified names the engine type-checks — root bindings plus
+    per-instance group-locals like `tube_A_c`; the frontend matches by name and ignores the rest."""
+    try:
+        expanded, _ = expand_dict_traced(doc.workflow)
+        workflow = workflow_from_dict(expanded)
+    except WorkflowLoadError:
+        return {}
+    return {
+        name: {"base": t.base, "unit": unit_str(t.unit)}
+        for name, t in binding_types(workflow).items()
+    }
