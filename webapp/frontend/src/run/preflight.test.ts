@@ -42,6 +42,12 @@ describe('mappingComplete', () => {
     expect(mappingComplete(rows)).toBe(true)
     expect(mappingComplete(buildMappingRows(ROLES, DEVICES, { feed: 'pump_1' }))).toBe(false)
   })
+
+  describe('with no roles', () => {
+    it('is vacuously complete — a no-roles experiment has nothing to map', () => {
+      expect(mappingComplete([])).toBe(true)
+    })
+  })
 })
 
 describe('mergePrefill', () => {

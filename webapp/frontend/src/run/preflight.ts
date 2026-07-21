@@ -36,7 +36,7 @@ export function prefillMapping(
 }
 
 export const mappingComplete = (rows: MappingRow[]): boolean =>
-  rows.length > 0 && rows.every((r) => r.selected !== null)
+  rows.every((r) => r.selected !== null)
 
 /** W6 (a): apply the prefill once the roster arrives without clobbering user picks —
  * loadSelection snapshots the devices list once; a slow roster fetch used to silently
