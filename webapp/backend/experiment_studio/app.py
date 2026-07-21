@@ -61,6 +61,17 @@ _ERROR_MAP: list[tuple[type[Exception], int, str]] = [
     (lab_errors.DiscoveryInProgressError, 409, "agent_busy"),
     (lab_errors.JobInProgressError, 409, "agent_busy"),
     (lab_errors.DiscoveryFailedError, 502, "discovery_failed"),
+    # Manual-command failures (design §6.4): specific codes so the activity log reads
+    # meaningfully instead of a blanket 502. All are LabError subclasses, so they precede
+    # the catch-all below.
+    (lab_errors.InvalidParamsError, 422, "invalid_params"),
+    (lab_errors.InvalidRequestError, 422, "invalid_params"),
+    (lab_errors.UnknownCommandError, 400, "unknown_command"),
+    (lab_errors.UnknownDeviceError, 404, "unknown_device"),
+    (lab_errors.BusyError, 409, "agent_busy"),
+    (lab_errors.NotCalibratedError, 409, "not_ready"),
+    (lab_errors.NotHomedError, 409, "not_ready"),
+    (lab_errors.DeviceUnreachableError, 502, "device_unreachable"),
     (httpx.HTTPError, 502, "lab_unreachable"),
     (lab_errors.LabError, 502, "lab_error"),
 ]

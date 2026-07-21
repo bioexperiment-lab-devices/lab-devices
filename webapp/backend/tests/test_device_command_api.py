@@ -107,6 +107,47 @@ async def test_command_allowed_when_run_is_on_another_lab(
         del app.dependency_overrides[get_run_manager]
 
 
+def _err(code: str, message: str) -> httpx.Response:
+    return httpx.Response(
+        200, json={"id": "", "status": "error", "error": {"code": code, "message": message}}
+    )
+
+
+@pytest.mark.parametrize(
+    ("code", "status", "envelope_code"),
+    [
+        ("busy", 409, "agent_busy"),
+        ("invalid_params", 422, "invalid_params"),
+        ("unknown_command", 400, "unknown_command"),
+        ("not_calibrated", 409, "not_ready"),
+    ],
+)
+async def test_command_error_codes(
+    app: FastAPI,
+    client: httpx.AsyncClient,
+    code: str,
+    status: int,
+    envelope_code: str,
+) -> None:
+    service = LabsService(
+        _registry(),
+        client_factory=_agent_factory(
+            {"POST /api/v1/devices/pump_1/command": _err(code, "device said no")}
+        ),
+        probe=_probe_all_online,
+    )
+    _install(app, service)
+    try:
+        resp = await client.post(
+            "/api/labs/khamit_desktop/devices/pump_1/command",
+            json={"cmd": "dispense", "params": {"volume_ml": 10}},
+        )
+        assert resp.status_code == status
+        assert resp.json()["code"] == envelope_code
+    finally:
+        await service.aclose()
+
+
 async def test_job_status_returns_result(app: FastAPI, client: httpx.AsyncClient) -> None:
     service = LabsService(
         _registry(),
