@@ -22,6 +22,11 @@ class NameBody(BaseModel):
     name: str
 
 
+class CommandBody(BaseModel):
+    cmd: str
+    params: dict[str, Any] | None = None
+
+
 def _merge_names(
     devices: list[dict[str, Any]], names: dict[str, str]
 ) -> list[dict[str, Any]]:
@@ -69,6 +74,32 @@ async def lab_discover(
     devices = await service.discover(lab)
     names = await DeviceNamesStore(db).get_all(lab)
     return _merge_names(devices, names)
+
+
+@router.post("/{lab}/devices/{device_id}/command")
+async def device_command(
+    lab: str,
+    device_id: str,
+    body: CommandBody,
+    service: LabsService = Depends(get_labs_service),
+    manager: RunManager = Depends(get_run_manager),
+) -> dict[str, Any]:
+    active = manager.active()
+    if active is not None and active.lab == lab:
+        raise RunActiveError(active.run_id)  # §6: manual control is locked during a run
+    result = await service.command(lab, device_id, body.cmd, body.params)
+    return {"result": result}
+
+
+@router.get("/{lab}/devices/{device_id}/jobs/{job_id}")
+async def device_job(
+    lab: str,
+    device_id: str,
+    job_id: str,
+    service: LabsService = Depends(get_labs_service),
+) -> dict[str, Any]:
+    result = await service.get_job(lab, device_id, job_id)
+    return {"result": result}
 
 
 @router.put("/{lab}/devices/{device_id}/name")

@@ -63,5 +63,19 @@ class LabsService:
         async with self._client_factory(info) as client:
             return [device_json(d) for d in await client.rediscover()]
 
+    async def command(
+        self, lab: str, device_id: str, cmd: str, params: dict[str, Any] | None
+    ) -> Any:
+        """Run a single device command and return its raw result (design §6.1)."""
+        info = await self._registry.lookup(lab)
+        async with self._client_factory(info) as client:
+            return await client.device(device_id).command(cmd, params)
+
+    async def get_job(self, lab: str, device_id: str, job_id: str) -> Any:
+        """Fetch a job's raw status/result by id (design §6.2)."""
+        info = await self._registry.lookup(lab)
+        async with self._client_factory(info) as client:
+            return await client.device(device_id).command("get_job", {"job_id": job_id})
+
     async def aclose(self) -> None:
         await self._registry.aclose()
