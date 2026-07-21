@@ -51,7 +51,7 @@ async def test_ws_streams_run_to_terminal_status(api: SimpleNamespace) -> None:
     assert kinds[-1] == "run_finished"
     assert messages[-1]["status"] == "completed"
     measure = next(e for e in events if e["kind"] == "measure_recorded")
-    assert set(measure) == {"type", "seq", "timestamp", "kind", "block_id", "data"}
+    assert set(measure) == {"type", "seq", "timestamp", "kind", "block_id", "source_path", "data"}
     assert measure["data"]["stream"] == "od"
 
 
