@@ -45,6 +45,7 @@ describe('runStore', () => {
     expect(s.phase).toBe('active')
     expect(s.runId).toBe('r1')
     expect(s.streamUnits).toEqual({ od: 'AU' })
+    expect(s.doc).toEqual(RECORD.doc)
     expect(sockets).toHaveLength(1)
     expect(sockets[0].connected).toBe(true)
   })
