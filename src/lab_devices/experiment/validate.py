@@ -698,12 +698,10 @@ def _check_expr_type(
     out: list[Diagnostic],
     *,
     expected_unit: Unit | None = None,
-    adapt_unitless: bool = False,
 ) -> None:
     """Check an expression's base against `expected_base` (via `assignable`) and, when
-    `expected_unit` is given, its unit. `adapt_unitless` lets a unitless value satisfy a
-    dimensioned slot (device params, design §3.2); assignment slots (record) pass it False so
-    a unitless value needs an `as` cast (design §3.1)."""
+    `expected_unit` is given, its unit *exactly* (design §3.1) — a record's value must match
+    its stream's unit, bridged only by an `as` cast."""
     try:
         expr = parse_expression(text)
     except ExpressionError as exc:
@@ -722,8 +720,6 @@ def _check_expr_type(
         ))
         return
     if expected_unit is not None and got.unit != expected_unit:
-        if adapt_unitless and got.unit == UNITLESS:
-            return
         out.append(Diagnostic(
             "units", ctx,
             f"expected unit {unit_str(expected_unit)}, got {unit_str(got.unit)}",
@@ -746,11 +742,10 @@ def _check_param_value(
         return
     if isinstance(value, str):
         base: Base = "bool" if spec.kind == "bool" else "int" if spec.kind == "int" else "number"
-        expected_unit = parse_unit(spec.unit) if isinstance(spec.unit, str) else None
-        # A unitless literal/expression adapts to the param's unit (design §3.2).
-        _check_expr_type(
-            value, base, ctx, env, out, expected_unit=expected_unit, adapt_unitless=True
-        )
+        # Device params are unit-unchecked (design §13): a feedback control law legitimately
+        # computes a dose from a measured stream via an implicit-gain conversion, and a param
+        # slot has no `as` cast to bridge it, unlike a record. Only base is enforced here.
+        _check_expr_type(value, base, ctx, env, out)
         _check_streams_declared(value, ctx, w, out)
         return
     if spec.kind == "bool":

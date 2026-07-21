@@ -127,7 +127,7 @@ every threshold comparison in the corpus and the system would be unusable.
 | `record.into` | the target stream's unit is authoritative; `value`'s derived unit must equal it, or optional `as: <unit>` asserts it | + `as` |
 | group `binding` locals | inferred from `init` / body writers; `as` where ambiguous | binding-type inference |
 | group `stream` locals | `units` (already present on `LocalDecl`) → `stream<unit>` | now typed |
-| verb params (registry) | `ParamSpec` gains an **optional** `unit`; checked where present. Dosing/thermal params annotated: `volume_ml→ml`, `speed_ml_min→ml/min`, `drop_suckback_ml→ml`, `measured_volume_ml→ml`, `ml_per_step→ml`, `target_c→degC` | + optional `unit`, incremental |
+| verb params (registry) | **unit-unchecked** (base only) — deferred, see §13 | none this increment |
 
 **One `as` field, two jobs.** On `compute` it (a) declares the scalar type of a binding whose
 inference is ambiguous — the "declare when ambiguous" escape — and (b) asserts a unit the opaque
@@ -247,7 +247,7 @@ superset — so it needs no further bump.)
   - `StreamDecl.units` — required (was optional free text).
   - `Compute.as: {type?, unit?}` ; `Record.as: <unit>`.
   - `OperatorInput.unit` (optional).
-  - `ParamSpec.unit` (optional; registry-side, not serialized in documents).
+  - (Registry param units deferred — see §13.)
   - `LocalDecl` stream `units` reinterpreted as a typed unit.
 - The dump side stays the hand-written `isinstance` ladder (`_dump_body`); both directions get
   the new fields. Canonical key order is extended deliberately and asserted by tests.
@@ -298,7 +298,7 @@ own PR merged before the next begins:
    (which would have crashed the run) are newly rejected. A stricter-validation note goes in the
    CHANGELOG; any example that carried such a latent bug is fixed to keep loading.
 2. **Engine B — units.** Opaque unit algebra; required stream units; `as` casts on
-   `compute`/`record`; optional registry param units. **The `schema_version` 2→3 hard break
+   `compute`/`record` (registry param units deferred — §13). **The `schema_version` 2→3 hard break
    lands here** — required stream units and the `as`/`unit` fields are the first shape change.
    `examples/` and `docs/workflow-schema.md` re-annotated to load.
 3. **Engine C — durations & slots.** Duration literals as `number<s>`; expressions in
@@ -332,8 +332,14 @@ the previous stage actually landed.
   *combination*. Full dimensional analysis is a possible future increment.
 - **Units on value-kind group params.** A `number` group-param arg stays a unitless literal;
   units live on streams, bindings, and expressions. Deferrable without reopening this work.
-- **Exhaustive registry unit coverage.** Param units are optional and annotated incrementally;
-  a param with no declared unit is unit-unchecked, not an error.
+- **Registry param units (deferred in full).** Device params are unit-unchecked. Annotating a
+  param's unit (e.g. `volume_ml→ml`) sounds attractive but conflicts with the engine's core use
+  case: a feedback control law legitimately computes a dose from a measured stream via an
+  implicit-gain conversion (`volume_ml: "2.0 * (target - mean(od))"` derives `AU`, not `ml`), and
+  a param slot has no `as` cast to bridge it — unlike a record. Enforcing param units would
+  reject the flagship feedback pattern with no escape hatch. Deferred pending a param-level cast
+  (or unit literals in the expression grammar). The `_check_expr_type` unit machinery is in place
+  and reused by records, so this is a small future add once the escape hatch is designed.
 - **Scalar math functions** (`ln`, `slope`, `abs`, …) — limitation #2, unrelated.
 
 ---

@@ -75,3 +75,13 @@ def test_as_cast_that_disagrees_with_the_stream_is_rejected():
         {"od": {"units": "AU"}, "rate": {"units": "per_hour"}},
     )
     assert any(d.category == "units" for d in _diagnostics(doc))
+
+
+def test_device_params_are_unit_unchecked():
+    # A feedback control law computes a dose from a measured stream via an implicit-gain
+    # conversion; a param slot has no `as` cast, so params are unit-unchecked (design §13).
+    _validate(_doc(
+        [_MEASURE, {"command": {"device": "drug_pump", "verb": "dispense",
+                                "params": {"volume_ml": "2.0 * mean(od)"}}}],
+        {"od": {"units": "AU"}},
+    ) | {"roles": {**_METER, "drug_pump": {"type": "pump"}}})
