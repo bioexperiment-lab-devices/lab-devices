@@ -79,8 +79,8 @@ class Parallel(BlockBase):
 @dataclass(kw_only=True)
 class Loop(BlockBase):
     body: list[Block] = field(default_factory=list)
-    count: int | None = None
-    pace: str | None = None
+    count: int | str | None = None  # int literal or an int-typed expression (design §6)
+    pace: str | None = None  # a number<s> duration expression
     until: str | None = None
     check: str = "after"
 
