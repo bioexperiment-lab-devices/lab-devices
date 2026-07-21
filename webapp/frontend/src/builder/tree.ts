@@ -1,7 +1,7 @@
 /** Editor tree model: the canvas tree IS the engine AST (settled decision S1), with
  * stable uids for React keys, selection, and diagnostics mapping. All ops are pure and
  * return new trees (zustand/zundo snapshot immutability). */
-import type { ParamValue, RetryJson } from '../types/doc'
+import type { ParamValue, RetryJson, ParamDeclJson } from '../types/doc'
 import type { VerbSpec } from '../types/catalog'
 
 export type InputType = 'int' | 'float' | 'bool' | 'enum'
@@ -90,14 +90,15 @@ export interface BranchNode extends NodeBase {
 
 export interface ForEachNode extends NodeBase {
   kind: 'for_each'
-  var: string | null
-  items: Array<ParamValue | Record<string, ParamValue>>
+  vars: ParamDeclJson[]
+  rows: Array<Record<string, ParamValue>>
   body: BlockNode[]
 }
 
 export interface GroupRefNode extends NodeBase {
   kind: 'group_ref'
   name: string
+  as: string | null
   args: Record<string, ParamValue>
 }
 
@@ -391,10 +392,11 @@ export function newPaletteNode(kind: PaletteKind): BlockNode {
     case 'for_each':
       // Seeded with a concrete example rather than blanks: an empty `in` is a load error
       // (expand.py:99 "for_each 'in' must be a non-empty list"), so a freshly-dragged empty
-      // for_each would make the whole doc unsavable until filled.
-      return { ...base, kind, var: 'tube', items: [1, 2, 3], body: [] }
+      // for_each would make the whole doc unsavable until filled. Schema 2: a typed `var` and
+      // one value per row (the scalar `var` shorthand is gone).
+      return { ...base, kind, vars: [{ name: 'tube', kind: 'int' }], rows: [{ tube: 1 }, { tube: 2 }, { tube: 3 }], body: [] }
     case 'group_ref':
-      return { ...base, kind, name: '', args: {} }
+      return { ...base, kind, name: '', as: null, args: {} }
   }
 }
 
@@ -404,7 +406,7 @@ export function newPaletteNode(kind: PaletteKind): BlockNode {
  * `newPaletteNode` call. `args` is left empty for the Inspector to fill, exactly as a blank
  * `Group ref` behaved before. */
 export function newGroupRefNode(name: string): BlockNode {
-  return { ...nodeBase(), kind: 'group_ref', name, args: {} }
+  return { ...nodeBase(), kind: 'group_ref', name, as: null, args: {} }
 }
 
 export function newVerbNode(role: string, verb: string, spec: VerbSpec): BlockNode {

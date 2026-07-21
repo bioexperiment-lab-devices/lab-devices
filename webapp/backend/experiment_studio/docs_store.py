@@ -17,26 +17,20 @@ from lab_devices.experiment import (
     ValidationError,
     WorkflowLoadError,
     validate,
-    verb_catalog,
     workflow_from_dict,
 )
 from lab_devices.experiment.expand import expand_dict_traced
 
-from experiment_studio import roles as roles_mod
 from experiment_studio.db import Database
 
 
-class RoleDef(BaseModel):
-    type: str
-
-
 class ExperimentDoc(BaseModel):
-    """Saved unit (§4.1): wraps the engine workflow JSON; `device` fields hold role names."""
+    """Saved unit (§4.1): wraps the engine workflow JSON; `device` fields hold role names.
+    Roles live inside `workflow` now (design 2026-07-20 §5) — the envelope has no `roles`."""
 
     doc_version: Literal[1]
     name: str = Field(min_length=1)
     description: str | None = None
-    roles: dict[str, RoleDef] = Field(default_factory=dict)
     workflow: dict[str, Any]
 
 
@@ -249,23 +243,19 @@ def _remap_diagnostics(
 
 
 def validate_doc(doc: ExperimentDoc) -> list[dict[str, str]]:
-    """§4.3: doc-level role checks, placeholder substitution, engine parse + validate."""
-    role_types = {name: role.type for name, role in doc.roles.items()}
-    diags = roles_mod.role_diagnostics(role_types, set(verb_catalog()))
+    """§4.3: expand (traced) -> engine parse -> engine validate -> remap paths to authored.
+
+    Roles live inside the workflow and the engine validates them (design 2026-07-20 §5), so
+    there is no doc-level role check and no placeholder substitution here. The trace maps every
+    expanded index back to the authored block so for_each/group_ref diagnostics collapse to one
+    per authored block. `doc_version` stays 1 — the envelope version is independent of the
+    workflow's `schema_version`."""
     try:
-        # for_each/group(tube) -> concrete roles (§9); trace maps expanded -> authored paths
-        # so every diagnostic downstream of the expand can be reported where the author edits.
         expanded, trace = expand_dict_traced(doc.workflow)
     except WorkflowLoadError as exc:
-        return diags + [{"category": "expansion", "path": "workflow", "message": str(exc)}]
-    substituted, ref_diags = roles_mod.substitute(
-        expanded, roles_mod.placeholder_ids(role_types)
-    )
-    diags += _remap_diagnostics(ref_diags, trace)
-    if diags:
-        return diags  # substitution unsound; engine output would duplicate (plan P3)
+        return [{"category": "expansion", "path": "workflow", "message": str(exc)}]
     try:
-        workflow = workflow_from_dict(substituted)
+        workflow = workflow_from_dict(expanded)
     except WorkflowLoadError as exc:
         return [{"category": "schema", "path": "workflow", "message": str(exc)}]
     try:

@@ -8,6 +8,7 @@ from tests.experiment_run_helpers import (
     ScriptedInputProvider,
     add_standard_devices,
     make_workflow,
+    role_devices,
     verbs,
 )
 from tests.fakeclock import FakeClock, drive
@@ -21,7 +22,8 @@ def make_ctx(client, workflow, *, clock=None, inputs=None):
     state = RunState()
     for name in workflow.streams:
         state.streams[name] = Stream()
-    return RunContext(client=client, workflow=workflow, state=state, options=options)
+    return RunContext(client=client, workflow=workflow, state=state, options=options,
+                      role_devices=role_devices(workflow))
 
 
 async def run_blocks(ctx):

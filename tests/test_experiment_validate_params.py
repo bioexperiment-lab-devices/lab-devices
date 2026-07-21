@@ -1,11 +1,16 @@
 from lab_devices.experiment.blocks import Command
 from lab_devices.experiment.validate import validate
-from lab_devices.experiment.workflow import Workflow
+from lab_devices.experiment.workflow import RoleDecl, Workflow
 from tests.experiment_validate_helpers import cmd, diags, wf
+
+# A Workflow built through the Python API skips the loader, so it must declare its roles by
+# hand: `device:` holds a ROLE name and nothing decodes a type out of one (design §5.2).
+PUMP_ROLE = {"pump_1": RoleDecl(type="pump", device="pump_1")}
 
 
 def test_unknown_verb_programmatic():
-    w = Workflow(schema_version=1, blocks=[Command(device="pump_1", verb="teleport")])
+    w = Workflow(schema_version=2, roles=PUMP_ROLE,
+                 blocks=[Command(device="pump_1", verb="teleport")])
     d = diags(w)
     assert any(x.category == "registry" and "teleport" in x.message for x in d)
 
@@ -55,7 +60,7 @@ def test_string_param_rejects_number():
 
 
 def test_non_value_param_rejected():
-    w = Workflow(schema_version=1, blocks=[
+    w = Workflow(schema_version=2, roles=PUMP_ROLE, blocks=[
         Command(device="pump_1", verb="dispense", params={"volume_ml": None}),
     ])
     d = diags(w)
@@ -93,7 +98,7 @@ def test_string_binding_in_expression_flagged():
 
 
 def test_invalid_expression_param_programmatic():
-    w = Workflow(schema_version=1, blocks=[
+    w = Workflow(schema_version=2, roles=PUMP_ROLE, blocks=[
         Command(device="pump_1", verb="dispense", params={"volume_ml": "1 +"}),
     ])
     d = diags(w)

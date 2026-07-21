@@ -6,7 +6,6 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from lab_devices.experiment.context import RunContext
-from lab_devices.experiment.registry import device_type
 
 _SWEEP: dict[str, tuple[tuple[str, dict[str, Any]], ...]] = {
     "pump": (("stop", {}),),
@@ -32,9 +31,9 @@ async def run_finalizer(ctx: RunContext) -> list[BaseException]:
     """Best-effort, fixed-order shutdown; a failed step never skips the rest (§11)."""
     errors: list[BaseException] = []
     _emit(ctx, "finalize_started")
-    # 1. Cancel in-flight jobs: stop each device that still owns a live job.
-    for device_id in dict.fromkeys(entry[0] for entry in ctx.in_flight.values()):
-        stopped = await _issue(ctx, device_id, "stop", {}, "job_cancelled", errors)
+    # 1. Cancel in-flight jobs: stop each role that still owns a live job.
+    for role in dict.fromkeys(entry[0] for entry in ctx.in_flight.values()):
+        stopped = await _issue(ctx, role, "stop", {}, "job_cancelled", errors)
         if stopped:
             # The stop killed the device's jobs, so the channels an abandoned job was still
             # holding (Occupancy.strand, design 2026-07-14 §3.2) are genuinely free now. Hand
@@ -43,8 +42,8 @@ async def run_finalizer(ctx: RunContext) -> list[BaseException]:
             # and an operator recovering AFTER the run must not find the device busy for ever.
             # `ctx.in_flight` deliberately keeps the record — the run did abandon that job.
             for job_id, (owner, _job) in ctx.in_flight.items():
-                if owner == device_id:
-                    ctx.occupancy.release_stranded(device_id, job_id)
+                if owner == role:
+                    ctx.occupancy.release_stranded(role, job_id)
     # 2. Tear down open modes, most recently opened first.
     for mode in reversed(ctx.occupancy.open_modes()):
         ok = await _issue(
@@ -53,17 +52,21 @@ async def run_finalizer(ctx: RunContext) -> list[BaseException]:
         )
         if ok:
             ctx.occupancy.register_close(mode.device, mode.mode_verb)
-    # 3. Unconditional idempotent safe-state sweep over every touched device.
-    for device_id in ctx.touched:
-        for verb, params in _SWEEP.get(device_type(device_id), ()):
-            await _issue(ctx, device_id, verb, dict(params), "sweep_command", errors)
+    # 3. Unconditional idempotent safe-state sweep over every touched role. The role
+    #    addresses the device; its DECLARED type selects the sweep verbs (design §5.2).
+    for role in ctx.touched:
+        decl = ctx.workflow.roles.get(role)
+        if decl is None:  # unreachable for a validated workflow; the sweep must never raise
+            continue
+        for verb, params in _SWEEP.get(decl.type, ()):
+            await _issue(ctx, role, verb, dict(params), "sweep_command", errors)
     _emit(ctx, "finalize_finished", errors=len(errors))
     return errors
 
 
 async def _issue(
     ctx: RunContext,
-    device_id: str,
+    role: str,
     verb: str,
     params: dict[str, Any],
     kind: str,
@@ -72,13 +75,13 @@ async def _issue(
     """One best-effort call; catches everything (incl. CancelledError) by design —
     an abort arriving mid-finalize must not stop the safe-state sweep."""
     try:
-        device = ctx.device(device_id)
+        device = ctx.device(role)
         method: Callable[..., Awaitable[Any]] = getattr(device, verb)
-        async with ctx.lock(device_id):
+        async with ctx.lock(role):
             await method(**params)
     except BaseException as exc:
         errors.append(exc)
-        _emit(ctx, "finalize_step_failed", device=device_id, verb=verb, error=str(exc))
+        _emit(ctx, "finalize_step_failed", device=role, verb=verb, error=str(exc))
         return False
-    _emit(ctx, kind, device=device_id, verb=verb)
+    _emit(ctx, kind, device=role, verb=verb)
     return True

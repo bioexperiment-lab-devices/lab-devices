@@ -4,7 +4,7 @@ See design 4-exec §3, §10-12."""
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from lab_devices.client import LabClient
 from lab_devices.experiment import blocks as B
@@ -17,6 +17,8 @@ from lab_devices.experiment.errors import (
     PersistenceError,
     RunAbortedError,
     ToleratedError,
+    UnknownRoleError,
+    WorkflowLoadError,
 )
 from lab_devices.experiment.execute import execute_blocks
 from lab_devices.experiment.expand import expand_workflow
@@ -61,6 +63,46 @@ def _contains_abort(exc: BaseException) -> bool:
     return False
 
 
+def _resolve_roles(workflow: Workflow, mapping: dict[str, str]) -> dict[str, str]:
+    """Role -> physical device id for one run (design 2026-07-20 §5.2, §5.4).
+
+    `options.role_mapping` overrides a role's own `device:`; a role bound by neither is an
+    error. The result is INJECTIVE by construction. That is load-bearing, not hygiene: the
+    affinity and mode analyses intersect raw device strings, reasoning about which roles can
+    physically collide on the same hardware. `Occupancy._slots` and `ctx.lock` key on the
+    ROLE name, not the device id, so two roles aliasing one device would NOT collide there —
+    they'd get independent slots and independent locks on hardware that is actually shared,
+    silently invalidating the static affinity/mode proof (two "unrelated" roles dispatching
+    concurrently onto one physical device with no shared lock to serialize them). Rejecting
+    the non-injective mapping here, at run start, is the SOLE guard against that: with
+    injectivity, role names and device ids are in bijection and the static proof is sound by
+    construction (§5.4).
+    """
+    for role in mapping:
+        if role not in workflow.roles:
+            raise UnknownRoleError(
+                f"role_mapping names {role!r}, which is not a declared role; the workflow "
+                f"declares {sorted(workflow.roles)}"
+            )
+    resolved: dict[str, str] = {}
+    owner: dict[str, str] = {}
+    for role, decl in workflow.roles.items():
+        device = mapping.get(role, decl.device)
+        if device is None:
+            raise WorkflowLoadError(
+                f"role {role!r} is not bound to a device: give it a 'device' in the "
+                f"workflow's roles section, or supply one in RunOptions.role_mapping"
+            )
+        if device in owner:
+            raise WorkflowLoadError(
+                f"roles {owner[device]!r} and {role!r} both map to device {device!r}; the "
+                f"role->device mapping must be injective (design 2026-07-20 §5.4)"
+            )
+        owner[device] = role
+        resolved[role] = device
+    return resolved
+
+
 @dataclass
 class RunReport:
     """Outcome of one execution (design 4-exec §12); set before execute() raises."""
@@ -76,6 +118,9 @@ class RunReport:
     # Declared last, with a default: the failure path above constructs RunReport positionally.
     tolerated_errors: tuple[ToleratedError, ...] = ()
     alarms: tuple[AlarmRecord, ...] = ()  # alarm blocks that fired (design 2026-07-16 §4.4)
+    role_devices: dict[str, str] = field(default_factory=dict)
+    # The role -> physical device id mapping this run used, recorded ONCE (design §5.2).
+    # Events carry role names; this is where a reader turns one into hardware.
 
 
 class ExperimentRun:
@@ -84,16 +129,20 @@ class ExperimentRun:
     def __init__(
         self, client: LabClient, workflow: Workflow, options: RunOptions | None = None
     ) -> None:
+        self._options = options or RunOptions()
+        # Resolution FIRST: a bad mapping is a fact about this run, not about the document,
+        # and reporting it before the (slower, noisier) static pass keeps the two separable.
+        role_devices = _resolve_roles(workflow, self._options.role_mapping)
         validate(workflow)  # the runtime's safety model IS the static proof (D6)
         workflow = expand_workflow(workflow)  # run the concrete tree (design 2026-07-15 §4.4)
         assign_block_ids(workflow)
         self._workflow = workflow
-        self._options = options or RunOptions()
         state = RunState()
         for stream_name in workflow.streams:
             state.streams[stream_name] = Stream()  # pre-created: count()==0 (§3)
         self._ctx = RunContext(
-            client=client, workflow=workflow, state=state, options=self._options
+            client=client, workflow=workflow, state=state, options=self._options,
+            role_devices=role_devices,
         )
         self._task: asyncio.Task[object] | None = None
         self._started = False
@@ -133,15 +182,38 @@ class ExperimentRun:
                 pass
 
     # ---- control-plane seams for Console (design 5 §9) ----
+    # Console (control.py) speaks PHYSICAL device ids -- what client.list_devices() returns
+    # and what a recovery operator types. Occupancy and ctx.lock key on ROLE names (§5.2).
+    # These three seams keep the physical-id contract and translate at the boundary via
+    # `_role_for_device`, so Console never has to know the engine's internal key is a role.
+    def _role_for_device(self, device_id: str) -> str | None:
+        """Physical device id -> the role this run maps it to, or None if no role does
+        (role_devices is injective by construction -- see `_resolve_roles` -- so the
+        inverse lookup is well-defined; a linear scan is fine, these are rare control-plane
+        calls)."""
+        for role, device in self._ctx.role_devices.items():
+            if device == device_id:
+                return role
+        return None
+
     def is_device_busy(self, device_id: str) -> bool:
-        return self._ctx.occupancy.is_busy(device_id)
+        role = self._role_for_device(device_id)
+        if role is None:  # this run doesn't use device_id at all -> can't be busy on it
+            return False
+        return self._ctx.occupancy.is_busy(role)
 
     def busy_devices(self) -> set[str]:
-        return self._ctx.occupancy.busy_devices()
+        # occupancy reports roles; translate back to physical ids for Console/the operator.
+        return {self._ctx.role_devices[role] for role in self._ctx.occupancy.busy_devices()}
 
     def wire_lock(self, device_id: str) -> asyncio.Lock:
         """The per-device wire lock (D2); introspection serializes on it during a live run."""
-        return self._ctx.lock(device_id)
+        role = self._role_for_device(device_id)
+        if role is None:
+            # This run never does wire calls to device_id, so a fresh, run-unused lock
+            # (keyed by the raw id, disjoint from every role name) is a harmless fallback.
+            return self._ctx.lock(device_id)
+        return self._ctx.lock(role)
 
     # ---- lifecycle (design §3, §11-12) ----
     async def execute(self) -> RunReport:
@@ -156,7 +228,10 @@ class ExperimentRun:
         except PersistenceError as exc:
             # RunReport.log is the resolved sink (§5): ctx.log_sink already holds the
             # injected/default sink from RunContext.__post_init__ (NEW-3).
-            self.report = RunReport("failed", exc, (), ctx.state, ctx.log_sink)
+            self.report = RunReport(
+                "failed", exc, (), ctx.state, ctx.log_sink,
+                role_devices=dict(ctx.role_devices),
+            )
             raise
         self._sinks = sinks
         ctx.log_sink = sinks.log_sink
@@ -209,6 +284,7 @@ class ExperimentRun:
             persistence_errors=sinks.persistence_errors(),
             tolerated_errors=tuple(ctx.tolerated),
             alarms=tuple(ctx.alarms),
+            role_devices=dict(ctx.role_devices),
         )
         if cancelled:
             assert error is not None  # isinstance check above guarantees this (mypy narrowing)

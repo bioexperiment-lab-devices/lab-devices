@@ -18,6 +18,8 @@ made the example unusable for its actual purpose. It is now closed. **Update, 20
 shipped too — see their sections; #2 and #5–#8 remain open, and everything written about those
 still holds. **Update, 2026-07-16:** #7 (`abort`/`alarm`, Increment 8) has since shipped too — see
 its section; #2, #5, #6, and #8 remain open, and everything written about those still holds.
+**Update, 2026-07-20:** #4 (parametrized groups) was re-shipped typed (Increment 9) — see its
+section; #2, #5, #6, and #8 remain open, and everything written about those still holds.
 
 ---
 
@@ -434,26 +436,33 @@ relative to its payoff.
 
 ## 4. Groups are not parametrized — **SHIPPED (2026-07-15)**
 
-**Shipped as `for_each` + parametrized groups** (Increment 7). Design:
-[`superpowers/specs/2026-07-15-experiment-orchestrator-7-parametrized-repetition-design.md`](superpowers/specs/2026-07-15-experiment-orchestrator-7-parametrized-repetition-design.md).
-`{for_each: {var, in, body}}` (or object items, `in: [{tube:1}, ...]`) is a splicing macro: it
-copies `body` once per item, interpolates every `{name}` hole in every string, and splices the
-copies into the **enclosing** block list — `len(in) × len(body)` siblings, so a `for_each` as the
-sole child of a `parallel` becomes N concurrent lanes, and inside a `serial` becomes an N-step
-sequence. `groups` gain `params` and `group_ref` gains `args`: a parametrized `group_ref` copies
-the group body with `args` substituted and inlines it as a single `Serial` carrying the ref's own
-block-level keys (one call, not iteration); a plain param-less group is unchanged. Substitution is
-order-independent — a hole not in the running substitution's own env passes through untouched
-rather than erroring, and a single post-expansion scan catches anything still unbound — which is
-what lets a parametrized group's body contain a nested `for_each`. Both macros are first-class in
-the authored AST (they round-trip unchanged through save/reload), but `validate()` and
-`ExperimentRun` run every existing check against an internally expanded copy, so affinity,
-mode-lifetime, and read-before-write analysis see concrete names (`od_1`, `od_2`, `od_3`) for
-free, with no new analysis logic. `examples/morbidostat.json`'s three near-identical tube-service
-subtrees are now one `service(tube)` group, invoked once per tube by a `for_each`; the OD-read
-lanes and the accumulator seeds are `for_each` too. The control law lives in one place instead of
-three. (Stream declarations are still explicit, hand-written per tube — templating them is out of
-scope.)
+**Shipped as `for_each` + parametrized groups** (Increment 7), then **re-shipped typed**
+(Increment 9, 2026-07-20). Designs:
+[`superpowers/specs/2026-07-15-experiment-orchestrator-7-parametrized-repetition-design.md`](superpowers/specs/2026-07-15-experiment-orchestrator-7-parametrized-repetition-design.md)
+and
+[`superpowers/specs/2026-07-20-typed-group-parameters-design.md`](superpowers/specs/2026-07-20-typed-group-parameters-design.md).
+Current syntax lives in [`workflow-schema.md`](workflow-schema.md) — read that, not this.
+
+Increment 7 shipped the macros untyped: `params` was a `list[str]` and `for_each` took a scalar
+`var` over a bare item list, so a hole was a bare textual macro interpolated into every string
+in the body. That worked and it scaled the control law from three hand-copied subtrees to one,
+which is what this limitation asked for. What it could not do was *check* anything: in
+`examples/morbidostat.json` the single `tube` param was simultaneously a stream suffix
+(`od_{tube}`), a binding suffix (`c_{tube}`), an `int` verb param (`position: "{tube}"`), and a
+role suffix (`od_meter_{tube}`), and none of those is a name until expansion has already
+produced one. A typo was not a load error; it was a residual-hole error at some expanded index,
+or a silently valid name that read another tube's data.
+
+Increment 9 gives each of those four things a kind. `params` is an ordered list of typed
+declarations, `for_each` takes `vars` + a typed row table (the scalar shorthand is removed), and
+`groups` gain `locals` — the streams and bindings a group owns, emitted under a qualified
+instance name (`tube_1_c_series`) and seeded by a constant `init` that the expander hoists,
+which is what deleted the doc's hand-written seeding `for_each`. Roles moved into the workflow
+in the same increment, so a `role<densitometer>` column replaces `od_meter_{tube}` string
+surgery. Everything is checked before expansion; `schema_version` is `2` and v1 documents using
+`groups` or `for_each` do not load, because their param types were never recorded.
+(Stream declarations are no longer hand-written per tube where a group owns them — that half of
+the old caveat is closed; streams a group merely *reads* are still declared explicitly.)
 
 **What.** `groups` + `group_ref` exist, but a group takes no arguments. Its body hard-codes its
 device roles and stream names.
@@ -716,7 +725,7 @@ that a `parallel` block of state-persisting verbs is unsafe on such a roster.
 | 1 | ~~No computed bindings~~ | ~~Any stateful controller; drug tracking; escalation rules~~ | **SHIPPED 2026-07-15** — `compute` block (number or boolean; seeded accumulator) |
 | 2 | No math functions | `ln`-based growth rate; median filtering | `slope`, `median`, `stddev`, `ln`, `abs` |
 | 3 | ~~Streams can't hold computed values~~ | ~~Charting growth rate / drug concentration~~ | **SHIPPED 2026-07-15** — `record` block (computed sample into a declared stream) |
-| 4 | ~~Groups not parametrized~~ | ~~Scaling past ~3 vials~~ | **SHIPPED 2026-07-15** — `for_each` (splicing macro) + parametrized groups (`params`/`args`, inlined as a `Serial`) |
+| 4 | ~~Groups not parametrized~~ | ~~Scaling past ~3 vials~~ | **SHIPPED 2026-07-15**, typed 2026-07-20 — `for_each` (typed row table) + typed group params, `locals`, engine-owned roles; see [`workflow-schema.md`](workflow-schema.md) |
 | 5 | `enum` inputs unusable in expressions | Operator-selectable modes | String comparison in expressions |
 | 6 | Durations/counts are literals | Cycle time as an operator input; adaptive timing | Expressions in duration/count slots |
 | 7 | ~~No abort/assert block~~ | ~~Contamination guards on long runs~~ | **SHIPPED 2026-07-16** — `abort` (hard stop, `AbortSignalError`, status `"aborted"`) / `alarm` (flag-and-continue, `RunReport.alarms`) |
@@ -747,6 +756,15 @@ for the first time: the tube-service control law is written once, as a `service(
 had already bought this example its scale for *retry policy* — one clause instead of ~60
 hand-copied ones; **#4 now buys that same scale for the *control law* itself** — one law instead
 of fifteen hand-copied, byte-identical subtrees.
+
+**#4 was re-shipped typed** (Increment 9, 2026-07-20). The 2026-07-15 version bought the scale;
+it did not buy the safety, because an untyped hole is not a name until expansion makes one, and
+nothing can be checked before that. Kinds, group locals, and engine-owned roles close that gap:
+the four distinct things `{tube}` used to mean are now four declarations, each checked against
+the role, stream, and binding namespaces before a single copy is spliced. It also produced the
+repo's first maintained schema reference, [`workflow-schema.md`](workflow-schema.md) — until
+now the format was documented only inside dated design specs, which are records of decisions and
+go stale by design.
 
 **#7 (abort/alarm) is now done too** (Increment 8, 2026-07-16). `abort` and `alarm` share one
 condition-evaluation path with `branch`, so the freshness/read-before-write guarantees documented

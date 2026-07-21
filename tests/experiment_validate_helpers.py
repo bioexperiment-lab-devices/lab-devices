@@ -4,15 +4,18 @@ import pytest
 from lab_devices.experiment.errors import ValidationError
 from lab_devices.experiment.serialize import workflow_from_dict
 from lab_devices.experiment.validate import validate
+from tests.experiment_role_helpers import auto_roles
 
 
-def wf(blocks, streams=None, groups=None):
-    return workflow_from_dict({
-        "schema_version": 1,
+def wf(blocks, streams=None, groups=None, roles=None):
+    doc = {
+        "schema_version": 2,
         "streams": {name: {} for name in (streams or [])},
         "groups": groups or {},
         "blocks": blocks,
-    })
+    }
+    doc["roles"] = auto_roles(doc) if roles is None else roles
+    return workflow_from_dict(doc)
 
 
 def diags(workflow):

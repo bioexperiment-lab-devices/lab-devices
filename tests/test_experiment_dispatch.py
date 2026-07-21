@@ -5,17 +5,24 @@ from lab_devices.experiment.context import RunContext, RunOptions
 from lab_devices.experiment.errors import EvaluationError, InvariantViolationError
 from lab_devices.experiment.execute import _run_action
 from lab_devices.experiment.state import RunState, Stream
-from tests.experiment_run_helpers import add_standard_devices, make_workflow, verbs
+from tests.experiment_run_helpers import (
+    STANDARD_ROLES,
+    add_standard_devices,
+    make_workflow,
+    role_devices,
+    verbs,
+)
 from tests.fakeclock import FakeClock, drive
 
 
 def make_ctx(client, workflow=None, *, clock=None, job_timeout=None):
-    wf = workflow if workflow is not None else make_workflow([])
+    wf = workflow if workflow is not None else make_workflow([], roles=STANDARD_ROLES)
     options = RunOptions(clock=clock or FakeClock(), job_timeout=job_timeout)
     state = RunState()
     for name in wf.streams:
         state.streams[name] = Stream()
-    return RunContext(client=client, workflow=wf, state=state, options=options)
+    return RunContext(client=client, workflow=wf, state=state, options=options,
+                      role_devices=role_devices(wf))
 
 
 def cmd(device, verb, params=None, id="blocks[0]"):
@@ -48,7 +55,7 @@ async def test_job_verb_polls_via_clock_and_untracks(fake_client):
 async def test_expression_params_resolved_at_dispatch(fake_client):
     fake, client = fake_client
     add_standard_devices(fake)
-    wf = make_workflow([], streams={"OD": {}})
+    wf = make_workflow([], streams={"OD": {}}, roles=STANDARD_ROLES)
     ctx = make_ctx(client, wf)
     ctx.state.record("OD", 0.0, 0.4)
     ctx.state.bind("target", 1.0)
@@ -91,7 +98,7 @@ async def test_int_slot_rejects_fractional(fake_client):
 async def test_unresolvable_param_fails_before_wire(fake_client):
     fake, client = fake_client
     add_standard_devices(fake)
-    wf = make_workflow([], streams={"OD": {}})
+    wf = make_workflow([], streams={"OD": {}}, roles=STANDARD_ROLES)
     ctx = make_ctx(client, wf)
     with pytest.raises(EvaluationError, match="empty stream window"):
         await _run_action(cmd("pump_1", "dispense", {"volume_ml": "mean(OD)"}), ctx)

@@ -11,24 +11,28 @@ def _roundtrip_block(d):
     assert block_to_dict(block_from_dict(d)) == d
 
 
-def test_for_each_scalar_shorthand_roundtrips():
-    d = {"for_each": {"var": "tube", "in": [1, 2, 3],
-                      "body": [{"measure": {"device": "densitometer_{tube}",
-                                            "verb": "measure", "into": "od_{tube}"}}]}}
-    _roundtrip_block(d)
-    block = block_from_dict(d)
-    assert isinstance(block, B.ForEach)
-    assert block.var == "tube" and block.items == [1, 2, 3]
+def test_for_each_scalar_shorthand_is_rejected():
+    # The `var` + scalar `in` shorthand cannot carry a kind, so schema_version 2 removes it
+    # rather than leave an untyped path alive next to the typed one (design 2026-07-20 §4).
+    with pytest.raises(WorkflowLoadError, match="shorthand was removed"):
+        block_from_dict({"for_each": {"var": "tube", "in": [1, 2, 3],
+                                      "body": [{"wait": {"duration": "1s"}}]}})
 
 
 def test_for_each_object_items_roundtrip():
-    d = {"for_each": {"in": [{"tube": 1, "port": 5}, {"tube": 2, "port": 6}],
+    d = {"for_each": {"vars": [{"name": "tube", "kind": "int"}, {"name": "port", "kind": "int"}],
+                      "in": [{"tube": 1, "port": 5}, {"tube": 2, "port": 6}],
                       "body": [{"wait": {"duration": "1s"}}]}}
     _roundtrip_block(d)
+    block = block_from_dict(d)
+    assert isinstance(block, B.ForEach)
+    assert [p.name for p in block.vars] == ["tube", "port"]
+    assert block.items == [{"tube": 1, "port": 5}, {"tube": 2, "port": 6}]
 
 
-def test_for_each_label_roundtrips_var_omitted_for_object_items():
-    d = {"for_each": {"in": [{"t": 1}], "body": [{"wait": {"duration": "1s"}}]},
+def test_for_each_label_roundtrips():
+    d = {"for_each": {"vars": [{"name": "t", "kind": "int"}], "in": [{"t": 1}],
+                      "body": [{"wait": {"duration": "1s"}}]},
          "label": "per tube"}
     _roundtrip_block(d)
 
@@ -51,14 +55,14 @@ def test_non_object_group_ref_body_raises_workflow_load_error():
 
 
 def test_group_params_roundtrip_in_workflow():
-    doc = {"schema_version": 1,
-           "groups": {"service": {"params": ["tube"],
+    doc = {"schema_version": 2,
+           "groups": {"service": {"params": [{"name": "tube", "kind": "int"}],
                                   "body": [{"wait": {"duration": "1s"}}]}},
            "blocks": [{"group_ref": {"name": "service", "args": {"tube": 1}}}]}
     assert workflow_to_dict(workflow_from_dict(doc)) == {
-        "schema_version": 1,
+        "schema_version": 2,
         "persistence": {"default": "in_memory", "format": "jsonl"},
-        "groups": {"service": {"params": ["tube"],
+        "groups": {"service": {"params": [{"name": "tube", "kind": "int"}],
                                "body": [{"wait": {"duration": "1s"}}]}},
         "blocks": [{"group_ref": {"name": "service", "args": {"tube": 1}}}],
     }

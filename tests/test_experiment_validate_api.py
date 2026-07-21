@@ -13,14 +13,21 @@ from lab_devices.experiment import (
 # The design spec's flagship example (§15.2), verbatim. It must validate cleanly:
 # free start/stop rotate..stop, close-with-no-open set_led(0), post-test feedback
 # loop, group ref, operator-input binding.
+_ROLES_DOC = {
+    "pump_1": {"type": "pump"},
+    "pump_2": {"type": "pump"},
+    "densitometer_1": {"type": "densitometer"},
+}
+
 SPEC_EXAMPLE = {
-    "schema_version": 1,
+    "schema_version": 2,
     "metadata": {
         "name": "od-feedback-feed",
         "author": "khamitov",
         "description": "Feed pump_1 by live OD until target, stirring throughout.",
     },
     "persistence": {"default": "disk", "format": "jsonl"},
+    "roles": _ROLES_DOC,
     "streams": {
         "OD": {"units": "AU"},
         "temp": {"units": "C", "persistence": "in_memory"},
@@ -77,7 +84,8 @@ def test_load_and_validate_returns_workflow(tmp_path):
 
 def test_load_and_validate_rejects(tmp_path):
     doc = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "roles": {"pump_1": {"type": "pump"}},
         "blocks": [
             {"command": {"device": "pump_1", "verb": "rotate",
                          "params": {"direction": "forward", "speed_ml_min": 2.0}}},
@@ -94,7 +102,8 @@ def test_load_and_validate_rejects(tmp_path):
 
 def test_collect_all_categories_in_one_raise():
     doc = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "roles": {"pump_1": {"type": "pump"}, "densitometer_1": {"type": "densitometer"}},
         "streams": {},
         "blocks": [
             {"group_ref": {"name": "ghost"}},
@@ -113,7 +122,7 @@ def test_collect_all_categories_in_one_raise():
 
 def test_validation_error_message_lists_each_diagnostic():
     doc = {
-        "schema_version": 1,
+        "schema_version": 2,
         "blocks": [{"group_ref": {"name": "ghost"}}],
     }
     with pytest.raises(ValidationError) as exc:

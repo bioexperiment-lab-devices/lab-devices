@@ -2,12 +2,9 @@
   "doc_version": 1,
   "name": "Broken workflow",
   "description": null,
-  "roles": {
-    "feed_pump": {"type": "pump"},
-    "od_meter": {"type": "densitometer"}
-  },
   "workflow": {
-    "schema_version": 1,
+    "schema_version": 2,
+    "roles": {"feed_pump": {"type": "pump"}, "od_meter": {"type": "densitometer"}},
     "blocks": [
       {"serial": {"children": [
         {"command": {"device": "feed_pump", "verb": "dispense"}},

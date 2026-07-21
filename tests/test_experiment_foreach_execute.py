@@ -20,10 +20,13 @@ async def test_for_each_drives_three_distinct_devices(fake_client):
     for i in (1, 2, 3):
         fake.add_device(f"densitometer_{i}", "densitometer")
     workflow = workflow_from_dict({
-        "schema_version": 1,
+        "schema_version": 2,
+        "roles": {f"densitometer_{i}": {"type": "densitometer",
+                                        "device": f"densitometer_{i}"} for i in (1, 2, 3)},
         "streams": {"od_1": {}, "od_2": {}, "od_3": {}},
         "blocks": [{"parallel": {"children": [
-            {"for_each": {"var": "t", "in": [1, 2, 3],
+            {"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                          "in": [{"t": 1}, {"t": 2}, {"t": 3}],
                           "body": [{"measure": {"device": "densitometer_{t}",
                                                 "verb": "measure", "into": "od_{t}"}}]}}]}}],
     })
@@ -42,11 +45,12 @@ async def test_parametrized_group_per_tube_accumulator_does_not_cross_contaminat
     the executor with no cross-contamination between iterations."""
     fake, client = fake_client
     workflow = workflow_from_dict({
-        "schema_version": 1,
+        "schema_version": 2,
         "streams": {},
-        "groups": {"seed": {"params": ["t"],
+        "groups": {"seed": {"params": [{"name": "t", "kind": "int"}],
                             "body": [{"compute": {"into": "c_{t}", "value": "{t} * 10"}}]}},
-        "blocks": [{"for_each": {"var": "t", "in": [1, 2, 3],
+        "blocks": [{"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                    "in": [{"t": 1}, {"t": 2}, {"t": 3}],
                     "body": [{"group_ref": {"name": "seed", "args": {"t": "{t}"}}}]}}],
     })
     clock = FakeClock()
@@ -66,9 +70,13 @@ async def test_expanded_block_ids_are_positional_and_stable(fake_client):
     for i in (1, 2):
         fake.add_device(f"densitometer_{i}", "densitometer")
     workflow = workflow_from_dict({
-        "schema_version": 1, "streams": {"od_1": {}, "od_2": {}},
+        "schema_version": 2,
+        "roles": {f"densitometer_{i}": {"type": "densitometer",
+                                        "device": f"densitometer_{i}"} for i in (1, 2)},
+        "streams": {"od_1": {}, "od_2": {}},
         "blocks": [{"serial": {"children": [
-            {"for_each": {"var": "t", "in": [1, 2],
+            {"for_each": {"vars": [{"name": "t", "kind": "int"}],
+                          "in": [{"t": 1}, {"t": 2}],
                           "body": [{"measure": {"device": "densitometer_{t}",
                                                 "verb": "measure", "into": "od_{t}"}}]}}]}}],
     })

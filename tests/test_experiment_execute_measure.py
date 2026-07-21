@@ -2,8 +2,12 @@ from lab_devices.experiment import blocks as B
 from lab_devices.experiment.context import RunContext, RunOptions
 from lab_devices.experiment.execute import _run_measure
 from lab_devices.experiment.state import RunState, Sample, Stream
-from lab_devices.experiment.workflow import Workflow
-from tests.experiment_run_helpers import add_standard_devices
+from tests.experiment_run_helpers import (
+    STANDARD_ROLES,
+    add_standard_devices,
+    make_workflow,
+    role_devices,
+)
 from tests.fakeclock import FakeClock, drive
 
 
@@ -25,8 +29,9 @@ async def test_measure_writes_same_timestamp_to_stream_sink(fake_client):
     state = RunState()
     state.streams["OD"] = Stream()
     sink = _RecordingStreamSink()
-    ctx = RunContext(client=client, workflow=Workflow(schema_version=1), state=state,
-                     options=RunOptions(clock=clock))
+    workflow = make_workflow([], streams={"OD": {}}, roles=STANDARD_ROLES)
+    ctx = RunContext(client=client, workflow=workflow, state=state,
+                     options=RunOptions(clock=clock), role_devices=role_devices(workflow))
     ctx.stream_sinks = {"OD": sink}
     block = B.Measure(device="densitometer_1", verb="measure", into="OD")
     block.id = "blocks[0]"

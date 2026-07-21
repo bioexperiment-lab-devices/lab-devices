@@ -91,7 +91,9 @@ function GroupsPanel() {
               <span className="min-w-0 truncate font-mono" title={name}>
                 {name}
               </span>
-              <span className="ml-1 shrink-0 text-caption">({group.params.join(', ')})</span>
+              <span className="ml-1 shrink-0 text-caption">
+                ({group.params.map((p) => p.name).join(', ')})
+              </span>
             </Chip>
             <IconButton
               icon={Pencil}

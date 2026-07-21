@@ -6,7 +6,9 @@ import { AutoGrowTextArea } from '../ui/AutoGrowTextArea'
 import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 import type { ParamSpec } from '../types/catalog'
-import type { ParamValue, RetryJson } from '../types/doc'
+import type { LocalDeclJson, ParamDeclJson, ParamKind, ParamValue, RetryJson } from '../types/doc'
+import { REFERENCE_KINDS, VALUE_KINDS } from '../types/doc'
+import { argEditorFor, asRequired, defaultArgValue, emptyRow, isHole, rolesOfType } from './groupArgs'
 import { failureFields, failureSummary, timingFields, timingSummary } from './inspectorRules'
 import { InspectorSection } from './InspectorSection'
 import { coerceParamInput, coerceValueInput, paramInputText } from './params'
@@ -16,7 +18,6 @@ import {
   ExpressionInput,
   FieldRow,
   NumberField,
-  TextAreaField,
   TextField,
 } from './fields'
 import {
@@ -82,40 +83,384 @@ export function Inspector() {
 }
 
 /** Shown when a group scope is active and no block is selected — the group-level analogue of
- * DocProperties. `params` is the ONLY thing that belongs to the group itself rather than to a
- * block inside it (design §5.2): group_ref's args are keyed by this list (expand.py:190), so
- * editing it here, in the scope it declares, is what keeps every call site's arity correct by
- * construction rather than by a second validation pass. */
+ * DocProperties. Schema 2: a group declares typed `params` and named `locals` (design §9.2).
+ * The typed param-decl table writes through `setGroupParams`; the locals table through
+ * `setGroupLocals` — `ForEachForm`'s "Loop variables" editor below shares `ParamDeclListEditor`
+ * with this one's "Params", since a for_each `var` and a group `param` are the same declaration
+ * shape (design §4/§2.1). */
 function GroupProperties({ name }: { name: string }) {
   const group = useDocStore((s) => s.groups[name])
   const setGroupParams = useDocStore((s) => s.setGroupParams)
+  const setGroupLocals = useDocStore((s) => s.setGroupLocals)
   const params = group?.params ?? []
+  const locals = group?.locals ?? {}
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <h2 className="mb-2 text-sm font-semibold text-slate-700">Group: {name}</h2>
-      <FieldRow label="Params (one per line)" grow>
-        <AutoGrowTextArea
-          fillParent
-          maxLines={UNCAPPED_LINES}
-          mono
-          value={params.join('\n')}
-          onCommit={(v) =>
-            setGroupParams(
-              name,
-              v
-                .split('\n')
-                .map((line) => line.trim())
-                .filter((line) => line !== ''),
-            )
-          }
-        />
-      </FieldRow>
-      {/* mt-auto pins these to the bottom of the panel (finding #5a): the params field
-          above grows into the free space instead of leaving dead panel below it. */}
+      <h3 className="mt-2 text-xs font-semibold uppercase text-caption">Params</h3>
+      <ParamDeclListEditor
+        decls={params}
+        addLabel="add param"
+        onAdd={() => {
+          // A fresh, non-colliding name rather than a blank row: an empty-named row is
+          // indistinguishable from nothing having been added until the author notices the
+          // placeholder, and ForEachForm's "add variable" (same shared component) already
+          // seeds a fresh name for the identical reason.
+          let n = 1
+          while (params.some((p) => p.name === `param${n}`)) n++
+          setGroupParams(name, [...params, { name: `param${n}`, kind: 'string' }])
+        }}
+        onRemove={(i) => setGroupParams(name, params.filter((_, idx) => idx !== i))}
+        onPatch={(i, patch) =>
+          setGroupParams(
+            name,
+            params.map((d, idx) => (idx === i ? { ...d, ...patch } : d)),
+          )
+        }
+      />
+      <h3 className="mt-2 text-xs font-semibold uppercase text-caption">Locals</h3>
+      <LocalDeclListEditor locals={locals} onChange={(next) => setGroupLocals(name, next)} />
+      {/* mt-auto pins these to the bottom of the panel (finding #5a). */}
       <p className="mt-auto pt-2 text-xs text-caption">{group?.body.length ?? 0} top-level blocks.</p>
       <p className="mt-1 text-xs text-caption">Select a block to edit its parameters.</p>
     </div>
   )
+}
+
+const PARAM_KIND_OPTIONS: readonly ParamKind[] = [...VALUE_KINDS, ...REFERENCE_KINDS]
+
+/** One row per declared param/var: name, kind, and (role-kind only) device_type — the shape
+ * `ParamDeclJson` describes (design §2.1). Shared by `GroupProperties`' "Params" and
+ * `ForEachForm`'s "Loop variables": both edit a `ParamDeclJson[]` and differ only in what an
+ * edit does to the REST of the document (a group has no rows to remap; for_each does), so that
+ * divergence lives in the three callbacks the caller supplies, not in this component. Follows
+ * the row-of-controls shape already used by `ParamFields`' unknown-param row and
+ * `StreamIntoPicker`'s inline "+ new stream" form (flex row, `gap-1`, an `IconButton` to
+ * remove) rather than inventing a new list-editor idiom. */
+function ParamDeclListEditor({
+  decls,
+  addLabel,
+  onAdd,
+  onRemove,
+  onPatch,
+}: {
+  decls: ParamDeclJson[]
+  addLabel: string
+  onAdd: () => void
+  onRemove: (i: number) => void
+  onPatch: (i: number, patch: Partial<ParamDeclJson>) => void
+}) {
+  const catalog = useCatalogStore((s) => s.catalog)
+  const deviceTypes = catalog ? Object.keys(catalog.device_types) : []
+  const setKind = (i: number, kind: ParamKind) =>
+    onPatch(i, kind === 'role' ? { kind, device_type: deviceTypes[0] ?? '' } : { kind, device_type: undefined })
+  return (
+    <div>
+      {decls.length === 0 && <p className="text-xs text-hint">none declared</p>}
+      {/* Index keys, not name keys: two rows can share an in-progress (possibly empty) name
+          while being typed, exactly like ProblemsPanel's diagnostic rows (Canvas.tsx has no
+          reordering here, so index identity is stable across edits). */}
+      {decls.map((d, i) => (
+        <div key={i} className="mb-1 flex items-center gap-1">
+          <div className="min-w-0 flex-1">
+            <TextField mono value={d.name} onCommit={(v) => onPatch(i, { name: v })} placeholder="name" />
+          </div>
+          <select
+            aria-label={`${d.name || 'param ' + (i + 1)} kind`}
+            value={d.kind}
+            onChange={(e) => setKind(i, e.target.value as ParamKind)}
+            className={controlClass({ width: 'w-24' })}
+          >
+            {PARAM_KIND_OPTIONS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+          {d.kind === 'role' && (
+            <select
+              aria-label={`${d.name || 'param ' + (i + 1)} device type`}
+              value={d.device_type ?? ''}
+              onChange={(e) => onPatch(i, { device_type: e.target.value })}
+              className={controlClass({ width: 'w-28' })}
+            >
+              {deviceTypes.length === 0 && <option value="">— no device types —</option>}
+              {deviceTypes.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          )}
+          <IconButton
+            icon={X}
+            label={`Remove ${d.name || 'param ' + (i + 1)}`}
+            destructive
+            onClick={() => onRemove(i)}
+          />
+        </div>
+      ))}
+      <button onClick={onAdd} className={inlineButtonClass({ subtle: true, width: 'w-full' })}>
+        <Plus size={12} aria-hidden className="mr-0.5" />
+        {addLabel}
+      </button>
+    </div>
+  )
+}
+
+/** Group locals (design §2.2): named, not positional, so unlike `ParamDeclListEditor` this
+ * edits a `Record<string, LocalDeclJson>` keyed by the local's own name — renaming a row
+ * rebuilds the record so the edited key lands in the same position the old one held. Only
+ * `stream`/`binding` kinds are legal here (§2.2), so the kind control is a plain two-option
+ * select rather than reusing `PARAM_KIND_OPTIONS`. */
+function LocalDeclListEditor({
+  locals,
+  onChange,
+}: {
+  locals: Record<string, LocalDeclJson>
+  onChange: (next: Record<string, LocalDeclJson>) => void
+}) {
+  const entries = Object.entries(locals)
+  const withEntries = (map: (k: string, v: LocalDeclJson, i: number) => [string, LocalDeclJson]) =>
+    onChange(Object.fromEntries(entries.map(([k, v], i) => map(k, v, i))))
+  const rename = (i: number, newName: string) => withEntries((k, v, idx) => [idx === i ? newName : k, v])
+  const patchAt = (i: number, patch: Partial<LocalDeclJson>) =>
+    withEntries((k, v, idx) => [k, idx === i ? { ...v, ...patch } : v])
+  const setKind = (i: number, kind: LocalDeclJson['kind']) =>
+    patchAt(i, kind === 'stream' ? { kind, init: undefined } : { kind, units: undefined, persistence: undefined })
+  const remove = (i: number) => onChange(Object.fromEntries(entries.filter((_, idx) => idx !== i)))
+  const add = () => {
+    let n = 1
+    while (`local${n}` in locals) n++
+    onChange({ ...locals, [`local${n}`]: { kind: 'binding' } })
+  }
+  return (
+    <div>
+      {entries.length === 0 && <p className="text-xs text-hint">no locals</p>}
+      {entries.map(([localName, decl], i) => (
+        <div key={i} className="mb-1 flex items-center gap-1">
+          <div className="min-w-0 flex-1">
+            <TextField mono value={localName} onCommit={(v) => rename(i, v)} placeholder="name" />
+          </div>
+          <select
+            aria-label={`${localName || 'local ' + (i + 1)} kind`}
+            value={decl.kind}
+            onChange={(e) => setKind(i, e.target.value as LocalDeclJson['kind'])}
+            className={controlClass({ width: 'w-20' })}
+          >
+            <option value="binding">binding</option>
+            <option value="stream">stream</option>
+          </select>
+          <div className="min-w-0 flex-1">
+            {decl.kind === 'binding' ? (
+              <TextField
+                mono
+                value={decl.init ?? ''}
+                onCommit={(v) => patchAt(i, { init: v || undefined })}
+                placeholder="init (optional, constant expr)"
+              />
+            ) : (
+              <TextField
+                value={decl.units ?? ''}
+                onCommit={(v) => patchAt(i, { units: v || undefined })}
+                placeholder="units (optional)"
+              />
+            )}
+          </div>
+          <IconButton
+            icon={X}
+            label={`Remove ${localName || 'local ' + (i + 1)}`}
+            destructive
+            onClick={() => remove(i)}
+          />
+        </div>
+      ))}
+      <button onClick={add} className={inlineButtonClass({ subtle: true, width: 'w-full' })}>
+        <Plus size={12} aria-hidden className="mr-0.5" />
+        add local
+      </button>
+    </div>
+  )
+}
+
+/** One kind-aware value field for a declared param, via `argEditorFor` (groupArgs.ts). Shared
+ * by `GroupRefForm`'s per-param args and `ForEachForm`'s per-row cells — both bind a
+ * `ParamValue` to a declared `ParamDeclJson`, differing only in what happens to the value on
+ * commit. role/stream reuse the same pickers `ActionForm`'s Role select (~line 395) and
+ * `StreamIntoPicker` already provide; bool mirrors `ParamInput`'s unset/true/false select.
+ *
+ * Every one of these kinds can ALSO legitimately be a `{name}` hole — an enclosing `for_each`
+ * threading its own typed var into a group_ref arg (design §3.1's typed substitution;
+ * morbidostat.json's `service(tube={tube}, od={od})` is exactly this), not a malformed value.
+ * `exprMode` is this component's `ƒ` escape hatch — mirrors `ParamInput`'s own
+ * `typeof value === 'string'`-seeded toggle below — so a fresh int/bool/role/stream arg can
+ * originate a hole, not just display one already saved. role/stream additionally use `isHole`
+ * (groupArgs.ts) to tell "a hole" apart from "an ordinary name their own picker already lists":
+ * unlike int/bool (where any string IS the hole, since a real int/bool value is never a
+ * string), a role/stream value is a string in the common case too, so the picker must stay the
+ * default and only a genuine `{name}` hole should divert to the text fallback — else a plain
+ * `"od_1"` selection would permanently render as a text box instead of the picker. */
+function ArgField({
+  param,
+  value,
+  onCommit,
+}: {
+  param: ParamDeclJson
+  value: ParamValue | undefined
+  onCommit: (v: ParamValue | undefined) => void
+}) {
+  const roles = useDocStore((s) => s.roles)
+  const editor = argEditorFor(param.kind)
+  // Seeded like ParamInput's own exprMode: an arg that already holds a hole starts in
+  // expression mode with no click needed. Sticky per mount thereafter (same as ParamInput —
+  // no "back to picker" affordance once toggled, by the same reasoning: a value that was
+  // deliberately turned into an expression stays editable as one). role/stream must seed on
+  // `isHole`, NOT on `typeof value === 'string'`: unlike int/bool (a real value is never a
+  // string, so any string IS the hole), a role/stream value is a string in the ordinary
+  // picked-name case too — seeding on bare stringness would permanently strand every
+  // already-saved role/stream arg in text mode, picker never shown again.
+  const [exprMode, setExprMode] = useState(() =>
+    editor === 'role' || editor === 'stream' ? isHole(value) : typeof value === 'string',
+  )
+  const exprToggle = (
+    <IconButton
+      icon={SquareFunction}
+      label="Use an expression"
+      onClick={() => setExprMode(true)}
+      className="border border-slate-300"
+    />
+  )
+  switch (editor) {
+    case 'role': {
+      const names = rolesOfType(roles, param.device_type)
+      const current = typeof value === 'string' ? value : ''
+      if (isHole(current) || exprMode) {
+        return (
+          <TextField
+            mono
+            value={current}
+            onCommit={(v) => onCommit(v || undefined)}
+            placeholder={`{${param.name}}`}
+          />
+        )
+      }
+      return (
+        <div className="flex items-center gap-1">
+          <select
+            value={current}
+            onChange={(e) => onCommit(e.target.value || undefined)}
+            className={controlClass()}
+          >
+            {current === '' && <option value="">— pick a role —</option>}
+            {current !== '' && !names.includes(current) && (
+              <option value={current}>{current} (unknown)</option>
+            )}
+            {names.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+          {exprToggle}
+        </div>
+      )
+    }
+    case 'stream': {
+      const current = typeof value === 'string' ? value : ''
+      // Finding 1 (S3 regression vs S2): StreamIntoPicker's <select> only offers real
+      // stream names as <option>s, so a hole like "{od}" matches none of them and the
+      // browser silently falls back to displaying the FIRST stream instead — not a blank,
+      // an actively WRONG selection. Diverting to the text fallback here (not inside
+      // StreamIntoPicker, which is shared with the Measure block and out of scope) fixes
+      // the display without touching that shared component.
+      if (isHole(current) || exprMode) {
+        return (
+          <TextField
+            mono
+            value={current}
+            onCommit={(v) => onCommit(v || undefined)}
+            placeholder={`{${param.name}}`}
+          />
+        )
+      }
+      return (
+        <div className="flex items-center gap-1">
+          <StreamIntoPicker value={current} onPick={(v) => onCommit(v)} />
+          {exprToggle}
+        </div>
+      )
+    }
+    case 'integer':
+    case 'number':
+      // A STRING here is a hole bound to an enclosing loop's own typed var (e.g. `{tube}`
+      // in a group_ref nested inside that var's for_each) rather than a literal number.
+      // NumberField can only hold a real JS number, so feeding it a hole string would
+      // render it blank and hide an already-saved value; fall back to a plain text field
+      // instead, the same way ParamInput falls back to ExpressionInput whenever a bool
+      // param's current value is a string (below). `exprMode` extends this so a FRESH
+      // arg (currently a real number, or unset) can also be switched into hole entry —
+      // `paramInputText` carries the current numeric value over as a starting point
+      // instead of blanking it when the toggle is clicked.
+      return typeof value === 'string' || exprMode ? (
+        <TextField
+          mono
+          value={typeof value === 'string' ? value : paramInputText(value)}
+          onCommit={(v) => onCommit(coerceParamInput(v, param.kind as 'int' | 'number'))}
+          placeholder={`{${param.name}}`}
+        />
+      ) : (
+        <div className="flex items-center gap-1">
+          <NumberField
+            value={typeof value === 'number' ? value : null}
+            integer={editor === 'integer'}
+            onCommit={(v) => onCommit(v ?? undefined)}
+          />
+          {exprToggle}
+        </div>
+      )
+    case 'bool': {
+      // Same string-hole fallback as integer/number above, plus the same exprMode escape
+      // hatch to originate one from a fresh unset/true/false select.
+      if (typeof value === 'string' || exprMode) {
+        return (
+          <TextField
+            mono
+            value={typeof value === 'string' ? value : paramInputText(value)}
+            onCommit={(v) => onCommit(coerceParamInput(v, 'bool'))}
+            placeholder={`{${param.name}}`}
+          />
+        )
+      }
+      const current = value === true ? 'true' : value === false ? 'false' : ''
+      return (
+        <div className="flex items-center gap-1">
+          <select
+            value={current}
+            onChange={(e) => {
+              const v = e.target.value
+              onCommit(v === '' ? undefined : v === 'true')
+            }}
+            className={controlClass()}
+          >
+            <option value="">— unset —</option>
+            <option value="true">true</option>
+            <option value="false">false</option>
+          </select>
+          {exprToggle}
+        </div>
+      )
+    }
+    case 'text':
+      // Already free text regardless of hole/literal — string/binding kinds may embed a
+      // hole inside a longer literal (design §3), unlike the other kinds above, so there
+      // is no separate "picker" mode to escape from and no toggle needed.
+      return (
+        <TextField
+          value={typeof value === 'string' ? value : paramInputText(value)}
+          onCommit={(v) => onCommit(v || undefined)}
+        />
+      )
+  }
 }
 
 function DocProperties() {
@@ -776,77 +1121,120 @@ function ConditionForm({ node }: { node: AbortNode | AlarmNode }) {
   )
 }
 
-/** Fast-feedback mirror of expand.py:95-118 `_envs` (design §5.1): non-empty list; scalars
- * when `var` is set; objects sharing one key set when it is not. This is NOT a second
- * opinion — on ambiguity we still accept the input and let the backend diagnostic speak, so
- * the return is only ever advisory text, never a reason to withhold the patch.
- *
- * The `var`-branch predicate below must match expand.py:104's `isinstance(item, dict)`
- * exactly: the engine only rejects dicts, not lists — a JSON array is a perfectly valid
- * scalar `var` item (e.g. `[1, 2]`), so `typeof item === 'object'` alone (true for arrays
- * too) over-flagged it. A warning the backend would never raise is a false positive from a
- * check whose only job is to mirror the backend (2026-07-16 review, Finding 3). */
-function forEachItemsWarning(items: unknown[], hasVar: boolean): string | null {
-  if (items.length === 0) return "for_each 'in' must be a non-empty list"
-  if (hasVar) {
-    return items.some((item) => item !== null && typeof item === 'object' && !Array.isArray(item))
-      ? "for_each with 'var' requires scalar items"
-      : null
-  }
-  const keysets = items.map((item) =>
-    item !== null && typeof item === 'object' && !Array.isArray(item)
-      ? Object.keys(item as Record<string, unknown>).sort().join(',')
-      : null,
-  )
-  if (keysets.some((k) => k === null)) return 'for_each without \'var\' requires object items'
-  if (new Set(keysets).size > 1) return 'for_each object items must share one key set'
-  return null
-}
-
 /** for_each is a SPLICE, not a runtime block (design 2026-07-15 §2/2026-07-16 §5.1): it copies
- * `body` once per item and splices the copies into the enclosing list, so retry/on_error/
- * gap_after/start_offset are omitted here — BlockForm already suppresses all four for this
- * kind (expand.py:26 `_FOR_EACH_FORBIDDEN`), and `label` is the one block-level key left. */
+ * `body` once per row and splices the copies into the enclosing list. Schema 2: it declares
+ * typed `vars` and one typed value per `row` (the scalar `var` shorthand is gone). The vars
+ * editor reuses `ParamDeclListEditor` (also used by `GroupProperties`' "Params"); editing a
+ * var's name or kind here additionally remaps/re-seeds every row (design §9.2 — "Studio render
+ * `in` as a grid... a typed value field per column"), which is the one place this form's write
+ * path diverges from a plain params editor, so that remapping lives in the three callbacks
+ * below rather than inside the shared component. */
 function ForEachForm({ node }: { node: ForEachNode }) {
   const patchBlock = useDocStore((s) => s.patchBlock)
-  const itemsText = JSON.stringify(node.items)
-  const [itemsError, setItemsError] = useState<string | null>(null)
 
-  const commitItems = (text: string) => {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(text)
-    } catch {
-      setItemsError('invalid JSON — expected an array, e.g. [1, 2, 3]')
-      return
-    }
-    if (!Array.isArray(parsed)) {
-      setItemsError('must be a JSON array')
-      return
-    }
-    setItemsError(forEachItemsWarning(parsed, node.var !== null))
-    // Accept regardless of the warning above (fast-feedback mirror, not a gate) — the
-    // backend's own for_each validation is authoritative and will speak as a diagnostic.
-    patchBlock(node.uid, { items: parsed as ForEachNode['items'] })
+  const addVar = () => {
+    let n = 1
+    while (node.vars.some((v) => v.name === `var${n}`)) n++
+    const added: ParamDeclJson = { name: `var${n}`, kind: 'string' }
+    const vars = [...node.vars, added]
+    const rows = node.rows.map((r) => ({ ...r, [added.name]: defaultArgValue(added.kind) }))
+    patchBlock(node.uid, { vars, rows })
+  }
+
+  const removeVar = (i: number) => {
+    const removed = node.vars[i]
+    const vars = node.vars.filter((_, idx) => idx !== i)
+    const rows = node.rows.map((r) => {
+      const next = { ...r }
+      delete next[removed.name]
+      return next
+    })
+    patchBlock(node.uid, { vars, rows })
+  }
+
+  const patchVar = (i: number, patch: Partial<ParamDeclJson>) => {
+    const old = node.vars[i]
+    const next = { ...old, ...patch }
+    const vars = node.vars.map((v, idx) => (idx === i ? next : v))
+    const nameChanged = next.name !== old.name
+    const kindChanged = next.kind !== old.kind
+    const rows =
+      !nameChanged && !kindChanged
+        ? node.rows
+        : node.rows.map((r) => {
+            const row = { ...r }
+            const cellValue = kindChanged ? defaultArgValue(next.kind) : row[old.name]
+            if (nameChanged) delete row[old.name]
+            row[next.name] = cellValue
+            return row
+          })
+    patchBlock(node.uid, { vars, rows })
+  }
+
+  const addRow = () => patchBlock(node.uid, { rows: [...node.rows, emptyRow(node.vars)] })
+  const removeRow = (i: number) => patchBlock(node.uid, { rows: node.rows.filter((_, idx) => idx !== i) })
+  const setCell = (i: number, param: ParamDeclJson, value: ParamValue | undefined) => {
+    const cell = value ?? defaultArgValue(param.kind)
+    patchBlock(node.uid, { rows: node.rows.map((r, idx) => (idx === i ? { ...r, [param.name]: cell } : r)) })
   }
 
   return (
     <div>
-      <FieldRow label="Loop variable (var)">
-        <TextField
-          mono
-          value={node.var ?? ''}
-          onCommit={(v) => patchBlock(node.uid, { var: v || null })}
-          placeholder="unset: items are objects, spread as named holes"
-        />
-      </FieldRow>
-      <FieldRow label="Items (JSON array)" required>
-        <TextAreaField mono rows={4} value={itemsText} onCommit={commitItems} />
-      </FieldRow>
-      {itemsError && <p className="text-[10px] text-amber-700">{itemsError}</p>}
+      <h3 className="mt-2 text-xs font-semibold uppercase text-caption">Loop variables</h3>
+      <ParamDeclListEditor
+        decls={node.vars}
+        addLabel="add variable"
+        onAdd={addVar}
+        onRemove={removeVar}
+        onPatch={patchVar}
+      />
+      <h3 className="mt-2 text-xs font-semibold uppercase text-caption">Rows</h3>
+      {node.vars.length === 0 ? (
+        <p className="text-xs text-hint">declare a variable above to add rows</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                {node.vars.map((v) => (
+                  <th
+                    key={v.name}
+                    className="border-b border-slate-200 px-1 py-0.5 text-left font-mono font-normal text-caption"
+                  >
+                    {v.name}
+                  </th>
+                ))}
+                <th className="w-6 border-b border-slate-200" />
+              </tr>
+            </thead>
+            <tbody>
+              {node.rows.map((row, i) => (
+                <tr key={i}>
+                  {node.vars.map((v) => (
+                    <td key={v.name} className="px-1 py-0.5">
+                      <ArgField param={v} value={row[v.name]} onCommit={(val) => setCell(i, v, val)} />
+                    </td>
+                  ))}
+                  <td className="px-1 py-0.5">
+                    <IconButton icon={X} label={`Remove row ${i + 1}`} destructive onClick={() => removeRow(i)} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <button
+        onClick={addRow}
+        disabled={node.vars.length === 0}
+        className={inlineButtonClass({ subtle: true, width: 'w-full' }) + ' mt-1'}
+      >
+        <Plus size={12} aria-hidden className="mr-0.5" />
+        add row
+      </button>
       <p className="mt-2 text-xs text-caption">
-        {node.body.length} block{node.body.length === 1 ? '' : 's'} in the body — drag onto the
-        canvas to edit; each copy is spliced into the list for_each sits in.
+        {node.body.length} block{node.body.length === 1 ? '' : 's'} in the body — drag onto the canvas to
+        edit; each copy is spliced into the list for_each sits in.
       </p>
     </div>
   )
@@ -855,18 +1243,29 @@ function ForEachForm({ node }: { node: ForEachNode }) {
 /** `args` are keyed by the target group's declared `params` (design §5.2), so arity is right
  * by construction (expand.py:190 `set(args) != set(params)` rejects a mismatch) — switching
  * the picked group resets `args` to exactly that group's param set, carrying over any value
- * already entered under a name the new group also declares. */
+ * already entered under a name the new group also declares. Each arg gets a KIND-AWARE editor
+ * via `ArgField`/`argEditorFor` (design §9.2) instead of one free-text `ExpressionInput` for
+ * every kind; `as` becomes visibly required exactly when `asRequired` says the target group
+ * declares locals (design §6). */
 function GroupRefForm({ node }: { node: GroupRefNode }) {
   const patchBlock = useDocStore((s) => s.patchBlock)
   const groups = useDocStore((s) => s.groups)
   const groupNames = Object.keys(groups)
-  const params = groups[node.name]?.params ?? []
+  const group = groups[node.name]
+  const params = group?.params ?? []
 
   const setName = (name: string) => {
     const nextParams = groups[name]?.params ?? []
     const args: Record<string, ParamValue> = {}
-    for (const p of nextParams) if (node.args[p] !== undefined) args[p] = node.args[p]
+    for (const p of nextParams) if (node.args[p.name] !== undefined) args[p.name] = node.args[p.name]
     patchBlock(node.uid, { name, args })
+  }
+
+  const setArg = (paramName: string, value: ParamValue | undefined) => {
+    const args = { ...node.args }
+    if (value === undefined) delete args[paramName]
+    else args[paramName] = value
+    patchBlock(node.uid, { args })
   }
 
   return (
@@ -888,6 +1287,16 @@ function GroupRefForm({ node }: { node: GroupRefNode }) {
           ))}
         </select>
       </FieldRow>
+      {/* `as` namespaces the group's locals per call site (schema 2, required when the group
+          declares locals — design §6). */}
+      <FieldRow label="As (call-site prefix)" required={asRequired(group)}>
+        <TextField
+          mono
+          value={node.as ?? ''}
+          onCommit={(v) => patchBlock(node.uid, { as: v || null })}
+          placeholder="tube_{tube}"
+        />
+      </FieldRow>
       {params.length === 0 ? (
         <p className="text-xs text-caption">
           {node.name === '' ? 'pick a group above' : 'this group takes no params'}
@@ -896,13 +1305,12 @@ function GroupRefForm({ node }: { node: GroupRefNode }) {
         <>
           <h3 className="mt-2 text-xs font-semibold uppercase text-caption">Args</h3>
           {params.map((p) => (
-            <FieldRow key={p} label={p} required>
-              <ExpressionInput
-                value={paramInputText(node.args[p])}
-                onCommit={(v) =>
-                  patchBlock(node.uid, { args: { ...node.args, [p]: coerceValueInput(v) } })
-                }
-              />
+            <FieldRow
+              key={p.name}
+              label={`${p.name} (${p.kind}${p.device_type !== undefined ? ' · ' + p.device_type : ''})`}
+              required
+            >
+              <ArgField param={p} value={node.args[p.name]} onCommit={(v) => setArg(p.name, v)} />
             </FieldRow>
           ))}
         </>

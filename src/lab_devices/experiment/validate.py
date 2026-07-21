@@ -38,7 +38,13 @@ from lab_devices.experiment.expr import (
 )
 from lab_devices.experiment.registry import ParamSpec, lookup, mode_action
 from lab_devices.experiment.serialize import load_workflow
-from lab_devices.experiment.workflow import Workflow
+from lab_devices.experiment.workflow import (
+    REFERENCE_KINDS,
+    Group,
+    LocalDecl,
+    ParamDecl,
+    Workflow,
+)
 
 
 def _iter_blocks(blocks: list[B.Block], prefix: str) -> Iterator[tuple[str, B.Block]]:
@@ -100,8 +106,149 @@ def _check_groups(w: Workflow, out: list[Diagnostic]) -> bool:
     return ok
 
 
+def _is_plain(group: Group) -> bool:
+    """A PLAIN group -- no params, no locals -- is the one expand.py lazily inlines: its
+    body is expanded once, eagerly, regardless of how many group_refs later name it."""
+    return not group.params and not group.locals
+
+
+def _body_reaches_locals_ref(w: Workflow, blocks: list[B.Block], seen: set[str]) -> bool:
+    for b in blocks:
+        if isinstance(b, B.GroupRef):
+            target = w.groups.get(b.name)
+            if target is None:
+                continue
+            if target.locals:
+                return True
+            # Recurse regardless of whether `target` is plain: a PARAMETRIZED
+            # intermediate's body is substituted with fixed args as part of the
+            # enclosing plain group's single eager expansion, so a locals-bearing ref
+            # nested past it is just as much a hazard as one nested past another plain
+            # group (fixed 2026-07-20; previously gated on `_is_plain(target)`, which
+            # missed the plain -> parametrized -> locals-bearing chain entirely).
+            if _group_reaches_locals_ref(w, b.name, seen):
+                return True
+        elif isinstance(b, B.ForEach):
+            if _body_reaches_locals_ref(w, b.body, seen):
+                return True
+        elif isinstance(b, (B.Serial, B.Parallel)):
+            if _body_reaches_locals_ref(w, b.children, seen):
+                return True
+        elif isinstance(b, B.Loop):
+            if _body_reaches_locals_ref(w, b.body, seen):
+                return True
+        elif isinstance(b, B.Branch):
+            if _body_reaches_locals_ref(w, b.then, seen):
+                return True
+            if b.else_ is not None and _body_reaches_locals_ref(w, b.else_, seen):
+                return True
+    return False
+
+
+def _group_reaches_locals_ref(w: Workflow, name: str, seen: set[str]) -> bool:
+    """True if the group named `name`'s body -- transitively, through further group_refs
+    it contains, whether those name plain or parametrized groups -- reaches a group_ref
+    naming a group that declares locals. `seen` guards a group cycle (already reported by
+    _check_groups) by treating a revisit as False rather than recursing forever."""
+    if name in seen:
+        return False
+    seen.add(name)
+    group = w.groups.get(name)
+    if group is None:
+        return False
+    return _body_reaches_locals_ref(w, group.body, seen)
+
+
+def _ref_count(blocks: list[B.Block], name: str, weight: int) -> int:
+    """Occurrences of `group_ref {name}` reachable from `blocks`, weighted by every
+    enclosing for_each's row count -- known statically, since `items` is authored data,
+    not runtime-parametrized."""
+    total = 0
+    for b in blocks:
+        if isinstance(b, B.GroupRef) and b.name == name:
+            total += weight
+        if isinstance(b, B.ForEach):
+            total += _ref_count(b.body, name, weight * max(len(b.items), 1))
+        elif isinstance(b, (B.Serial, B.Parallel)):
+            total += _ref_count(b.children, name, weight)
+        elif isinstance(b, B.Loop):
+            total += _ref_count(b.body, name, weight)
+        elif isinstance(b, B.Branch):
+            total += _ref_count(b.then, name, weight)
+            if b.else_ is not None:
+                total += _ref_count(b.else_, name, weight)
+    return total
+
+
+def _reachable_groups(w: Workflow) -> set[str]:
+    """Group names reachable from top-level `blocks`, directly or transitively through the
+    body of another reachable group. A group nobody ever calls can never actually alias
+    anything at runtime, so `_check_group_reuse` must not count group_refs that live only
+    inside one (design 2026-07-20 §2.2, §6)."""
+    seen: set[str] = set()
+
+    def visit(blocks: list[B.Block]) -> None:
+        for _, b in _iter_blocks(blocks, ""):
+            if isinstance(b, B.GroupRef) and b.name in w.groups and b.name not in seen:
+                seen.add(b.name)
+                visit(w.groups[b.name].body)
+
+    visit(w.blocks)
+    return seen
+
+
+def _check_group_reuse(w: Workflow, out: list[Diagnostic]) -> bool:
+    """A PLAIN group (no params, no locals) is lazily inlined by expand.py: its body is
+    expanded exactly ONCE, eagerly, up front -- independent of how many group_refs later
+    point at it. If that frozen body reaches a locals-bearing group_ref, the qualified
+    names and hoisted seed it produced are fixed at that single expansion; a second
+    reference to the plain group would silently replay the SAME resolved instance a
+    second time, with no duplicate-instance error to catch it (unlike a direct,
+    non-plain reference, where _open_locals's duplicate-`as` check fires live on every
+    call). Confirmed empirically: two references to such a group produce one hoisted
+    seed but two executions writing the same qualified names. Rejected here, on the
+    authored doc, before expansion (design 2026-07-20 §2.2, §6).
+
+    Scope: counts direct textual group_ref occurrences (weighted by enclosing for_each row
+    counts) that live in `blocks` or in the body of a group REACHABLE from `blocks` --
+    reachability is traversed through plain and parametrized intermediates alike, at any
+    depth (fixed 2026-07-20: this previously stopped at the first parametrized hop, and
+    separately counted refs inside groups nobody ever calls). It is NOT further multiplied
+    through an ENCLOSING group that is itself referenced more than once -- e.g. a plain
+    `wash` referenced once inside a PARAMETRIZED `svc`, with `svc` itself referenced twice,
+    is not flagged, even though `svc`'s two calls replay `wash`'s single frozen expansion
+    twice. That deeper chain needs call-graph multiplicity, not just reachability, and the
+    diagnostic on the directly-multiply-referenced group is what is actionable today.
+    Mutually-exclusive `branch` arms (`then` and `else`) are also both counted even though
+    only one ever runs at a time -- conservative but safe, since correcting it needs path
+    analysis this check does not do.
+    """
+    before = len(out)
+    reachable = _reachable_groups(w)
+    for name, group in w.groups.items():
+        if not _is_plain(group) or not _group_reaches_locals_ref(w, name, set()):
+            continue
+        count = _ref_count(w.blocks, name, 1)
+        for other_name, other in w.groups.items():
+            if other_name != name and other_name in reachable:
+                count += _ref_count(other.body, name, 1)
+        if count > 1:
+            out.append(Diagnostic(
+                "group", f"groups[{name!r}]",
+                f"plain group {name!r} is referenced {count} times, but its body resolves "
+                f"a group-local instance; a param-less group's body is expanded once and "
+                f"reused verbatim, so every reference beyond the first would alias the "
+                f"same instance. Give {name!r} params so each call gets its own expansion, "
+                f"or reference it exactly once (design 2026-07-20 §2.2, §6)",
+            ))
+    return len(out) == before
+
+
 def _uses_macros(w: Workflow) -> bool:
-    if any(g.params for g in w.groups.values()):
+    # `locals` alone (no `params`) still needs expansion: the body's `{name}` holes are
+    # qualified names (design 2026-07-20 §2.2), not substituted by anything the legacy,
+    # expansion-free path does.
+    if any(g.params or g.locals for g in w.groups.values()):
         return True
     for _, b in _iter_all_blocks(w):
         if isinstance(b, B.ForEach):
@@ -111,46 +258,344 @@ def _uses_macros(w: Workflow) -> bool:
     return False
 
 
-def _check_for_each_and_arity(w: Workflow, out: list[Diagnostic]) -> bool:
-    ok = True
-    for path, b in _iter_all_blocks(w):
-        if isinstance(b, B.ForEach):
-            for key, present in (("retry", b.retry is not None), ("on_error", b.on_error != "fail"),
-                                 ("gap_after", b.gap_after is not None),
-                                 ("start_offset", b.start_offset is not None)):
-                if present:
-                    out.append(Diagnostic(
-                        "for_each", path,
-                        f"for_each may not carry block-level {key!r}; put it on the body blocks",
-                    ))
-                    ok = False
-            if not b.body:
-                out.append(Diagnostic("for_each", path, "for_each 'body' must be non-empty"))
-                ok = False
-            if not b.items:
-                out.append(Diagnostic("for_each", path, "for_each 'in' must be non-empty"))
-                ok = False
-            scalar = [i for i in b.items if not isinstance(i, dict)]
-            objects = [i for i in b.items if isinstance(i, dict)]
-            if b.var is not None and objects:
+def _value_matches(kind: str, value: object) -> bool:
+    """JSON type agreement for a value kind (design 2026-07-20 §2). `bool` is checked
+    before `int` throughout: in Python `True` IS an `int`, and an author who wrote
+    `true` in an int slot made a real mistake."""
+    if kind == "bool":
+        return isinstance(value, bool)
+    if kind == "string":
+        return isinstance(value, str)
+    if isinstance(value, bool):
+        return False
+    if kind == "int":
+        return isinstance(value, int)
+    return isinstance(value, (int, float))
+
+
+# One representative value per value kind, used to derive hole-kind agreement FROM
+# `_value_matches` itself (below) rather than hand-writing a second, driftable rule.
+_VALUE_KIND_SAMPLES: dict[str, tuple[object, ...]] = {
+    "bool": (True, False),
+    "string": ("",),
+    "int": (0, 1, -1),
+    "number": (0, 1, 0.5),
+}
+
+
+def _hole_kind_binds(inner: ParamDecl, decl: ParamDecl) -> bool:
+    """May a `{name}` hole declared `inner` (a group param or for_each var) bind a slot
+    declared `decl` (design 2026-07-20 §3)? Reference kinds (role/stream/binding) never
+    widen -- a reference names one specific thing, not a value with a shape -- and `role`
+    additionally requires equal `device_type`. A value kind widens exactly as far as
+    `_value_matches` already accepts the equivalent literal in the same slot: every sample
+    value of `inner`'s kind must be `_value_matches`-legal for `decl`'s kind, e.g. `int`'s
+    samples are all accepted where `number` is declared (an int IS a number), but not
+    where `string` or `int` alone (a `number` sample like `0.5` fails) is declared."""
+    if decl.kind in REFERENCE_KINDS or inner.kind in REFERENCE_KINDS:
+        return inner.kind == decl.kind and inner.device_type == decl.device_type
+    return all(_value_matches(decl.kind, v) for v in _VALUE_KIND_SAMPLES[inner.kind])
+
+
+def _check_role_arg(
+    decl: ParamDecl, value: str, ctx: str, w: Workflow, out: list[Diagnostic]
+) -> None:
+    role = w.roles.get(value)
+    if role is None:
+        out.append(Diagnostic(
+            "declaration", ctx, f"role argument names undeclared role {value!r}"
+        ))
+    elif role.type != decl.device_type:
+        out.append(Diagnostic(
+            "declaration", ctx,
+            f"role {value!r} has type {role.type!r}, but parameter {decl.name!r} "
+            f"requires {decl.device_type!r}",
+        ))
+
+
+def _check_stream_arg(value: str, ctx: str, w: Workflow, out: list[Diagnostic]) -> None:
+    if value not in w.streams:
+        out.append(Diagnostic(
+            "declaration", ctx, f"stream argument names undeclared stream {value!r}"
+        ))
+
+
+def _check_binding_arg(value: str, ctx: str, w: Workflow, out: list[Diagnostic]) -> None:
+    """Bindings have no declaration section -- they are created by their writer
+    (`compute.into`, `operator_input.name`), so shape and namespace disjointness are
+    the only checks available (design 2026-07-20 §2). Existence stays the job of the
+    path-sensitive 'may be read before it is written' rule."""
+    if _IDENT_RE.fullmatch(value) is None or value in _RESERVED_NAMES:
+        out.append(Diagnostic(
+            "params", ctx, f"binding argument {value!r} is not a usable binding name"
+        ))
+    elif value in w.streams:
+        out.append(Diagnostic(
+            "declaration", ctx,
+            f"binding argument {value!r} is already declared as a stream; a name is a "
+            f"binding or a stream, never both",
+        ))
+
+
+def _kind_text(decl: ParamDecl) -> str:
+    return f"role<{decl.device_type}>" if decl.kind == "role" else decl.kind
+
+
+def _check_typed_arg(
+    decl: ParamDecl,
+    value: object,
+    ctx: str,
+    w: Workflow,
+    env: Mapping[str, ParamDecl],
+    out: list[Diagnostic],
+) -> None:
+    """One `group_ref` arg or one `for_each` cell against its declaration. Reference
+    kinds resolve against the DECLARED sections only -- see the scope note above."""
+    if isinstance(value, str):
+        whole = _WHOLE_HOLE_RE.fullmatch(value)
+        if whole is not None:
+            inner = env.get(whole.group(1))
+            if inner is None:
+                return  # bound by nothing in scope: the residual-hole scan is the backstop
+            if not _hole_kind_binds(inner, decl):
                 out.append(Diagnostic(
-                    "for_each", path, "for_each with 'var' requires scalar items"))
-                ok = False
-            if b.var is None and scalar:
-                out.append(Diagnostic(
-                    "for_each", path, "for_each without 'var' requires object items"))
-                ok = False
-        elif isinstance(b, B.GroupRef):
-            group = w.groups.get(b.name)
-            params = set(group.params) if group is not None else set()
-            if group is not None and set(b.args) != params:
-                out.append(Diagnostic(
-                    "group", path,
-                    f"group_ref {b.name!r}: args {sorted(b.args)} must match params "
-                    f"{sorted(params)}",
+                    "params", ctx,
+                    f"{_kind_text(inner)} variable {inner.name!r} cannot bind a "
+                    f"{_kind_text(decl)} parameter",
                 ))
-                ok = False
-    return ok
+            return
+        if decl.kind in REFERENCE_KINDS and _HOLE_RE.search(value) is not None:
+            out.append(Diagnostic(
+                "params", ctx,
+                f"{decl.kind} argument {value!r} embeds a hole; a reference argument must "
+                f"be a whole name or a whole hole (design 2026-07-20 §3)",
+            ))
+            return
+    if decl.kind in REFERENCE_KINDS:
+        if not isinstance(value, str):
+            out.append(Diagnostic(
+                "params", ctx,
+                f"{decl.kind} argument must be a name string, got {value!r}",
+            ))
+            return
+        if decl.kind == "role":
+            _check_role_arg(decl, value, ctx, w, out)
+        elif decl.kind == "stream":
+            _check_stream_arg(value, ctx, w, out)
+        else:
+            _check_binding_arg(value, ctx, w, out)
+        return
+    if not _value_matches(decl.kind, value):
+        out.append(Diagnostic(
+            "params", ctx, f"expected {decl.kind} for parameter {decl.name!r}, got {value!r}"
+        ))
+
+
+def _check_group_args(
+    b: B.GroupRef,
+    path: str,
+    w: Workflow,
+    env: Mapping[str, ParamDecl],
+    out: list[Diagnostic],
+) -> None:
+    """`args` must supply EXACTLY the declared params, reported one diagnostic per
+    param (design 2026-07-20 §2.4). A set-difference message tells the author what the
+    two sets are; a per-param message tells them what to type."""
+    group = w.groups.get(b.name)
+    if group is None:
+        return  # unknown group: already diagnosed by _check_groups
+    declared = {p.name: p for p in group.params}
+    for name, decl in declared.items():
+        if name not in b.args:
+            out.append(Diagnostic(
+                "group", path,
+                f"group_ref {b.name!r} is missing argument {name!r} ({decl.kind})",
+            ))
+        else:
+            _check_typed_arg(decl, b.args[name], f"{path} arg {name!r}", w, env, out)
+    for name in b.args:
+        if name not in declared:
+            out.append(Diagnostic(
+                "group", path, f"group_ref {b.name!r} has no parameter {name!r}"
+            ))
+
+
+def _check_for_each(
+    b: B.ForEach,
+    path: str,
+    w: Workflow,
+    env: Mapping[str, ParamDecl],
+    out: list[Diagnostic],
+) -> None:
+    for key, present in (("retry", b.retry is not None), ("on_error", b.on_error != "fail"),
+                         ("gap_after", b.gap_after is not None),
+                         ("start_offset", b.start_offset is not None)):
+        if present:
+            out.append(Diagnostic(
+                "for_each", path,
+                f"for_each may not carry block-level {key!r}; put it on the body blocks",
+            ))
+    if not b.body:
+        out.append(Diagnostic("for_each", path, "for_each 'body' must be non-empty"))
+    if not b.items:
+        out.append(Diagnostic("for_each", path, "for_each 'in' must be non-empty"))
+    if not b.vars:
+        out.append(Diagnostic("for_each", path, "for_each 'vars' must be non-empty"))
+    declared = {v.name: v for v in b.vars}
+    for r, row in enumerate(b.items):
+        if not isinstance(row, dict):
+            out.append(Diagnostic(
+                "for_each", path,
+                f"for_each 'in' row {r} must be an object mapping every declared var to a "
+                f"value, got {row!r}",
+            ))
+            continue
+        for name in declared:
+            if name not in row:
+                out.append(Diagnostic(
+                    "for_each", path, f"for_each 'in' row {r} is missing {name!r}"
+                ))
+        for name in row:
+            if name not in declared:
+                out.append(Diagnostic(
+                    "for_each", path, f"for_each 'in' row {r} has no variable {name!r}"
+                ))
+        for name, decl in declared.items():
+            if name in row:
+                _check_typed_arg(
+                    decl, row[name], f"{path} in[{r}] {name!r}", w, env, out
+                )
+
+
+def _check_decl_names(
+    decls: list[ParamDecl],
+    locals_: Mapping[str, LocalDecl],
+    where: str,
+    env: Mapping[str, ParamDecl],
+    out: list[Diagnostic],
+) -> dict[str, ParamDecl]:
+    """One binder's names (design 2026-07-20 §2.4). Params and locals share ONE
+    namespace: both become `{name}` holes in the same body, so a collision has no
+    meaningful resolution. Returns the names this binder introduces."""
+    introduced: dict[str, ParamDecl] = {}
+    for decl in decls:
+        if _IDENT_RE.fullmatch(decl.name) is None:
+            out.append(Diagnostic(
+                "declaration", where, f"declared name {decl.name!r} is not an identifier"
+            ))
+        elif decl.name in _RESERVED_NAMES:
+            out.append(Diagnostic(
+                "declaration", where, f"declared name {decl.name!r} is reserved"
+            ))
+        if decl.name in introduced:
+            out.append(Diagnostic(
+                "declaration", where, f"duplicate parameter name {decl.name!r}"
+            ))
+        introduced[decl.name] = decl
+    for name, local in locals_.items():
+        if _IDENT_RE.fullmatch(name) is None:
+            out.append(Diagnostic(
+                "declaration", where, f"declared name {name!r} is not an identifier"
+            ))
+        elif name in _RESERVED_NAMES:
+            out.append(Diagnostic(
+                "declaration", where, f"declared name {name!r} is reserved"
+            ))
+        if name in introduced:
+            out.append(Diagnostic(
+                "declaration", where,
+                f"{name!r} is declared as both a parameter and a local; params and locals "
+                f"share one namespace (design 2026-07-20 §2.4)",
+            ))
+        introduced[name] = ParamDecl(name=name, kind=local.kind)
+    for name in introduced:
+        if name in env:
+            out.append(Diagnostic(
+                "declaration", where,
+                f"{name!r} shadows an enclosing group parameter or for_each variable of the "
+                f"same name; the outer binding substitutes first and the inner one never "
+                f"takes effect (design 2026-07-20 §2.4)",
+            ))
+    return introduced
+
+
+def _walk_decls(
+    blocks: list[B.Block],
+    prefix: str,
+    w: Workflow,
+    env: dict[str, ParamDecl],
+    out: list[Diagnostic],
+) -> None:
+    """Walk the AUTHORED tree carrying the declarations in scope. `_iter_all_blocks`
+    cannot serve here: it is scope-blind, and every check below is about what a name
+    means at the point it is written."""
+    for i, b in enumerate(blocks):
+        path = f"{prefix}[{i}]"
+        if isinstance(b, B.ForEach):
+            _check_for_each(b, path, w, env, out)
+            inner = dict(env)
+            inner.update(_check_decl_names(b.vars, {}, path, env, out))
+            _walk_decls(b.body, f"{path}.body", w, inner, out)
+            continue
+        if isinstance(b, B.GroupRef):
+            _check_group_args(b, path, w, env, out)
+        if isinstance(b, (B.Serial, B.Parallel)):
+            _walk_decls(b.children, f"{path}.children", w, env, out)
+        elif isinstance(b, B.Loop):
+            _walk_decls(b.body, f"{path}.body", w, env, out)
+        elif isinstance(b, B.Branch):
+            _walk_decls(b.then, f"{path}.then", w, env, out)
+            if b.else_ is not None:
+                _walk_decls(b.else_, f"{path}.else", w, env, out)
+
+
+def _check_local_init(
+    name: str, local: LocalDecl, where: str, out: list[Diagnostic]
+) -> None:
+    """`init` must be a CONSTANT expression: literals and operators over them, with no
+    stat calls, no stream references and no binding references (design 2026-07-20 §2.3).
+    The initializer is hoisted ahead of every block in the document, so any data
+    dependency it could express is guaranteed unwritten when it runs.
+
+    Task 5's parser already rejects `init` on a stream-kinded local, so only the
+    binding case reaches here. Its expression syntax is ALSO already checked at load
+    time by serialize._local_decls's `_checked_expr` (unless it embeds a hole), so the
+    ExpressionError branch below is defense-in-depth for a LocalDecl built directly
+    through the Python API -- not reachable via workflow_from_dict for a hole-free
+    `init`, mirroring _check_for_each's row-must-be-an-object check."""
+    if local.init is None:
+        return
+    try:
+        expr = parse_expression(local.init)
+    except ExpressionError as exc:
+        out.append(Diagnostic("declaration", where, f"invalid init expression: {exc}"))
+        return
+    refs = references(expr)
+    named = sorted(refs.bindings | refs.streams_windowed | refs.streams_counted)
+    if named:
+        reads = ", ".join(repr(n) for n in named)
+        out.append(Diagnostic(
+            "declaration", where,
+            f"local {name!r} init must be a constant expression, but reads {reads}; the "
+            f"initializer is hoisted ahead of every block, so nothing it could read is "
+            f"written yet (design 2026-07-20 §2.3)",
+        ))
+
+
+def _check_declarations(w: Workflow, out: list[Diagnostic]) -> bool:
+    """Every typed-declaration rule, on the authored doc (design 2026-07-20 §2, §4).
+    True iff nothing new was found, i.e. the doc is safe to hand to the expander."""
+    before = len(out)
+    _walk_decls(w.blocks, "blocks", w, {}, out)
+    for name, group in w.groups.items():
+        where = f"groups[{name!r}]"
+        env = _check_decl_names(group.params, group.locals, where, {}, out)
+        for local_name, local in group.locals.items():
+            _check_local_init(
+                local_name, local, f"{where}.locals[{local_name!r}]", out
+            )
+        _walk_decls(group.body, f"{where}.body", w, env, out)
+    return len(out) == before
 
 
 _INPUT_TYPES: dict[str, BindingType] = {
@@ -227,6 +672,15 @@ def _check_param_value(
             out.append(Diagnostic("params", ctx, f"expected a number, got {value!r}"))
 
 
+def _role_type(w: Workflow, device: str) -> str | None:
+    """Declared device type behind a `device:` field (design 2026-07-20 §5.2), or None when
+    it cannot be known here: an unexpanded `{hole}` is not a role name yet, and an undeclared
+    role is diagnosed once by `_check_action` rather than by every analysis that walks past
+    it. A role name is not a device id and was never decodable into one."""
+    decl = w.roles.get(device)
+    return None if decl is None else decl.type
+
+
 def _check_action(
     b: B.Command | B.Measure,
     path: str,
@@ -234,8 +688,17 @@ def _check_action(
     binding_types: Mapping[str, BindingType],
     out: list[Diagnostic],
 ) -> None:
+    dtype = _role_type(w, b.device)
+    if dtype is None:
+        if "{" not in b.device:  # a hole defers; a name that is not a role never resolves
+            out.append(Diagnostic(
+                "declaration", path,
+                f"device {b.device!r} is not a declared role; declare it under the "
+                f"workflow's 'roles' section. Declared roles: {sorted(w.roles)}",
+            ))
+        return
     try:
-        trait = lookup(b.device, b.verb)
+        trait = lookup(dtype, b.verb)
     except UnknownVerbError as exc:
         out.append(Diagnostic("registry", path, str(exc)))
         return
@@ -255,6 +718,8 @@ def _check_action(
 
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _RESERVED_NAMES = frozenset({"and", "or", "not", "true", "false"})
+_HOLE_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_WHOLE_HOLE_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}\Z")
 
 
 def _check_streams_declared(text: str, ctx: str, w: Workflow, out: list[Diagnostic]) -> None:
@@ -372,8 +837,11 @@ def _check_record(
 
 
 def _check_measure(b: B.Measure, path: str, w: Workflow, out: list[Diagnostic]) -> None:
+    dtype = _role_type(w, b.device)
+    if dtype is None:
+        return  # already diagnosed by _check_action
     try:
-        trait = lookup(b.device, b.verb)
+        trait = lookup(dtype, b.verb)
     except UnknownVerbError:
         return  # already diagnosed by _check_action
     if not trait.measurement:
@@ -471,7 +939,7 @@ def _check_on_error(block: B.Block, path: str, out: list[Diagnostic]) -> None:
         ))
 
 
-def _check_retry(block: B.Block, path: str, out: list[Diagnostic]) -> None:
+def _check_retry(block: B.Block, path: str, w: Workflow, out: list[Diagnostic]) -> None:
     """retry is command/measure only, and a non-idempotent verb needs an explicit
     in-document opt-in (design 2026-07-14 §4)."""
     retry = block.retry
@@ -488,8 +956,11 @@ def _check_retry(block: B.Block, path: str, out: list[Diagnostic]) -> None:
             "block", path, "retry is only valid on command and measure blocks"
         ))
         return
+    dtype = _role_type(w, block.device)
+    if dtype is None:
+        return  # already diagnosed by _check_action
     try:
-        trait = lookup(block.device, block.verb)
+        trait = lookup(dtype, block.verb)
     except UnknownVerbError:
         return  # already diagnosed by _check_action
     if not trait.retry_safe and not retry.allow_repeat:
@@ -563,7 +1034,7 @@ def _check_block(
     # Unconditional: legal on every block type, including Serial/Parallel/Wait/GroupRef,
     # which reach none of the type-specific checks below.
     _check_on_error(block, path, out)
-    _check_retry(block, path, out)
+    _check_retry(block, path, w, out)
     if isinstance(block, (B.Command, B.Measure)):
         _check_action(block, path, w, binding_types, out)
     if isinstance(block, B.Measure):
@@ -717,8 +1188,11 @@ def _durable_guard_proof(condition: str) -> set[str]:
 
 
 def _visit_action(b: B.Command | B.Measure, path: str, state: _PathState, c: _Ctx) -> None:
+    dtype = _role_type(c.workflow, b.device)
+    if dtype is None:
+        return  # already diagnosed globally; nothing to analyze against
     try:
-        trait = lookup(b.device, b.verb)
+        trait = lookup(dtype, b.verb)
     except UnknownVerbError:
         return  # already diagnosed globally; nothing to analyze against
     specs = {s.name: s for s in trait.params}
@@ -726,7 +1200,7 @@ def _visit_action(b: B.Command | B.Measure, path: str, state: _PathState, c: _Ct
         spec = specs.get(name)
         if spec is not None and spec.kind != "string":
             _expr_reads(value, f"{path} param {name!r}", state, c)
-    action = mode_action(b.device, b.verb, b.params)
+    action = mode_action(dtype, b.verb, b.params)
     if action is not None and action.kind == "close":
         # A matching close is always legal: closes if open, no-ops if not (design §12).
         state.modes.pop((b.device, action.mode_verb), None)
@@ -734,7 +1208,7 @@ def _visit_action(b: B.Command | B.Measure, path: str, state: _PathState, c: _Ct
         for (device, mode_verb), status in sorted(state.modes.items()):
             if device != b.device:
                 continue
-            if lookup(device, mode_verb).channels & trait.channels:
+            if lookup(dtype, mode_verb).channels & trait.channels:
                 word = "open" if status == "open" else "possibly open"
                 c.emit(
                     "mode", path,
@@ -788,10 +1262,15 @@ def _footprint(root: B.Block, w: Workflow) -> set[tuple[str, str]]:
     while stack:
         b = stack.pop()
         if isinstance(b, (B.Command, B.Measure)):
+            dtype = _role_type(w, b.device)
+            if dtype is None:
+                continue
             try:
-                trait = lookup(b.device, b.verb)
+                trait = lookup(dtype, b.verb)
             except UnknownVerbError:
                 continue
+            # Keyed by ROLE NAME, not by device id. Injectivity (design §5.4) makes the two
+            # intersections provably equivalent; the role name is what the author wrote.
             found.update((b.device, ch) for ch in trait.channels)
         elif isinstance(b, (B.Serial, B.Parallel)):
             stack.extend(b.children)
@@ -975,10 +1454,13 @@ def _validate_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
 def _validate_macro_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
     """Gate the authored (templated) doc, then expand and run every concrete check on
     the expansion. The authored blocks (holes, for_each, parametrized group_refs) never
-    reach the concrete checks — only `_check_groups` and `_check_for_each_and_arity` see
-    them; `_validate_workflow` below only ever sees the macro-free `expanded` doc."""
+    reach the concrete checks — only `_check_groups`, `_check_group_reuse` and
+    `_check_declarations` see them; `_validate_workflow` below only ever sees the
+    macro-free `expanded` doc."""
     expandable = _check_groups(workflow, out)
-    expandable = _check_for_each_and_arity(workflow, out) and expandable
+    if expandable:  # _check_group_reuse walks the group graph; only sound once acyclic
+        expandable = _check_group_reuse(workflow, out) and expandable
+    expandable = _check_declarations(workflow, out) and expandable
     if not expandable:
         _check_defaults(workflow, out)
         return

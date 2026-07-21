@@ -2,10 +2,10 @@
  * fixture byte-for-byte; emission rules mirror the engine serializer:
  * omit empty params, omit null timing keys, `check` only alongside `until`, `else`
  * omitted (not null) when absent, `on_error` omitted unless it is 'continue'. `groups`
- * omitted entirely when empty; a for_each's `var` omitted when null, its JSON key `in` maps
- * to the node field `items`; a group_ref's `args` omitted when empty (repetition design
- * 2026-07-15 §5 `serialize.py:288-347`; W9 removes the `groups`/`for_each`/`group_ref`
- * hard-reject this file carried since Increment 7 §9/§10). */
+ * omitted entirely when empty; a for_each carries typed `vars` and its JSON key `in` maps
+ * to the node field `rows` (typed rows; the v1 scalar `var` shorthand is gone); a group_ref's
+ * `as` is omitted when null and `args` when empty (typed-params design 2026-07-20 §3-4,
+ * `serialize.py`; roles now live in `workflow.roles`, not the doc envelope, §5). */
 import type {
   AbortBody,
   AlarmBody,
@@ -17,19 +17,30 @@ import type {
   ForEachBody,
   GroupJson,
   GroupRefBody,
+  LocalDeclJson,
   LoopBody,
   MeasureBody,
   OperatorInputBody,
+  ParamDeclJson,
   RecordBody,
+  RoleDeclJson,
   StreamDeclJson,
   WorkflowJson,
 } from '../types/doc'
 import { newUid, type BlockNode, type InputType } from './tree'
 
+/** The editor form of a group: typed params, named locals, and a body of editor nodes
+ * (schema 2, typed-group-parameters design §9.2). Exported so the store and paths.ts key
+ * their `groups` field on the same shape. */
+export type GroupDef = { params: ParamDeclJson[]; locals: Record<string, LocalDeclJson>; body: BlockNode[] }
+
 export interface DocContent {
   name: string
   description: string | null
-  roles: Record<string, { type: string }>
+  // Flat editor field; emitted UNDER workflow.roles (schema 2 moved roles inside the
+  // workflow). Kept flat here — the store's selectContent/snapshotOf/partialize all read
+  // `content.roles`, and treeToDoc places it under `workflow.roles`.
+  roles: Record<string, RoleDeclJson>
   // persistence is per-stream override support (2026-07-14 review, I2) — the builder has no
   // UI for it (StreamsPanel.tsx), but a stream declared `persistence: "disk"` under an
   // `in_memory` workflow default must survive Save, or its samples are silently never
@@ -48,11 +59,11 @@ export interface DocContent {
   metadata?: WorkflowJson['metadata']
   // Reusable group bodies invoked via group_ref (design §2.2/§5). Optional, like persistence/
   // defaults above, for the same structural reason: docStore.ts's store now has a full
-  // authoring API for groups (addGroup/renameGroup/removeGroup/setGroupParams/setScope) and
-  // treats `groups` as a required field there, like `tree` — this type just stays permissive
-  // for any DocContent built directly by a caller that predates this field. docToTree always
-  // populates it.
-  groups?: Record<string, { params: string[]; body: BlockNode[] }>
+  // authoring API for groups (addGroup/renameGroup/removeGroup/setGroupParams/setGroupLocals/
+  // setScope) and treats `groups` as a required field there, like `tree` — this type just
+  // stays permissive for any DocContent built directly by a caller that predates this field.
+  // docToTree always populates it.
+  groups?: Record<string, GroupDef>
 }
 
 export class DocConvertError extends Error {
@@ -69,12 +80,16 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
     throw new DocConvertError(`unsupported doc_version ${String(doc.doc_version)}`)
   }
   const wf = doc.workflow
-  if (wf.schema_version !== 1) {
+  if (wf.schema_version !== 2) {
     throw new DocConvertError(`unsupported workflow schema_version ${String(wf.schema_version)}`)
   }
   const groups: NonNullable<DocContent['groups']> = {}
   for (const [name, g] of Object.entries(wf.groups ?? {})) {
-    groups[name] = { params: g.params ?? [], body: (g.body ?? []).map(blockToNode) }
+    groups[name] = {
+      params: (g.params ?? []).map((p) => ({ ...p })),
+      locals: { ...(g.locals ?? {}) },
+      body: (g.body ?? []).map(blockToNode),
+    }
   }
   const streams: DocContent['streams'] = {}
   for (const [name, decl] of Object.entries(wf.streams ?? {})) {
@@ -83,8 +98,12 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
       ...(decl.persistence !== undefined ? { persistence: decl.persistence } : {}),
     }
   }
+  // Roles live under the workflow now (schema 2); a role may carry an optional direct device
+  // binding, which must survive the round trip.
   const roles: DocContent['roles'] = {}
-  for (const [name, role] of Object.entries(doc.roles)) roles[name] = { type: role.type }
+  for (const [name, role] of Object.entries(wf.roles ?? {})) {
+    roles[name] = role.device !== undefined ? { type: role.type, device: role.device } : { type: role.type }
+  }
   return {
     name: doc.name,
     description: doc.description ?? null,
@@ -187,17 +206,19 @@ function blockToNode(block: BlockJson): BlockNode {
       return { ...base, kind, condition: b.if, message: b.message }
     }
     case 'for_each': {
-      // Splice macro (design §2.1): JSON key `in`, node field `items` — doc.ts:55-63 states the
+      // Splice macro (design §2.1): JSON key `in`, node field `rows` — doc.ts states the
       // translation, the same role this function already plays for branch.if <-> condition.
-      // body is a real child slot (tree.ts childSlots), so it recurses like loop.body.
+      // Schema 2: typed `vars`, one value per row. body is a real child slot (tree.ts
+      // childSlots), so it recurses like loop.body.
       const b = block.for_each as ForEachBody
-      return { ...base, kind, var: b.var ?? null, items: [...b.in], body: (b.body ?? []).map(blockToNode) }
+      return { ...base, kind, vars: (b.vars ?? []).map((v) => ({ ...v })), rows: (b.in ?? []).map((r) => ({ ...r })), body: (b.body ?? []).map(blockToNode) }
     }
     case 'group_ref': {
       // Parametrized group reference (design §2.2). args is data carried on the node, not a
-      // child slot — the referenced group's body lives in DocContent.groups, not here.
+      // child slot — the referenced group's body lives in DocContent.groups, not here. Schema
+      // 2 adds `as`, the call-site prefix that namespaces a group's locals.
       const b = block.group_ref as GroupRefBody
-      return { ...base, kind, name: b.name, args: { ...(b.args ?? {}) } }
+      return { ...base, kind, name: b.name, as: b.as ?? null, args: { ...(b.args ?? {}) } }
     }
     default:
       throw new DocConvertError(`unsupported block type '${kind}' in the builder`)
@@ -212,26 +233,31 @@ export function treeToDoc(content: DocContent): ExperimentDocJson {
       ...(s.persistence !== undefined ? { persistence: s.persistence } : {}),
     }
   }
-  const roles: ExperimentDocJson['roles'] = {}
-  for (const [name, role] of Object.entries(content.roles)) roles[name] = { type: role.type }
+  // Roles are emitted under workflow.roles now (schema 2), NOT the envelope; an optional
+  // direct device binding rides along.
+  const roles: Record<string, RoleDeclJson> = {}
+  for (const [name, role] of Object.entries(content.roles)) {
+    roles[name] = role.device !== undefined ? { type: role.type, device: role.device } : { type: role.type }
+  }
   const groupEntries = Object.entries(content.groups ?? {})
   let groups: Record<string, GroupJson> | undefined
   if (groupEntries.length > 0) {
     groups = {}
     for (const [name, g] of groupEntries) {
       groups[name] = {
-        ...(g.params.length > 0 ? { params: [...g.params] } : {}),
+        ...(g.params.length > 0 ? { params: g.params.map((p) => ({ ...p })) } : {}),
+        ...(Object.keys(g.locals).length > 0 ? { locals: g.locals } : {}),
         body: g.body.map(nodeToBlock),
       }
     }
   }
-  // Key order mirrors workflow_to_dict (serialize.py:426-450): schema_version, metadata,
-  // persistence, defaults, streams, groups, blocks. defaults and groups are conditional
-  // (omitted when absent/empty), so they are spread into the literal at their canonical
-  // position rather than assigned afterward — an object-literal-plus-post-assignment
-  // cannot land a conditional key ahead of keys that must appear unconditionally after it.
+  // Key order mirrors workflow_to_dict: schema_version, metadata, persistence, defaults,
+  // roles, streams, groups, blocks — all conditional sections omitted when empty. defaults,
+  // roles and groups are spread into the literal at their canonical position rather than
+  // assigned afterward — an object-literal-plus-post-assignment cannot land a conditional key
+  // ahead of keys that must appear unconditionally after it.
   const workflow: WorkflowJson = {
-    schema_version: 1,
+    schema_version: 2,
     // content.name stays authoritative for metadata.name (the builder edits the doc name,
     // which is mirrored here) — re-assigning an existing key via spread keeps its original
     // position, so a carried-in metadata.author/description keeps its place after name.
@@ -240,6 +266,9 @@ export function treeToDoc(content: DocContent): ExperimentDocJson {
     // the builder's historical default when none was present (2026-07-14 review, Fix 1).
     persistence: content.persistence ?? { default: 'in_memory', format: 'jsonl' },
     ...(content.defaults !== undefined ? { defaults: content.defaults } : {}),
+    // roles omitted entirely when empty (engine workflow_to_dict), so a role-less doc keeps a
+    // minimal workflow.
+    ...(Object.keys(roles).length > 0 ? { roles } : {}),
     streams,
     // groups omitted entirely when empty (serialize.py:445 `if w.groups:`), so a group-less
     // doc round-trips byte-identically to today.
@@ -250,7 +279,6 @@ export function treeToDoc(content: DocContent): ExperimentDocJson {
     doc_version: 1,
     name: content.name,
     description: content.description,
-    roles,
     workflow,
   }
 }
@@ -319,19 +347,21 @@ export function nodeToBlock(node: BlockNode): BlockJson {
       out.alarm = { if: node.condition, message: node.message }
       break
     case 'for_each': {
-      // Mirrors serialize.py _dump_body's ForEach arm: var emitted only when set, then in,
-      // then body, in that order (design §5) — the conditional spread controls the key order.
+      // Mirrors serialize.py _dump_body's ForEach arm: vars, then in (rows), then body, in
+      // that order (design §5/§9.2).
       const body: ForEachBody = {
-        ...(node.var !== null ? { var: node.var } : {}),
-        in: [...node.items],
+        vars: node.vars.map((v) => ({ ...v })),
+        in: node.rows.map((r) => ({ ...r })),
         body: node.body.map(nodeToBlock),
       }
       out.for_each = body
       break
     }
     case 'group_ref': {
-      // Mirrors serialize.py _dump_body's GroupRef arm: name always, args only when non-empty.
+      // Mirrors serialize.py _dump_body's GroupRef arm: name always, then `as` when set, then
+      // args when non-empty.
       const body: GroupRefBody = { name: node.name }
+      if (node.as !== null) body.as = node.as
       if (Object.keys(node.args).length > 0) body.args = { ...node.args }
       out.group_ref = body
       break

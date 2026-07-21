@@ -97,15 +97,12 @@ export function blockSummaryParts(node: BlockNode): SummarySegment[] {
         return [seg('Abort if', 'verb'), seg(` ${node.condition || '…'}`, 'detail')]
       case 'alarm':
         return [seg('Alarm if', 'verb'), seg(` ${node.condition || '…'}`, 'detail')]
-      case 'for_each':
-        return node.var !== null
-          ? [
-              seg('For each', 'verb'),
-              seg(' ', 'detail'),
-              seg(node.var, 'subject'),
-              seg(` in [${node.items.join(', ')}]`, 'detail'),
-            ]
-          : [seg('For each', 'verb'), seg(` of ${node.items.length} items`, 'detail')]
+      case 'for_each': {
+        // Schema 2: typed `vars` and N `rows`. Summarise as the var names crossed with the
+        // row count (e.g. `For each tube, od × 3`).
+        const names = node.vars.map((v) => v.name).join(', ')
+        return [seg('For each', 'verb'), seg(` ${names || '…'} × ${node.rows.length}`, 'detail')]
+      }
       case 'group_ref': {
         const args = formatParams(node.args)
         return [
