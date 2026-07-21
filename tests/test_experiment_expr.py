@@ -192,7 +192,6 @@ def test_comparison_of_arithmetic():
     ("mean(OD, last=0)", "must be positive"),
     ("mean(OD, last=5 min)", "expected"),
     ("a < b < c", "cannot be chained"),
-    ("5min + 3", "stat window"),
     ("2 + and", "unexpected keyword"),
 ])
 def test_parse_errors(bad, fragment):

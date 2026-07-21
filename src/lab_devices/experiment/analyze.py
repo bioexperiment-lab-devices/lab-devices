@@ -11,13 +11,16 @@ from lab_devices.experiment.expr import (
     BinaryOp,
     BindingRef,
     Const,
+    DurationConst,
     DurationWindow,
     Expr,
     StatCall,
     UnaryOp,
     Window,
 )
-from lab_devices.experiment.units import UNITLESS, Unit, unit_div, unit_mul, unit_str
+from lab_devices.experiment.units import UNITLESS, Unit, parse_unit, unit_div, unit_mul, unit_str
+
+_SECONDS: Unit = parse_unit("s")  # the unit a duration literal carries (design 2026-07-21 §6)
 
 # One scalar type vocabulary for the whole DSL (design 2026-07-21 §3). `int <: number`;
 # `bool`/`string` are invariant; `unknown` is the transient inference state.
@@ -195,6 +198,8 @@ def infer_type(
             if isinstance(e.value, str):
                 return ScalarType("string")
             return ScalarType("int" if isinstance(e.value, int) else "number")
+        if isinstance(e, DurationConst):
+            return ScalarType("number", _SECONDS)
         if isinstance(e, BindingRef):
             return binding_types.get(e.name, UNKNOWN)
         if isinstance(e, StatCall):
