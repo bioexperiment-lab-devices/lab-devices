@@ -44,7 +44,7 @@ const DIRECTION: ParamDef = {
   required: true,
 }
 
-const ROTATION_OPTIONS = ['cw', 'ccw', 'shortest']
+const ROTATION_OPTIONS = ['shortest', 'direct', 'wrap']
 
 export const CATALOG: Record<DeviceType, CommandDef[]> = {
   pump: [

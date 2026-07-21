@@ -32,7 +32,7 @@ describe('formatParams', () => {
   it('shows up to two params and an ellipsis beyond', () => {
     expect(formatParams({})).toBe('')
     expect(formatParams({ volume_ml: 5 })).toBe('volume_ml=5')
-    expect(formatParams({ a: 1, b: 'cw', c: true })).toBe('a=1, b=cw, …')
+    expect(formatParams({ a: 1, b: 'xyz', c: true })).toBe('a=1, b=xyz, …')
   })
 })
 
