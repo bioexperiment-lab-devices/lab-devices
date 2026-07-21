@@ -24,8 +24,17 @@ export function shouldDismiss(
  *
  * `pointerdown` rather than `click`: a click that starts inside and ends outside (a drag
  * or a text selection) must not dismiss.
+ *
+ * `extra`, when given, names a second "inside" container — for a popover panel rendered
+ * through a portal (so it can escape a scroll-clipping ancestor), the panel lives outside
+ * the DOM subtree the primary ref covers, so a click on it would otherwise read as
+ * "outside" and immediately dismiss the very panel it landed on.
  */
-export function useDismissable(open: boolean, onClose: () => void): RefObject<HTMLDivElement | null> {
+export function useDismissable(
+  open: boolean,
+  onClose: () => void,
+  extra?: RefObject<HTMLElement | null>,
+): RefObject<HTMLDivElement | null> {
   const ref = useRef<HTMLDivElement>(null)
   // Held in a ref so a caller passing an inline arrow does not re-register listeners
   // on every render.
@@ -38,7 +47,13 @@ export function useDismissable(open: boolean, onClose: () => void): RefObject<HT
     if (!open) return
     const handle = (e: Event) => {
       const key = e instanceof KeyboardEvent ? e.key : undefined
-      if (shouldDismiss({ type: e.type, key, target: e.target as Node | null }, ref.current)) {
+      // `extra` is read inside the listener (not captured by the effect's deps) — it's a
+      // ref, stable across renders, so it needs no dependency-array entry.
+      const container: DismissContainer | null = ref.current && {
+        contains: (n: DismissTarget) =>
+          Boolean(ref.current?.contains(n) || extra?.current?.contains(n)),
+      }
+      if (shouldDismiss({ type: e.type, key, target: e.target as Node | null }, container)) {
         onCloseRef.current()
       }
     }

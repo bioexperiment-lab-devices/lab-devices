@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Palette as PaletteIcon, Pencil, Plus, X } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
@@ -238,14 +239,47 @@ function RoleTypeBlock({
  * `null` override). roleColorStore.ts documents these as distinct states — an absent key
  * vs. an explicit null — so the two buttons must read as distinct choices, not synonyms.
  * Uses `useDismissable` for outside-click/Esc, the same as every other popover here — a
- * popover that cannot be dismissed was finding #6 of the W11 round. */
+ * popover that cannot be dismissed was finding #6 of the W11 round.
+ *
+ * The panel is rendered through a portal onto `document.body` rather than as an absolute
+ * child here: the enclosing palette aside is `overflow-y-auto`, which clips an absolutely
+ * positioned popover on BOTH axes (and near the bottom of the scroll area, the fixed-height
+ * viewport clips it off-screen entirely, cropping the swatches). Escaping to the body means
+ * position must be computed by hand: `fixed`, measured off the trigger's rect after first
+ * paint (`useLayoutEffect`, since we need the panel's own rendered size before placing it),
+ * right-aligned to the trigger, and flipped to sit above it when the viewport bottom would
+ * still crop it. The panel stays `visibility: hidden` until a position is known, so it never
+ * flashes at (0, 0) for a frame. `useDismissable`'s `extra` ref is what keeps a click landing
+ * on the portaled panel from reading as "outside" and immediately closing it. */
 function RoleColorPicker({ name, type }: { name: string; type: string }) {
   const [open, setOpen] = useState(false)
-  const ref = useDismissable(open, () => setOpen(false))
+  const panelRef = useRef<HTMLDivElement>(null)
+  const ref = useDismissable(open, () => setOpen(false), panelRef)
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
   const setColor = useRoleColorStore((s) => s.setColor)
   const clearColor = useRoleColorStore((s) => s.clearColor)
   const resetColor = useRoleColorStore((s) => s.resetColor)
   const key = roleColorKey(name, type)
+
+  // The palette aside is overflow-y-auto, which clips any absolute child on BOTH axes —
+  // the popover must escape to document.body. Position: fixed, measured after first
+  // paint (visibility:hidden until placed), right-aligned to the trigger, flipped above
+  // it when the viewport bottom would crop it.
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null)
+      return
+    }
+    const trigger = ref.current?.getBoundingClientRect()
+    const panel = panelRef.current?.getBoundingClientRect()
+    if (!trigger || !panel) return
+    const below = trigger.bottom + 4 + panel.height <= window.innerHeight
+    setPos({
+      top: below ? trigger.bottom + 4 : Math.max(8, trigger.top - 4 - panel.height),
+      right: Math.max(8, window.innerWidth - trigger.right),
+    })
+  }, [open, ref])
+
   return (
     <div ref={ref} className="relative inline-flex">
       <IconButton
@@ -256,42 +290,54 @@ function RoleColorPicker({ name, type }: { name: string; type: string }) {
           setOpen((v) => !v)
         }}
       />
-      {open && (
-        <div className="absolute right-0 top-6 z-10 flex w-max flex-wrap gap-1 rounded border border-slate-300 bg-white p-1 shadow-lg">
-          {ROLE_SWATCH_CLASSES.map((cls) => (
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{
+              position: 'fixed',
+              top: pos?.top ?? 0,
+              right: pos?.right ?? 0,
+              visibility: pos ? 'visible' : 'hidden',
+              maxWidth: 'calc(100vw - 16px)',
+            }}
+            className="z-10 flex w-max flex-wrap gap-1 rounded border border-slate-300 bg-white p-1 shadow-lg"
+          >
+            {ROLE_SWATCH_CLASSES.map((cls) => (
+              <button
+                key={cls}
+                title={ROLE_SWATCH_LABELS[cls]}
+                aria-label={ROLE_SWATCH_LABELS[cls]}
+                onClick={() => {
+                  setColor(key, cls)
+                  setOpen(false)
+                }}
+                className={`${CONTROL_H} w-6 rounded-sm ${cls}`}
+              />
+            ))}
             <button
-              key={cls}
-              title={ROLE_SWATCH_LABELS[cls]}
-              aria-label={ROLE_SWATCH_LABELS[cls]}
+              title="Let the app choose (auto-assigned by role order)"
               onClick={() => {
-                setColor(key, cls)
+                resetColor(key)
                 setOpen(false)
               }}
-              className={`${CONTROL_H} w-6 rounded-sm ${cls}`}
-            />
-          ))}
-          <button
-            title="Let the app choose (auto-assigned by role order)"
-            onClick={() => {
-              resetColor(key)
-              setOpen(false)
-            }}
-            className={inlineButtonClass({ subtle: true })}
-          >
-            auto
-          </button>
-          <button
-            title="This role has no colour"
-            onClick={() => {
-              clearColor(key)
-              setOpen(false)
-            }}
-            className={inlineButtonClass({ subtle: true })}
-          >
-            no colour
-          </button>
-        </div>
-      )}
+              className={inlineButtonClass({ subtle: true })}
+            >
+              auto
+            </button>
+            <button
+              title="This role has no colour"
+              onClick={() => {
+                clearColor(key)
+                setOpen(false)
+              }}
+              className={inlineButtonClass({ subtle: true })}
+            >
+              no colour
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

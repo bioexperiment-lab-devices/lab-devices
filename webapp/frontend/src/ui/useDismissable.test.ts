@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shouldDismiss } from './useDismissable'
+import { shouldDismiss, type DismissContainer } from './useDismissable'
 
 /** Minimal stand-in for a DOM node — vitest runs in node here, so there is no real one. */
 const container = (contains: boolean) => ({ contains: () => contains })
@@ -25,5 +25,26 @@ describe('shouldDismiss', () => {
 
   it('does not dismiss when the container is not mounted yet', () => {
     expect(shouldDismiss({ type: 'pointerdown', target }, null)).toBe(false)
+  })
+})
+
+const containerOf = (members: Set<unknown>): DismissContainer => ({
+  contains: (n) => members.has(n),
+})
+
+describe('shouldDismiss with a composite container (portal popovers)', () => {
+  const inTrigger = {} as Node
+  const inPortal = {} as Node
+  const outside = {} as Node
+  const composite: DismissContainer = {
+    contains: (n) =>
+      containerOf(new Set([inTrigger])).contains(n) || containerOf(new Set([inPortal])).contains(n),
+  }
+  it('keeps open for pointerdown inside either part', () => {
+    expect(shouldDismiss({ type: 'pointerdown', target: inTrigger }, composite)).toBe(false)
+    expect(shouldDismiss({ type: 'pointerdown', target: inPortal }, composite)).toBe(false)
+  })
+  it('dismisses for pointerdown outside both', () => {
+    expect(shouldDismiss({ type: 'pointerdown', target: outside }, composite)).toBe(true)
   })
 })
