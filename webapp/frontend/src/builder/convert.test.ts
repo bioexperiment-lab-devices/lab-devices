@@ -357,7 +357,7 @@ describe('control blocks', () => {
       schema_version: 3,
       metadata: { name: 'control' },
       persistence: { default: 'in_memory', format: 'jsonl' },
-      streams: { c_series: { units: null } },
+      streams: { c_series: { units: 'unitless' } },
       blocks,
     },
   })
@@ -488,5 +488,34 @@ describe('repetition blocks', () => {
     // always populates it (convert.ts:53) — `?? {}` satisfies the type without a `!` assertion.
     expect(Object.keys(content.groups ?? {})).toContain('service')
     expect(JSON.stringify(treeToDoc(content))).toBe(JSON.stringify(input))
+  })
+
+  describe('unitless streams', () => {
+    // Schema 3 requires every stream to declare units; the engine spells "no unit" as the
+    // literal string "unitless" (units.py _UNITLESS_TEXTS). The Studio spells the same thing
+    // as a blank field instead of making users type the word — docToTree/treeToDoc convert at
+    // this one boundary, in both directions.
+    it('loads "unitless" as a blank field and serializes blank back to "unitless"', () => {
+      const input = doc({ streams: { od: { units: 'unitless' } }, blocks: [] })
+      const content = docToTree(input)
+      expect(content.streams.od.units).toBeNull()
+      expect(treeToDoc(content).workflow.streams?.od?.units).toBe('unitless')
+    })
+
+    it('leaves real units untouched through the round trip', () => {
+      const input = doc({ streams: { od: { units: 'AU' } }, blocks: [] })
+      expect(treeToDoc(docToTree(input)).workflow.streams?.od?.units).toBe('AU')
+    })
+
+    it('round-trips the boundary spellings "" and "1" verbatim — the engine also treats them ' +
+      'as unitless, but only the literal "unitless" is the blank-field spelling', () => {
+      const input = doc({ streams: { blank: { units: '' }, one: { units: '1' } }, blocks: [] })
+      const content = docToTree(input)
+      expect(content.streams.blank.units).toBe('')
+      expect(content.streams.one.units).toBe('1')
+      expect(JSON.stringify(treeToDoc(content).workflow.streams)).toBe(
+        JSON.stringify(input.workflow.streams),
+      )
+    })
   })
 })
