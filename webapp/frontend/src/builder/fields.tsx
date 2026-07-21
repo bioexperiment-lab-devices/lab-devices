@@ -1,15 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { SquareFunction } from 'lucide-react'
-import { useCatalogStore } from '../stores/catalogStore'
-import { useActiveTree, useDocStore } from '../stores/docStore'
-import { collectBindings } from './refs'
-import { scopeBindingNames, scopeStreamNames, useScopeRefs } from './scopeRefs'
-import { buildExpressionHelp } from './exprHelp'
 import { DURATION_RE } from './params'
 import { controlClass, textAreaClass } from '../ui/controls'
-import { AutoGrowTextArea } from '../ui/AutoGrowTextArea'
-import { IconButton } from '../ui/IconButton'
-import { useDismissable } from '../ui/useDismissable'
+import { ExpressionEditor } from './ExpressionEditor'
 
 export function FieldRow(props: {
   label: string
@@ -148,77 +140,5 @@ export function ExpressionInput(props: {
   onCommit: (v: string) => void
   placeholder?: string
 }) {
-  const [open, setOpen] = useState(false)
-  const streams = useDocStore((s) => s.streams)
-  // Bindings must be collected from the ACTIVE scope, not always the main tree (2026-07-16
-  // review, Finding 1): a group body is unreachable from `tree` (a `group_ref` node has no
-  // `childSlots`), so an expression inside a group — e.g. morbidostat.json's `groups.service`,
-  // whose own `compute` blocks feed later expressions in that same body — needs its own
-  // group's bindings, not the main workflow's.
-  const activeTree = useActiveTree()
-  // Scope-aware: inside a group's body the help panel also lists that group's stream params &
-  // locals (as {holes}) under Streams, and its value + binding params/locals under Bindings
-  // (design 2026-07-21).
-  const { group } = useScopeRefs()
-  const expression = useCatalogStore((s) => s.catalog?.expression ?? null)
-  const help = expression
-    ? buildExpressionHelp(
-        expression,
-        scopeStreamNames(streams, group),
-        Array.from(new Set([...collectBindings(activeTree), ...scopeBindingNames(group)])),
-      )
-    : null
-  // The ref wraps BOTH the trigger and the panel: if the trigger sat outside it, clicking
-  // it while open would dismiss and immediately re-open (spec §4.2, finding #6).
-  const wrapRef = useDismissable(open, () => setOpen(false))
-  return (
-    <div ref={wrapRef} className="relative">
-      <div className="flex items-start gap-1">
-        <AutoGrowTextArea
-          mono
-          singleLine
-          maxLines={6}
-          value={props.value}
-          onCommit={props.onCommit}
-          placeholder={props.placeholder ?? 'expression'}
-        />
-        <IconButton
-          icon={SquareFunction}
-          label="Expression help"
-          onClick={() => setOpen(!open)}
-          className="border border-slate-300"
-        />
-      </div>
-      {open && help && (
-        <div className="absolute right-0 z-20 mt-1 w-72 rounded border border-slate-300 bg-white p-2 text-xs shadow-lg">
-          <p className="font-semibold text-slate-600">Streams</p>
-          <p className="mb-1 font-mono text-caption">
-            {help.streams.length > 0 ? help.streams.join(', ') : '— none declared —'}
-          </p>
-          <p className="font-semibold text-slate-600">Bindings</p>
-          <p className="mb-1 font-mono text-caption">
-            {help.bindings.length > 0 ? help.bindings.join(', ') : '— none —'}
-          </p>
-          <p className="font-semibold text-slate-600">Functions</p>
-          <ul className="mb-1">
-            {help.functions.map((f) => (
-              <li key={f.name} className="flex justify-between gap-2">
-                <span className="font-mono">{f.name}</span>
-                <span className="font-mono text-hint">{f.example}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="font-semibold text-slate-600">Windows</p>
-          <ul>
-            {help.windowForms.map((w) => (
-              <li key={w.label} className="flex justify-between gap-2">
-                <span>{w.label}</span>
-                <span className="font-mono text-hint">{w.example}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  )
+  return <ExpressionEditor {...props} />
 }

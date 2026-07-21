@@ -15,6 +15,7 @@ describe('buildExpressionHelp', () => {
       'mean(temp, last=5)',
       'mean(temp, last=30s)',
     ])
+    expect(help.windowForms.map((w) => w.fragment)).toEqual([null, ', last=5', ', last=30s'])
   })
 
   it('falls back to a placeholder stream when none are declared', () => {

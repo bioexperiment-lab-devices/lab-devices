@@ -8,7 +8,9 @@ export interface ExpressionHelp {
   streams: string[]
   bindings: string[]
   functions: Array<{ name: string; example: string }>
-  windowForms: Array<{ label: string; example: string }>
+  /** `fragment` is what clicking the row inserts when the caret is already inside a stat
+   * call's parens (spec §3.6); null = always insert the full example ('all' adds nothing). */
+  windowForms: Array<{ label: string; example: string; fragment: string | null }>
 }
 
 export function buildExpressionHelp(
@@ -24,10 +26,10 @@ export function buildExpressionHelp(
     max: `max(${s}) < 1.2`,
     count: `count(${s}) >= 10`,
   }
-  const windowExamples: Record<string, { label: string; example: string }> = {
-    all: { label: 'all samples', example: `mean(${s})` },
-    last_n: { label: 'last N samples', example: `mean(${s}, last=5)` },
-    duration: { label: 'trailing duration', example: `mean(${s}, last=30s)` },
+  const windowExamples: Record<string, { label: string; example: string; fragment: string | null }> = {
+    all: { label: 'all samples', example: `mean(${s})`, fragment: null },
+    last_n: { label: 'last N samples', example: `mean(${s}, last=5)`, fragment: ', last=5' },
+    duration: { label: 'trailing duration', example: `mean(${s}, last=30s)`, fragment: ', last=30s' },
   }
   return {
     streams,
@@ -37,7 +39,7 @@ export function buildExpressionHelp(
       example: fnExamples[name] ?? `${name}(${s})`,
     })),
     windowForms: expression.windows.map(
-      (w) => windowExamples[w] ?? { label: w, example: `mean(${s})` },
+      (w) => windowExamples[w] ?? { label: w, example: `mean(${s})`, fragment: null },
     ),
   }
 }
