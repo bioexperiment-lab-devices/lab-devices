@@ -187,6 +187,13 @@ const PINNED_SUMMARIES: Array<[BlockNode, string]> = [
   // own leading space.
   [{ uid: 'x', kind: 'command', device: 'pump1', verb: 'dispense', params: {}, ...base, retry: { attempts: 3 } },
     'pump1 · dispense R×3'],
+  // Empty-seed palette nodes (the new palette seeds every optional field as '' rather than a
+  // fabricated example) must fall back to `…` like every other empty-slot case here, not print
+  // a bare trailing space — 'wait ', 'Loop ×' and 'input  (float)' were all silent-looking
+  // regressions caught in review. Built via newPaletteNode so these track the real seed shape.
+  [newPaletteNode('wait'), 'wait …'],
+  [newPaletteNode('loop'), 'Loop ×…'],
+  [newPaletteNode('operator_input'), 'input … (float)'],
 ]
 
 describe('blockSummaryParts', () => {

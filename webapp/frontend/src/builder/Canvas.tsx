@@ -567,7 +567,7 @@ function BranchLanes({ node }: { node: BranchNode }) {
     <div className="flex gap-2">
       {/* The arm separator reads `branch`'s tint out of CONSTRUCT_CHROME rather than repeating
           `border-violet-200`: construct identity is encoded in exactly one place, so
-          retinting branch retints its arms too. */}
+          retinting branch retints the arm separator too. */}
       <div className="min-w-48 flex-initial px-1 pb-1">
         <p className="flex h-6 items-center text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
