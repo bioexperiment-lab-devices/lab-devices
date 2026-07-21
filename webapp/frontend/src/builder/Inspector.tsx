@@ -9,7 +9,14 @@ import type { ParamSpec } from '../types/catalog'
 import type { LocalDeclJson, ParamDeclJson, ParamKind, ParamValue, RetryJson } from '../types/doc'
 import { REFERENCE_KINDS, VALUE_KINDS } from '../types/doc'
 import { argEditorFor, asRequired, defaultArgValue, emptyRow, isHole, rolesOfType } from './groupArgs'
-import { failureFields, failureSummary, timingFields, timingSummary } from './inspectorRules'
+import {
+  claimedFieldSuffixes,
+  failureFields,
+  failureSummary,
+  timingFields,
+  timingSummary,
+} from './inspectorRules'
+import { fieldDiagnostics, unclaimedDiagnostics } from './paths'
 import { InspectorSection } from './InspectorSection'
 import { coerceParamInput, coerceValueInput, paramInputText } from './params'
 import { useScopeRefs } from './scopeRefs'
@@ -495,6 +502,39 @@ function DocProperties() {
   )
 }
 
+/** Server-confirmed diagnostics for one field (spec §3.5): red = the engine rejected what
+ * is SAVED, distinct from the editor's amber draft problems. */
+function FieldDiags({ uid, fields }: { uid: string; fields: string[] }) {
+  const diagnostics = useDocStore((s) => s.diagnostics)
+  const matches = fieldDiagnostics(diagnostics, uid, fields)
+  return (
+    <>
+      {matches.map((d, i) => (
+        <p key={i} className="mt-0.5 text-[10px] text-red-600">
+          {d.message}
+        </p>
+      ))}
+    </>
+  )
+}
+
+/** Block diagnostics no rendered field claims — shown once under the form header, so a
+ * suffix the Inspector doesn't know still surfaces here and not only on the canvas. */
+function NodeDiagStrip({ node }: { node: BlockNode }) {
+  const diagnostics = useDocStore((s) => s.diagnostics)
+  const rest = unclaimedDiagnostics(diagnostics, node.uid, claimedFieldSuffixes(node.kind))
+  if (rest.length === 0) return null
+  return (
+    <div className="mb-1">
+      {rest.map((d, i) => (
+        <p key={i} className="text-[10px] text-red-600">
+          {d.message}
+        </p>
+      ))}
+    </div>
+  )
+}
+
 function BlockForm({ node }: { node: BlockNode }) {
   const activeTree = useActiveTree()
   const patchBlock = useDocStore((s) => s.patchBlock)
@@ -509,6 +549,7 @@ function BlockForm({ node }: { node: BlockNode }) {
   return (
     <div>
       <h2 className="mb-2 text-sm font-semibold text-slate-700">{KIND_TITLES[node.kind]}</h2>
+      <NodeDiagStrip node={node} />
       {/* Label is the one field that means the same thing for all fourteen kinds, so it
           leads every form. The h2 keeps naming the kind, so nothing about kind legibility
           regresses (design §3.1). */}
@@ -815,6 +856,9 @@ function ParamFields({ node, specs }: { node: CommandNode | MeasureNode; specs: 
             value={node.params[spec.name]}
             onCommit={(v) => setParam(spec.name, v)}
           />
+          {/* Both quote spellings: validate.py writes the name via !r, which flips to
+              double quotes when the name itself contains an apostrophe. */}
+          <FieldDiags uid={node.uid} fields={[`param '${spec.name}'`, `param "${spec.name}"`]} />
         </FieldRow>
       ))}
       {unknown.map((name) => (
@@ -1022,6 +1066,7 @@ function LoopForm({ node }: { node: LoopNode }) {
               onCommit={(v) => patchBlock(node.uid, { until: v })}
               placeholder="mean(od, last=5) > 0.6"
             />
+            <FieldDiags uid={node.uid} fields={['loop until']} />
           </FieldRow>
           <FieldRow label="Check condition">
             <select
@@ -1052,6 +1097,7 @@ function BranchForm({ node }: { node: BranchNode }) {
           onCommit={(v) => patchBlock(node.uid, { condition: v })}
           placeholder="last(od) > 0.5"
         />
+        <FieldDiags uid={node.uid} fields={['branch if']} />
       </FieldRow>
       {node.else === null ? (
         <button
@@ -1105,6 +1151,10 @@ function ValueForm({ node }: { node: ComputeNode | RecordNode }) {
           value={String(node.value)}
           onCommit={(v) => patchBlock(node.uid, { value: coerceValueInput(v) })}
         />
+        <FieldDiags
+          uid={node.uid}
+          fields={[node.kind === 'compute' ? 'compute value' : 'record value']}
+        />
       </FieldRow>
       <InspectorSection title="Units" summary={node.as ? `as ${node.as}` : null}>
         <FieldRow label="Cast (as)">
@@ -1130,6 +1180,7 @@ function ConditionForm({ node }: { node: AbortNode | AlarmNode }) {
           onCommit={(v) => patchBlock(node.uid, { condition: v })}
           placeholder="contaminated_1"
         />
+        <FieldDiags uid={node.uid} fields={[node.kind === 'abort' ? 'abort if' : 'alarm if']} />
       </FieldRow>
       <FieldRow label="Message" required>
         <AutoGrowTextArea

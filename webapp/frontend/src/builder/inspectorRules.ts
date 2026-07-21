@@ -85,3 +85,26 @@ export function failureSummary(node: BlockNode): string | null {
   }
   return parts.length > 0 ? parts.join(', ') : null
 }
+
+/** Diagnostic suffixes (validate.py context strings) CLAIMED by a field rendered in this
+ * kind's Inspector form — everything else for the node falls to the header strip
+ * (spec 2026-07-21 §3.5). PR 2 adds the duration/count slots ('wait duration',
+ * 'loop count', 'loop pace', 'retry backoff', 'gap_after', 'start_offset'). */
+export function claimedFieldSuffixes(kind: BlockNode['kind']): string[] {
+  switch (kind) {
+    case 'branch':
+      return ['branch if']
+    case 'loop':
+      return ['loop until']
+    case 'compute':
+      return ['compute value']
+    case 'record':
+      return ['record value']
+    case 'abort':
+      return ['abort if']
+    case 'alarm':
+      return ['alarm if']
+    default:
+      return []
+  }
+}
