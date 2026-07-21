@@ -119,3 +119,27 @@ def test_valid_dispense_clean():
         {"volume_ml": 1.5, "speed_ml_min": 3.0, "direction": "reverse"},
     )])
     assert validate(w) is None
+
+
+def test_enum_string_param_rejects_unknown_literal():
+    d = diags(wf([cmd("pump_1", "rotate", {"direction": "backwards", "speed_ml_min": 1.0})]))
+    assert any(
+        x.category == "params" and "expected one of" in x.message and "backwards" in x.message
+        for x in d
+    )
+
+
+def test_enum_string_param_accepts_declared_literal():
+    # A declared literal raises no diagnostic at all (same clean-workflow shape as
+    # test_string_param_is_opaque_not_expression), so this asserts via validate() directly
+    # rather than diags() -- diags() requires a raise, and there is nothing to catch here.
+    w = wf([cmd("pump_1", "rotate", {"direction": "reverse", "speed_ml_min": 1.0})])
+    assert validate(w) is None
+
+
+def test_enum_string_param_defers_holes():
+    """A `{hole}` is a for_each/group placeholder — not a literal to check. Same deferral
+    rule as _role_type's device holes. Like the declared-literal case above, a deferred hole
+    raises nothing, so this checks validate() directly instead of via diags()."""
+    w = wf([cmd("pump_1", "rotate", {"direction": "{dir}", "speed_ml_min": 1.0})])
+    assert validate(w) is None

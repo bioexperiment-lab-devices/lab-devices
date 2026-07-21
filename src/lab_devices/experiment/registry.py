@@ -15,11 +15,14 @@ Kind = Literal["number", "int", "bool", "string"]
 
 @dataclass(frozen=True)
 class ParamSpec:
-    """One verb parameter: its scalar kind and whether the verb requires it (design §4)."""
+    """One verb parameter: its scalar kind and whether the verb requires it (design §4).
+    `values` closes a string param over an explicit literal set (an enum): the device
+    accepts exactly these spellings, so the validator can reject the rest at load."""
 
     name: str
     kind: Kind
     required: bool = False
+    values: tuple[str, ...] | None = None
 
 
 @dataclass
@@ -62,7 +65,7 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
         params=(
             ParamSpec("volume_ml", "number", required=True),
             ParamSpec("speed_ml_min", "number"),
-            ParamSpec("direction", "string"),
+            ParamSpec("direction", "string", values=("forward", "reverse")),
             ParamSpec("drop_suckback_ml", "number"),
         ),
     ),
@@ -75,7 +78,7 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
         Teardown("stop"),
         channels=_MOTOR,
         params=(
-            ParamSpec("direction", "string", required=True),
+            ParamSpec("direction", "string", required=True, values=("forward", "reverse")),
             ParamSpec("speed_ml_min", "number", required=True),
         ),
     ),
@@ -106,7 +109,7 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
         retry_safe=True,
         params=(
             ParamSpec("position", "int", required=True),
-            ParamSpec("rotation", "string"),
+            ParamSpec("rotation", "string", values=("shortest", "direct", "wrap")),
         ),
     ),
     # Declares the current physical position (no motion) — pure absolute state write.
@@ -124,7 +127,7 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
         channels=_MOTOR,
         retry_safe=True,
         params=(
-            ParamSpec("default_rotation", "string"),
+            ParamSpec("default_rotation", "string", values=("shortest", "direct", "wrap")),
             ParamSpec("hold_torque", "bool"),
         ),
     ),

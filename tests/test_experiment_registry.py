@@ -76,7 +76,9 @@ def test_param_specs_dispense():
 
 def test_param_specs_spot_checks():
     rotate = {s.name: s for s in lookup("pump", "rotate").params}
-    assert rotate["direction"] == ParamSpec("direction", "string", required=True)
+    assert rotate["direction"] == ParamSpec(
+        "direction", "string", required=True, values=("forward", "reverse")
+    )
     assert rotate["speed_ml_min"] == ParamSpec("speed_ml_min", "number", required=True)
     setpos = {s.name: s for s in lookup("valve", "set_position").params}
     assert setpos["position"] == ParamSpec("position", "int", required=True)
