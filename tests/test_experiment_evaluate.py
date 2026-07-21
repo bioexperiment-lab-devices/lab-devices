@@ -103,11 +103,16 @@ def test_unbound_binding_raises():
         ev("target_OD + 1")
 
 
-def test_string_binding_rejected_in_expression():
+def test_string_binding_rejected_in_numeric_context():
+    # A string binding is fine in a string comparison (design §6) but still refused where a
+    # number is required or in a mixed comparison.
     state = RunState()
     state.bind("mode", "fast")
-    with pytest.raises(EvaluationError, match="holds a string"):
-        ev("mode == 1", state)
+    with pytest.raises(EvaluationError, match="string"):
+        ev("mode == 1", state)  # string vs number
+    with pytest.raises(EvaluationError, match="number"):
+        ev("mode + 1", state)  # arithmetic on a string
+    assert ev("mode == 'fast'", state) is True
 
 
 @pytest.mark.parametrize("bad", ["1 + true", "true < false", "not 3", "1 and true", "1 == true"])

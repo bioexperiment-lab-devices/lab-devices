@@ -469,9 +469,12 @@ def test_distinct_nested_var_names_are_clean():
 
 
 def _local_group(init):
+    # Body is a type-agnostic self-reference so these tests exercise the *init* rules
+    # (constant-ness, type) without also constraining the local to be numeric: with typed
+    # bindings (design 2026-07-21), `{c} + 1` would be a real type error for a bool init.
     return {"svc": {
         "locals": {"c": {"kind": "binding", "init": init}},
-        "body": [{"compute": {"into": "{c}", "value": "{c} + 1"}}],
+        "body": [{"compute": {"into": "{c}", "value": "{c}"}}],
     }}
 
 

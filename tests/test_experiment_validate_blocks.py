@@ -52,7 +52,7 @@ def test_invalid_check_programmatic():
 
 def test_branch_condition_must_be_boolean():
     d = diags(wf([{"branch": {"if": "1 + 1", "then": [MEASURE_OD]}}], streams=["OD"]))
-    assert any(x.category == "type" and "boolean" in x.message for x in d)
+    assert any(x.category == "type" and "bool" in x.message for x in d)
 
 
 def test_until_condition_must_be_boolean():
@@ -60,7 +60,7 @@ def test_until_condition_must_be_boolean():
         [{"loop": {"until": "count(OD) + 1", "check": "after", "body": [MEASURE_OD]}}],
         streams=["OD"],
     ))
-    assert any(x.category == "type" and "boolean" in x.message for x in d)
+    assert any(x.category == "type" and "bool" in x.message for x in d)
 
 
 def test_operator_input_bad_type():
@@ -154,7 +154,7 @@ def test_enum_choices_string_rejected():
 
 def test_abort_condition_must_be_boolean():
     d = diags(wf([{"abort": {"if": "1 + 1", "message": "x"}}]))
-    assert any("boolean" in m.message for m in d)
+    assert any("bool" in m.message for m in d)
 
 
 def test_abort_message_required_nonempty():

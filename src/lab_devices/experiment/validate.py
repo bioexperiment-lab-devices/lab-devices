@@ -12,8 +12,10 @@ from lab_devices.experiment.analyze import (
     BindingType,
     ExprType,
     ProvenWindows,
+    assignable,
     conjoin_proofs,
     infer_type,
+    join_types,
     proof_covers,
     proven_nonempty,
     references,
@@ -600,25 +602,56 @@ def _check_declarations(w: Workflow, out: list[Diagnostic]) -> bool:
 
 _INPUT_TYPES: dict[str, BindingType] = {
     "float": "number",
-    "int": "number",
-    "bool": "boolean",
+    "int": "int",
+    "bool": "bool",
     "enum": "string",
 }
 
 
 def _collect_binding_types(w: Workflow) -> dict[str, BindingType]:
-    """Declared type of every operator-input binding; conflicts degrade to 'unknown'."""
+    """Inferred scalar type of every binding, walked in document order (design 2026-07-21
+    §4.1): operator inputs from their declared `type`, compute bindings from their `value`
+    expression (using the types known so far). A name written more than once takes the join
+    of its writers — `int`/`number` widen to `number`, real disagreement is `unknown`."""
     types: dict[str, BindingType] = {}
+
+    def record(name: str, t: BindingType) -> None:
+        types[name] = t if name not in types else join_types(types[name], t)
+
     for _, b in _iter_all_blocks(w):
-        if not isinstance(b, B.OperatorInput) or not isinstance(b.name, str):
-            continue
-        t = _INPUT_TYPES.get(b.type, "unknown") if isinstance(b.type, str) else "unknown"
-        if b.name in types:
-            if types[b.name] != t:
-                types[b.name] = "unknown"
-        else:
-            types[b.name] = t
+        if isinstance(b, B.OperatorInput) and isinstance(b.name, str):
+            t = _INPUT_TYPES.get(b.type, "unknown") if isinstance(b.type, str) else "unknown"
+            record(b.name, t)
+        elif isinstance(b, B.Compute) and isinstance(b.into, str) and isinstance(b.value, str):
+            try:
+                expr = parse_expression(b.value)
+            except ExpressionError:
+                # Holes (group bodies) or bad syntax: unparseable here. Group bodies are
+                # re-checked post-expansion on concrete values; bad syntax is diagnosed
+                # globally. Either way this binding's type is not knowable here.
+                record(b.into, "unknown")
+                continue
+            record(b.into, infer_type(expr, types).type)
     return types
+
+
+def _flag_ambiguous_refs(
+    expr: Expr,
+    ctx: str,
+    binding_types: Mapping[str, BindingType],
+    out: list[Diagnostic],
+) -> None:
+    """Strictness (design 2026-07-21 §3, §4.1): a reference to a binding that is *present but
+    ambiguous* — written with conflicting, non-widening types on different paths, so its join
+    is 'unknown' — is a load error. A binding that is merely *absent* (never written) is the
+    separate `data-flow` "read before written" diagnostic, so it is not double-reported here."""
+    for name in sorted(references(expr).bindings):
+        if binding_types.get(name) == "unknown":
+            out.append(Diagnostic(
+                "type", ctx,
+                f"binding {name!r} has no single inferable type — it is written with "
+                f"conflicting types on different paths; give it one consistent type",
+            ))
 
 
 def _check_expr_type(
@@ -636,7 +669,8 @@ def _check_expr_type(
     report = infer_type(expr, binding_types)
     for problem in report.problems:
         out.append(Diagnostic("type", ctx, problem))
-    if report.type not in (expected, "unknown"):
+    _flag_ambiguous_refs(expr, ctx, binding_types, out)
+    if report.type != "unknown" and not assignable(report.type, expected):
         out.append(Diagnostic(
             "type", ctx, f"expected a {expected} expression, got {report.type}"
         ))
@@ -657,7 +691,12 @@ def _check_param_value(
             out.append(Diagnostic("params", ctx, f"expected a string literal, got {value!r}"))
         return
     if isinstance(value, str):
-        expected: ExprType = "boolean" if spec.kind == "bool" else "number"
+        if spec.kind == "bool":
+            expected: ExprType = "bool"
+        elif spec.kind == "int":
+            expected = "int"
+        else:
+            expected = "number"
         _check_expr_type(value, expected, ctx, binding_types, out)
         _check_streams_declared(value, ctx, w, out)
         return
@@ -747,7 +786,7 @@ def _check_condition(
             "type", ctx, f"condition must be an expression string, got {text!r}"
         ))
         return
-    _check_expr_type(text, "boolean", ctx, binding_types, out)
+    _check_expr_type(text, "bool", ctx, binding_types, out)
     _check_streams_declared(text, ctx, w, out)
 
 
@@ -776,8 +815,14 @@ def _check_compute_value(
     except ExpressionError as exc:
         out.append(Diagnostic("type", ctx, f"invalid expression: {exc}"))
         return
-    for problem in infer_type(expr, binding_types).problems:
+    report = infer_type(expr, binding_types)
+    for problem in report.problems:
         out.append(Diagnostic("type", ctx, problem))
+    if report.type == "string":
+        out.append(Diagnostic(
+            "type", ctx, "compute stores a number or a boolean, not a string"
+        ))
+    _flag_ambiguous_refs(expr, ctx, binding_types, out)
     _check_streams_declared(value, ctx, w, out)
 
 

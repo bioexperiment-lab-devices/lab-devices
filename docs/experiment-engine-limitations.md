@@ -482,7 +482,18 @@ parameter bindings would subsume it and is what the 15-vial case really wants.
 
 ---
 
-## 5. `enum` operator inputs are unusable in expressions
+## 5. `enum` operator inputs are unusable in expressions — **SHIPPED (2026-07-21)**
+
+**Shipped in Increment 10 (Engine A, the type-system lattice).** Design:
+[`superpowers/specs/2026-07-21-experiment-type-system-design.md`](superpowers/specs/2026-07-21-experiment-type-system-design.md).
+The expression language now has **single-quoted string literals** (`'chemostat'`) and
+**string equality** (`==` / `!=` over strings), so an `enum` operator input is branchable:
+`{"branch": {"if": "mode == 'chemostat'", ...}}`. The type checker tracks a `string` type end
+to end — a string still may not be used in arithmetic or a mixed string/number comparison, and
+that is now caught at **load** time rather than mid-run — and the evaluator compares two strings
+directly. `mode == 'chemostat'` uses single quotes precisely so it needs no escaping inside the
+JSON string that carries the expression. The original problem statement is kept below as
+motivation.
 
 **What.** An `operator_input` of type `enum` binds a **string**. The evaluator rejects string
 bindings outright (`binding 'x' holds a string; expressions evaluate numbers and booleans`),

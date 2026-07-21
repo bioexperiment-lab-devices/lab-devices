@@ -463,6 +463,16 @@ The full stat function set (`last`, `mean`, `min`, `max`, `count`) and its known
 math functions such as `ln`/`abs`) are catalogued in limitation #2 of
 [`experiment-engine-limitations.md`](experiment-engine-limitations.md).
 
+Expressions are **statically typed** (design 2026-07-21): every slot's expression is checked at
+load time against the type it needs — a guard must be a boolean, `record.value` a number, an
+`int` param an integer — over the scalar lattice `int`/`number`/`bool`/`string` (with
+`int <: number`), so a mismatch that used to surface as a run-time error is now a load-time
+diagnostic. `count(s)` is an `int`; the other stats are `number`. A `compute` binding is typed
+by inferring its `value`. **Strings** support equality only: a single-quoted literal
+(`'chemostat'`) and `==` / `!=` let an `enum` operator input drive a `branch`
+(`"if": "mode == 'chemostat'"`); a string in arithmetic or a mixed string/number comparison is a
+load error.
+
 The two windows are not interchangeable, and the difference is load-bearing. A sample window
 over an append-only stream always returns N values, reaching back across cycle boundaries if it
 must. A duration window can be **empty**, which is why a guard like `count(s, last=11min) > 0`
