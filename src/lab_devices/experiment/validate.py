@@ -15,6 +15,7 @@ from lab_devices.experiment.analyze import (
     assignable,
     conjoin_proofs,
     infer_type,
+    join_types,
     proof_covers,
     proven_nonempty,
     references,
@@ -601,24 +602,36 @@ def _check_declarations(w: Workflow, out: list[Diagnostic]) -> bool:
 
 _INPUT_TYPES: dict[str, BindingType] = {
     "float": "number",
-    "int": "number",
+    "int": "int",
     "bool": "bool",
     "enum": "string",
 }
 
 
 def _collect_binding_types(w: Workflow) -> dict[str, BindingType]:
-    """Declared type of every operator-input binding; conflicts degrade to 'unknown'."""
+    """Inferred scalar type of every binding, walked in document order (design 2026-07-21
+    §4.1): operator inputs from their declared `type`, compute bindings from their `value`
+    expression (using the types known so far). A name written more than once takes the join
+    of its writers — `int`/`number` widen to `number`, real disagreement is `unknown`."""
     types: dict[str, BindingType] = {}
+
+    def record(name: str, t: BindingType) -> None:
+        types[name] = t if name not in types else join_types(types[name], t)
+
     for _, b in _iter_all_blocks(w):
-        if not isinstance(b, B.OperatorInput) or not isinstance(b.name, str):
-            continue
-        t = _INPUT_TYPES.get(b.type, "unknown") if isinstance(b.type, str) else "unknown"
-        if b.name in types:
-            if types[b.name] != t:
-                types[b.name] = "unknown"
-        else:
-            types[b.name] = t
+        if isinstance(b, B.OperatorInput) and isinstance(b.name, str):
+            t = _INPUT_TYPES.get(b.type, "unknown") if isinstance(b.type, str) else "unknown"
+            record(b.name, t)
+        elif isinstance(b, B.Compute) and isinstance(b.into, str) and isinstance(b.value, str):
+            try:
+                expr = parse_expression(b.value)
+            except ExpressionError:
+                # Holes (group bodies) or bad syntax: unparseable here. Group bodies are
+                # re-checked post-expansion on concrete values; bad syntax is diagnosed
+                # globally. Either way this binding's type is not knowable here.
+                record(b.into, "unknown")
+                continue
+            record(b.into, infer_type(expr, types).type)
     return types
 
 

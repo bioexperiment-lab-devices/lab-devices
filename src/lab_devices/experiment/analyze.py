@@ -44,6 +44,18 @@ def assignable(got: Type, expected: Type) -> bool:
     return got == "int" and expected == "number"
 
 
+def join_types(a: Type, b: Type) -> Type:
+    """Least upper bound of two inferred types for a binding written more than once
+    (design 2026-07-21 §4.1). `int` and `number` widen to `number` — a seed `0` followed by
+    a float recursion is one `number` accumulator, not a conflict. Any real disagreement
+    (bool vs number, string vs anything) or an `unknown` degrades to `unknown`."""
+    if a == b:
+        return a
+    if a in _NUMERIC and b in _NUMERIC:  # {int, number} -> number
+        return "number"
+    return "unknown"
+
+
 def _describe(e: Expr, t: Type) -> str:
     """Render an operand's type for a diagnostic, naming a bare binding so the author knows
     which name is mistyped (e.g. `mode * 2` -> "string (binding 'mode')")."""
