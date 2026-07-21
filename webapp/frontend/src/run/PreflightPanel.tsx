@@ -6,6 +6,7 @@ import { useLabsStore } from '../stores/labsStore'
 import { useNavStore } from '../stores/navStore'
 import { useRunStore } from '../stores/runStore'
 import { Check } from 'lucide-react'
+import { deviceLabel } from '../devices/deviceLabel'
 import type { Diagnostic, ExperimentDocJson, ExperimentSummary } from '../types/doc'
 import {
   buildMappingRows,
@@ -95,8 +96,8 @@ export function PreflightPanel() {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
         <p className="mb-2">Select a lab first.</p>
-        <button onClick={() => useNavStore.getState().setTab('Devices')} className="rounded border border-slate-300 px-3 py-1 text-xs hover:bg-slate-100">
-          Go to Devices
+        <button onClick={() => useNavStore.getState().setTab('Labs')} className="rounded border border-slate-300 px-3 py-1 text-xs hover:bg-slate-100">
+          Go to Labs
         </button>
       </div>
     )
@@ -170,7 +171,7 @@ export function PreflightPanel() {
                   {row.options.length === 0 ? `no ${row.type} devices in ${lab}` : 'pick a device…'}
                 </option>
                 {row.options.map((d) => (
-                  <option key={d.id} value={d.id}>{d.id}</option>
+                  <option key={d.id} value={d.id}>{deviceLabel(d)}</option>
                 ))}
               </select>
             </label>

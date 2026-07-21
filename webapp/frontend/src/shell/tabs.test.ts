@@ -4,8 +4,8 @@ import { labScopedTab, TABS } from './tabs'
 describe('TABS', () => {
   // Builder first is the whole point: a workflow is authored and validated with no lab in
   // mind, so authoring — not lab selection — is the first thing a user sees.
-  it('orders the tabs Builder, Devices, Run, Records', () => {
-    expect([...TABS]).toEqual(['Builder', 'Devices', 'Run', 'Records'])
+  it('orders the tabs Builder, Labs, Devices, Run, Records', () => {
+    expect([...TABS]).toEqual(['Builder', 'Labs', 'Devices', 'Run', 'Records'])
   })
 })
 

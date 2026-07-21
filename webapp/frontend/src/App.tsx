@@ -5,6 +5,7 @@ import { getExperiment } from './api/studio'
 import { docToTree, treeToDoc } from './builder/convert'
 import { TabShell } from './shell/TabShell'
 import { BuilderTab } from './builder/BuilderTab'
+import { LabsTab } from './labs/LabsTab'
 import { DevicesTab } from './devices/DevicesTab'
 import { RecordsTab } from './records/RecordsTab'
 import { RunTab } from './run/RunTab'
@@ -264,6 +265,7 @@ export default function App() {
         )
       }
     >
+      {tab === 'Labs' && <LabsTab />}
       {tab === 'Devices' && <DevicesTab />}
       {tab === 'Builder' && <BuilderTab />}
       {tab === 'Run' && <RunTab />}

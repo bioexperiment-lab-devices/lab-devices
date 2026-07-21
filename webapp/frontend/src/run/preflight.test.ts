@@ -10,7 +10,7 @@ import {
 import type { LabDevice } from '../types/labs'
 
 const dev = (id: string, type: string): LabDevice =>
-  ({ id, type, port: null, connected: true, model: null, firmware: null })
+  ({ id, type, port: null, connected: true, model: null, firmware: null, name: null })
 const DEVICES = [dev('pump_1', 'pump'), dev('pump_2', 'pump'), dev('densitometer_1', 'densitometer')]
 const ROLES = { feed: { type: 'pump' }, meter: { type: 'densitometer' } }
 

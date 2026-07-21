@@ -19,6 +19,7 @@ describe('parseHash', () => {
     ['#/', st()],
     ['#/builder', st()],
     ['#/run', st({ tab: 'Run' })],
+    ['#/labs', st({ tab: 'Labs' })],
     ['#/devices', st({ tab: 'Devices' })],
     ['#/records', st({ tab: 'Records' })],
     ['#/records/rec_99', st({ tab: 'Records', rec: 'rec_99' })],

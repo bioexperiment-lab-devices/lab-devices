@@ -14,4 +14,5 @@ export interface LabDevice {
   connected: boolean | null
   model: string | null
   firmware: string | null
+  name: string | null
 }
