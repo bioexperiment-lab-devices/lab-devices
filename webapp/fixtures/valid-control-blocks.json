@@ -2,13 +2,13 @@
   "doc_version": 1,
   "name": "Control blocks",
   "description": "Exercises compute, record, abort and alarm end to end.",
-  "roles": {
-    "od_meter": { "type": "densitometer" }
-  },
   "workflow": {
-    "schema_version": 1,
+    "schema_version": 2,
     "metadata": { "name": "Control blocks" },
     "persistence": { "default": "in_memory", "format": "jsonl" },
+    "roles": {
+      "od_meter": { "type": "densitometer" }
+    },
     "streams": {
       "od": { "units": "AU" },
       "c_series": { "units": "mg/L" }

@@ -102,7 +102,7 @@ async def test_persistence_forced_to_disk_csv(env: SimpleNamespace) -> None:
     workflow = json.loads((art / "workflow.json").read_text())
     assert workflow["persistence"] == {"default": "disk", "format": "csv"}
     assert "persistence" not in workflow["streams"]["od"]
-    assert workflow["blocks"][0]["serial"]["children"][0]["command"]["device"] == "pump_1"
+    assert workflow["blocks"][0]["serial"]["children"][0]["command"]["device"] == "feed"
     lines = (art / "od.csv").read_text().splitlines()
     assert lines[0] == "timestamp,value"
     assert len(lines) == 2
@@ -240,32 +240,33 @@ async def test_construction_validation_failure_finalizes_failed_record(
     assert env.manager.active_payload() is None
 
 
-async def test_for_each_templated_roles_expand_before_run_substitution(
+async def test_for_each_typed_role_var_runs_against_both_devices(
     env: SimpleNamespace,
 ) -> None:
-    """A for_each body with a templated role must be expanded to concrete roles
-    (meter_1, meter_2) BEFORE role substitution at the run call site too — the same
-    for_each -> role-substitution ordering the validate path relies on (design §9)."""
+    """A for_each over a typed role<densitometer> column (design §4) runs to completion; the
+    engine resolves each row's concrete role to its mapped device — no webapp substitution."""
     env.fake.add_device("densitometer_2", "densitometer")
-    blocks = [
-        {"for_each": {"var": "t", "in": [1, 2], "body": [
-            {"measure": {"device": "meter_{t}", "verb": "measure", "into": "od"}},
-        ]}},
-    ]
     roles = {"meter_1": {"type": "densitometer"}, "meter_2": {"type": "densitometer"}}
+    streams = {"od_1": {"units": "AU"}, "od_2": {"units": "AU"}}
+    blocks = [{"for_each": {
+        "vars": [
+            {"name": "meter", "kind": "role", "device_type": "densitometer"},
+            {"name": "od", "kind": "stream"},
+        ],
+        "in": [{"meter": "meter_1", "od": "od_1"}, {"meter": "meter_2", "od": "od_2"}],
+        "body": [{"measure": {"device": "{meter}", "verb": "measure", "into": "{od}"}}],
+    }}]
     mapping = {"meter_1": "densitometer_1", "meter_2": "densitometer_2"}
-    experiment_id = await _create_doc(env, blocks, roles=roles)
+    experiment_id = await _create_doc(env, blocks, roles=roles, streams=streams)
     run_id = await env.manager.start(experiment_id, runsupport.LAB, mapping)
     await _finish(env)
 
     record = await RecordsStore(env.db, env.data_dir).get(run_id)
     assert record["status"] == "completed"
+    measured = {device for device, cmd, _ in env.fake.calls if cmd == "measure"}
+    assert measured == {"densitometer_1", "densitometer_2"}
     art = env.data_dir / f"runs/{run_id}"
-    workflow = json.loads((art / "workflow.json").read_text())
-    assert [b["measure"]["device"] for b in workflow["blocks"]] == [
-        "densitometer_1",
-        "densitometer_2",
-    ]
+    assert (art / "od_1.csv").is_file() and (art / "od_2.csv").is_file()
 
 
 async def test_unexpected_start_failure_finalizes_failed_record(
