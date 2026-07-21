@@ -22,9 +22,9 @@ DEFAULT_ROLES = {
 
 def wf2(blocks, *, streams=None, groups=None, roles=None):
     return workflow_from_dict({
-        "schema_version": 2,
+        "schema_version": 3,
         "roles": DEFAULT_ROLES if roles is None else roles,
-        "streams": {name: {} for name in (streams or [])},
+        "streams": {name: {"units": "unitless"} for name in (streams or [])},
         "groups": groups or {},
         "blocks": blocks,
     })

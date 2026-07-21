@@ -16,28 +16,28 @@ ROLES = {
 }
 
 
-def test_schema_version_is_two():
-    assert SCHEMA_VERSION == 2
+def test_schema_version_is_three():
+    assert SCHEMA_VERSION == 3
 
 
-def test_v1_document_is_rejected_with_a_message_naming_the_remedy():
-    """A v1 doc using groups or for_each cannot be lifted mechanically -- the types were
-    never recorded. The message has to say so, or the author retries the same load."""
+def test_older_document_is_rejected_with_a_message_naming_the_remedy():
+    """A v2 doc has no stream units and no `as` casts, so it cannot be lifted mechanically.
+    The message has to say so, or the author retries the same load."""
     with pytest.raises(WorkflowLoadError) as exc:
-        workflow_from_dict({"schema_version": 1, "blocks": []})
+        workflow_from_dict({"schema_version": 2, "blocks": []})
     text = str(exc.value)
-    assert "unsupported schema_version 1; expected 2" in text
+    assert "unsupported schema_version 2; expected 3" in text
     assert "cannot be migrated automatically" in text
-    assert "design 2026-07-20 §7" in text
+    assert "design 2026-07-21 §8" in text
 
 
 def test_roles_parse_before_blocks_so_a_role_resolves_to_a_device_type():
     """The ordering test: `device` holds a ROLE name, and the parse-time registry lookup
     needs its type. If blocks were still parsed inside the Workflow(...) call, this raises."""
     w = workflow_from_dict({
-        "schema_version": 2,
+        "schema_version": 3,
         "roles": {"od_meter_1": {"type": "densitometer"}},
-        "streams": {"od_1": {}},
+        "streams": {"od_1": {"units": "unitless"}},
         "blocks": [{"measure": {"device": "od_meter_1", "verb": "measure", "into": "od_1"}}],
     })
     assert w.roles == {"od_meter_1": RoleDecl(type="densitometer")}
@@ -48,7 +48,7 @@ def test_roles_parse_before_blocks_so_a_role_resolves_to_a_device_type():
 
 def test_a_role_declaration_may_bind_a_device_directly():
     w = workflow_from_dict({
-        "schema_version": 2,
+        "schema_version": 3,
         "roles": {"medium_pump": {"type": "pump", "device": "pump_2"}},
         "blocks": [{"command": {"device": "medium_pump", "verb": "stop"}}],
     })
@@ -58,7 +58,7 @@ def test_a_role_declaration_may_bind_a_device_directly():
 def test_undeclared_role_in_a_device_field_is_a_load_error():
     with pytest.raises(UnknownRoleError, match="ghost_pump"):
         workflow_from_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "roles": {"medium_pump": {"type": "pump"}},
             "blocks": [{"command": {"device": "ghost_pump", "verb": "stop"}}],
         })
@@ -69,7 +69,7 @@ def test_a_role_body_verb_is_still_checked_against_the_declared_type():
     role cannot dispense."""
     with pytest.raises(WorkflowLoadError, match="densitometer"):
         workflow_from_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "roles": {"od_meter_1": {"type": "densitometer"}},
             "blocks": [{"command": {"device": "od_meter_1", "verb": "dispense",
                                     "params": {"volume_ml": 1.0}}}],
@@ -86,7 +86,7 @@ def test_unexpanded_hole_in_a_device_field_still_defers_the_lookup():
 def test_unknown_role_device_type_is_a_load_error():
     with pytest.raises(WorkflowLoadError, match="toaster"):
         workflow_from_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "roles": {"breakfast": {"type": "toaster"}},
             "blocks": [],
         })
@@ -97,7 +97,7 @@ def test_role_declaration_with_an_unknown_key_is_a_load_error():
     same trap _param_decls and _local_decls already guard against."""
     with pytest.raises(WorkflowLoadError, match="unknown key"):
         workflow_from_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "roles": {"medium_pump": {"type": "pump", "devices": "pump_2"}},
             "blocks": [],
         })
@@ -105,7 +105,7 @@ def test_role_declaration_with_an_unknown_key_is_a_load_error():
 
 def test_typed_group_params_parse_in_authoring_order():
     w = workflow_from_dict({
-        "schema_version": 2,
+        "schema_version": 3,
         "roles": {"od_meter_1": {"type": "densitometer"}},
         "groups": {"service": {
             "params": [
@@ -140,7 +140,7 @@ def test_typed_group_params_parse_in_authoring_order():
 def test_malformed_param_declarations_rejected(params, match):
     with pytest.raises(WorkflowLoadError, match=match):
         workflow_from_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "groups": {"service": {"params": params, "body": []}},
             "blocks": [],
         })
@@ -148,7 +148,7 @@ def test_malformed_param_declarations_rejected(params, match):
 
 def test_group_locals_parse():
     w = workflow_from_dict({
-        "schema_version": 2,
+        "schema_version": 3,
         "groups": {"service": {
             "params": [{"name": "tube", "kind": "int"}],
             "locals": {
@@ -180,14 +180,14 @@ def test_group_locals_parse():
 def test_malformed_local_declarations_rejected(locals_, match):
     with pytest.raises(WorkflowLoadError, match=match):
         workflow_from_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "groups": {"service": {"locals": locals_, "body": []}},
             "blocks": [],
         })
 
 
-V2_DOC = {
-    "schema_version": 2,
+V3_DOC = {
+    "schema_version": 3,
     "metadata": {"name": "typed", "author": "khamitov"},
     "persistence": {"default": "in_memory", "format": "jsonl"},
     "defaults": {"retry": {"attempts": 2, "backoff": "5s"}},
@@ -215,13 +215,13 @@ V2_DOC = {
 }
 
 
-def test_v2_document_round_trips_byte_for_byte():
-    assert workflow_to_dict(workflow_from_dict(V2_DOC)) == V2_DOC
+def test_v3_document_round_trips_byte_for_byte():
+    assert workflow_to_dict(workflow_from_dict(V3_DOC)) == V3_DOC
 
 
 def test_emitted_key_order_puts_roles_immediately_before_streams():
     """Dict equality does not check order, so the round-trip test above cannot see this."""
-    out = workflow_to_dict(workflow_from_dict(V2_DOC))
+    out = workflow_to_dict(workflow_from_dict(V3_DOC))
     assert list(out) == ["schema_version", "metadata", "persistence", "defaults",
                          "roles", "streams", "groups", "blocks"]
     assert list(out["groups"]["service"]) == ["params", "locals", "body"]
@@ -229,7 +229,7 @@ def test_emitted_key_order_puts_roles_immediately_before_streams():
 
 def test_empty_roles_and_locals_are_omitted_from_the_emitted_document():
     doc = {
-        "schema_version": 2,
+        "schema_version": 3,
         "persistence": {"default": "in_memory", "format": "jsonl"},
         "groups": {"noop": {"body": [{"wait": {"duration": "1s"}}]}},
         "blocks": [{"wait": {"duration": "1s"}}],

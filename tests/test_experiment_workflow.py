@@ -12,7 +12,7 @@ _ROLES_DOC = {
 }
 
 EXAMPLE = {
-    "schema_version": 2,
+    "schema_version": 3,
     "metadata": {"name": "od-feedback-feed", "author": "khamitov",
                  "description": "Feed pump_1 by live OD until target, stirring throughout."},
     "persistence": {"default": "disk", "format": "jsonl"},
@@ -69,14 +69,14 @@ def test_invalid_json_rejected(tmp_path):
 
 
 @pytest.mark.parametrize("doc", [
-    {"schema_version": 2, "metadata": None, "blocks": []},
-    {"schema_version": 2, "persistence": "disk", "blocks": []},
-    {"schema_version": 2, "streams": ["OD"], "blocks": []},
-    {"schema_version": 2, "streams": {"OD": "AU"}, "blocks": []},
-    {"schema_version": 2, "groups": None, "blocks": []},
+    {"schema_version": 3, "metadata": None, "blocks": []},
+    {"schema_version": 3, "persistence": "disk", "blocks": []},
+    {"schema_version": 3, "streams": ["OD"], "blocks": []},
+    {"schema_version": 3, "streams": {"OD": "AU"}, "blocks": []},
+    {"schema_version": 3, "groups": None, "blocks": []},
     {"schema_version": True, "blocks": []},
-    {"schema_version": 2, "roles": ["pump_1"], "blocks": []},
-    {"schema_version": 2, "roles": {"pump_1": "pump"}, "blocks": []},
+    {"schema_version": 3, "roles": ["pump_1"], "blocks": []},
+    {"schema_version": 3, "roles": {"pump_1": "pump"}, "blocks": []},
 ])
 def test_malformed_workflow_sections_rejected(doc, tmp_path):
     path = tmp_path / "wf.json"

@@ -16,7 +16,7 @@ _BLANK = {"measure": {"device": "densitometer_1", "verb": "measure_blank", "into
 
 
 def _doc(blocks, streams):
-    return {"schema_version": 2, "roles": _METER, "streams": streams, "blocks": blocks}
+    return {"schema_version": 3, "roles": _METER, "streams": streams, "blocks": blocks}
 
 
 def _validate(doc):

@@ -12,7 +12,7 @@ def _svc(locals_, body):
 
 def test_locals_expand_to_qualified_names():
     out = expand_dict({
-        "schema_version": 2,
+        "schema_version": 3,
         "groups": {"svc": _svc(
             {"c": {"kind": "binding"}, "c_series": {"kind": "stream", "units": "ug/mL"}},
             [{"compute": {"into": "{c}", "value": "1"}},
@@ -27,7 +27,7 @@ def test_locals_expand_to_qualified_names():
 
 def test_as_interpolates_from_the_call_site_env():
     out = expand_dict({
-        "schema_version": 2,
+        "schema_version": 3,
         "groups": {"svc": _svc({"c": {"kind": "binding"}},
                                [{"compute": {"into": "{c}", "value": "{tube}"}}])},
         "blocks": [{"for_each": {"vars": [{"name": "t", "kind": "int"}],
@@ -40,7 +40,7 @@ def test_as_interpolates_from_the_call_site_env():
 
 def test_stream_locals_emit_stream_declarations():
     out = expand_dict({
-        "schema_version": 2,
+        "schema_version": 3,
         "groups": {"svc": _svc(
             {"c_series": {"kind": "stream", "units": "ug/mL"},
              "r_series": {"kind": "stream", "units": "1/h", "persistence": "disk"}},
@@ -54,7 +54,7 @@ def test_stream_locals_emit_stream_declarations():
 
 def test_init_seeds_hoist_to_the_front_of_blocks_in_expansion_order():
     out = expand_dict({
-        "schema_version": 2,
+        "schema_version": 3,
         "groups": {"svc": _svc(
             {"c": {"kind": "binding", "init": "0"},
              "contaminated": {"kind": "binding", "init": "false"},
@@ -80,7 +80,7 @@ def test_init_seeds_hoist_to_the_front_of_blocks_in_expansion_order():
 def test_as_is_required_when_the_group_declares_locals():
     with pytest.raises(WorkflowLoadError, match="'as' is required"):
         expand_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "groups": {"svc": _svc({"c": {"kind": "binding"}},
                                    [{"compute": {"into": "{c}", "value": "1"}}])},
             "blocks": [{"group_ref": {"name": "svc", "args": {"tube": 1}}}],
@@ -90,7 +90,7 @@ def test_as_is_required_when_the_group_declares_locals():
 def test_as_must_expand_to_an_identifier():
     with pytest.raises(WorkflowLoadError, match="must expand to an identifier"):
         expand_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "groups": {"svc": _svc({"c": {"kind": "binding"}},
                                    [{"compute": {"into": "{c}", "value": "1"}}])},
             "blocks": [{"group_ref": {"name": "svc", "as": "tube 1", "args": {"tube": 1}}}],
@@ -101,7 +101,7 @@ def test_a_bare_value_hole_as_is_not_an_identifier():
     # "{tube}" with tube: int substitutes to the JSON integer 1, which is not a name.
     with pytest.raises(WorkflowLoadError, match="must expand to an identifier"):
         expand_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "groups": {"svc": _svc({"c": {"kind": "binding"}},
                                    [{"compute": {"into": "{c}", "value": "1"}}])},
             "blocks": [{"for_each": {"vars": [{"name": "t", "kind": "int"}],
@@ -113,7 +113,7 @@ def test_a_bare_value_hole_as_is_not_an_identifier():
 def test_duplicate_qualified_instance_name_is_a_load_error():
     with pytest.raises(WorkflowLoadError, match="duplicate instance name 'tube_1'"):
         expand_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "groups": {"svc": _svc({"c": {"kind": "binding"}},
                                    [{"compute": {"into": "{c}", "value": "1"}}])},
             "blocks": [
@@ -136,7 +136,7 @@ def test_stream_locals_across_instances_can_collide_on_qualified_name():
     }
     with pytest.raises(WorkflowLoadError, match="already emitted"):
         expand_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "groups": {"svc": group},
             "blocks": [
                 {"group_ref": {"name": "svc", "as": "a", "args": {}}},
@@ -148,7 +148,7 @@ def test_stream_locals_across_instances_can_collide_on_qualified_name():
 def test_a_local_kind_other_than_stream_or_binding_is_rejected():
     with pytest.raises(WorkflowLoadError, match="must be 'stream' or 'binding'"):
         expand_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "groups": {"svc": _svc({"c": {"kind": "int"}},
                                    [{"compute": {"into": "{c}", "value": "1"}}])},
             "blocks": [{"group_ref": {"name": "svc", "as": "t1", "args": {"tube": 1}}}],
@@ -159,7 +159,7 @@ def test_init_expression_is_substituted_against_the_call_site_args():
     # A value-kind param hole is still a constant after substitution (design §2.3), so
     # `init: "{tube}"` must seed the call-site value, not die on an unbound hole.
     out = expand_dict({
-        "schema_version": 2,
+        "schema_version": 3,
         "groups": {"svc": _svc({"c": {"kind": "binding", "init": "{tube}"}},
                                [{"compute": {"into": "{c}", "value": "1"}}])},
         "blocks": [{"group_ref": {"name": "svc", "as": "t1", "args": {"tube": 7}}}],
@@ -178,7 +178,7 @@ def test_binding_locals_across_instances_can_collide_on_qualified_name():
     }
     with pytest.raises(WorkflowLoadError, match="already emitted"):
         expand_dict({
-            "schema_version": 2,
+            "schema_version": 3,
             "groups": {"svc": group},
             "blocks": [
                 {"group_ref": {"name": "svc", "as": "a", "args": {}}},
@@ -190,7 +190,7 @@ def test_binding_locals_across_instances_can_collide_on_qualified_name():
 def test_an_escaping_local_is_readable_from_a_top_level_expression():
     # examples/morbidostat.json gates a top-level abort on per-tube latches (design §2.2).
     out = expand_dict({
-        "schema_version": 2,
+        "schema_version": 3,
         "groups": {"svc": _svc({"contaminated": {"kind": "binding", "init": "false"}},
                                [{"compute": {"into": "{contaminated}", "value": "true"}}])},
         "blocks": [

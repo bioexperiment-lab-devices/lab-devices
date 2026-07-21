@@ -52,9 +52,9 @@ def test_the_reference_actually_contains_examples() -> None:
 def test_documented_workflow_loads(line: int, src: str) -> None:
     """Every ```json block is a whole document the shipped loader accepts."""
     doc: Any = json.loads(src)
-    assert doc.get("schema_version") == 2, f"line {line}: reference examples are schema 2"
+    assert doc.get("schema_version") == 3, f"line {line}: reference examples are schema 3"
     workflow = workflow_from_dict(doc)
-    assert workflow.schema_version == 2
+    assert workflow.schema_version == 3
 
 
 @pytest.mark.parametrize("line,src", WORKFLOWS, ids=_ids(WORKFLOWS))

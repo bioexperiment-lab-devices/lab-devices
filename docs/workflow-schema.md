@@ -16,7 +16,7 @@ A workflow is a single JSON object. Only `schema_version` and `blocks` are requi
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "metadata": {
     "name": "Minimal",
     "author": "lab-devices",
@@ -34,7 +34,7 @@ A workflow is a single JSON object. Only `schema_version` and `blocks` are requi
 
 | key | required | meaning |
 |---|---|---|
-| `schema_version` | yes | must be `2`; see §7 |
+| `schema_version` | yes | must be `3`; see §7 |
 | `metadata` | no | `name`, `author`, `description` — free text |
 | `persistence` | no | `default`: `"in_memory"` \| `"disk"`; `format`: `"jsonl"` \| `"csv"` |
 | `defaults` | no | `retry` only — a blanket `on_error` would make a missed injection silently survivable |
@@ -85,7 +85,7 @@ Block-level keys, legal on any block alongside its type key:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "roles": {"drug_pump": {"type": "pump"}, "od_meter_1": {"type": "densitometer"}},
   "streams": {"od_1": {"units": "AU"}},
   "blocks": [
@@ -269,7 +269,7 @@ local kinds, called twice:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "roles": {
     "od_meter_1": {"type": "densitometer"},
     "od_meter_2": {"type": "densitometer"},
@@ -365,7 +365,7 @@ silently shadowing.
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "roles": {
     "od_meter_1": {"type": "densitometer"},
     "od_meter_2": {"type": "densitometer"},
@@ -410,7 +410,7 @@ load, validation, expansion, and execution.
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "roles": {
     "od_meter_1": {"type": "densitometer"},
     "medium_pump": {"type": "pump", "device": "pump_2"}
@@ -482,18 +482,41 @@ is no clock primitive and no way to derive a window from an enclosing loop's `pa
 coupling is manual and unchecked; see limitation #8 in
 [`experiment-engine-limitations.md`](experiment-engine-limitations.md).
 
-## 7. Schema version 2 — what broke, and what to do
+## 7. Schema version 3 — what broke, and what to do
 
-`schema_version` must be `2`. A version-1 document is rejected at load with:
+`schema_version` must be `3`. Schema 3 makes the DSL **statically typed and unit-checked**
+(design 2026-07-21): every declared stream carries a `units` annotation, and a value whose unit
+the checker cannot derive is asserted with a `compute`/`record` `as` cast. A version-2 document
+is rejected at load with:
 
 ```text
-unsupported schema_version 1; expected 2. Workflows using groups or for_each cannot be
-migrated automatically: their param types were never recorded in v1
-(design 2026-07-20 §7)
+unsupported schema_version 2; expected 3. Schema 3 makes the DSL statically typed: every
+declared stream must carry a `units` annotation (use "unitless" when it has none), and a unit
+the type checker cannot derive is asserted with a `compute`/`record` `as` cast — information a
+v2 document never recorded, so it cannot be migrated automatically (design 2026-07-21 §8)
 ```
 
 This is a deliberate hard break rather than a migration shim, and the message says why: the
-types are precisely the information v1 never wrote down.
+`units` and `as` annotations are precisely the information v2 never wrote down.
+
+### Migrating v2 → v3, by hand
+
+1. **`schema_version`: 2 → 3.**
+2. **Annotate every stream's `units`** — top-level and group-`stream`-local — with a unit string
+   (`"AU"`, `"AU/s"`, `"per_hour"`, `"ml"`) or the explicit `"unitless"`. An omitted `units` is
+   now a load error.
+3. **Add an `as` cast wherever a value's derived unit does not match its target.** The opaque
+   algebra derives `unitless` for an expression whose magic conversion constant cancels its
+   dimensions (the morbidostat's `24 * … / od` growth rate, or a concentration accumulated from
+   unitless constants); recording it into a dimensioned stream needs
+   `"as": "<the stream's unit>"`, the visible acknowledgement that stands in for the ontology the
+   checker deliberately lacks. `examples/morbidostat.json` is the worked example — its two group
+   records carry `"as": "per_hour"` and `"as": "x_MIC"`.
+
+The v1 → v2 migration below is retained as history; the steps still apply on top of the two
+above for a document coming all the way from v1.
+
+### 7.0 (history) Schema version 2 — what broke going from v1
 
 ### 7.1 What v1 looked like
 
@@ -545,7 +568,7 @@ that loads and expands under schema 2:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "roles": {
     "od_meter_1": {"type": "densitometer"},
     "od_meter_2": {"type": "densitometer"},

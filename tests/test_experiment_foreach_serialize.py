@@ -55,12 +55,12 @@ def test_non_object_group_ref_body_raises_workflow_load_error():
 
 
 def test_group_params_roundtrip_in_workflow():
-    doc = {"schema_version": 2,
+    doc = {"schema_version": 3,
            "groups": {"service": {"params": [{"name": "tube", "kind": "int"}],
                                   "body": [{"wait": {"duration": "1s"}}]}},
            "blocks": [{"group_ref": {"name": "service", "args": {"tube": 1}}}]}
     assert workflow_to_dict(workflow_from_dict(doc)) == {
-        "schema_version": 2,
+        "schema_version": 3,
         "persistence": {"default": "in_memory", "format": "jsonl"},
         "groups": {"service": {"params": [{"name": "tube", "kind": "int"}],
                                "body": [{"wait": {"duration": "1s"}}]}},

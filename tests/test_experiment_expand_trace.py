@@ -203,7 +203,7 @@ def test_malformed_group_ref_body_traces_after_a_splice():
 
 def test_hoisted_seeds_shift_block_trace_keys_and_trace_to_their_local_decl():
     wf = {
-        "schema_version": 2,
+        "schema_version": 3,
         "groups": {
             "svc": {
                 "params": [{"name": "tube", "kind": "int"}],
@@ -233,7 +233,7 @@ def test_hoisted_seeds_shift_block_trace_keys_and_trace_to_their_local_decl():
 
 def test_seed_shift_composes_with_a_for_each_splice():
     wf = {
-        "schema_version": 2,
+        "schema_version": 3,
         "groups": {
             "svc": {
                 "params": [{"name": "tube", "kind": "int"}],
@@ -261,7 +261,7 @@ def test_seed_shift_composes_with_a_for_each_splice():
 def test_seed_shift_leaves_group_body_trace_keys_alone():
     # Seeds prepend to top-level blocks only; `groups['x'].body[...]` keys must not move.
     wf = {
-        "schema_version": 2,
+        "schema_version": 3,
         "groups": {
             "wash": {"body": [
                 {"for_each": {"vars": [{"name": "i", "kind": "int"}], "in": [{"i": 1}, {"i": 2}],

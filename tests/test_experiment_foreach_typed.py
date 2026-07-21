@@ -7,7 +7,7 @@ from lab_devices.experiment.expand import expand_dict
 
 
 def _wf(for_each_body):
-    return {"schema_version": 2, "blocks": [{"for_each": for_each_body}]}
+    return {"schema_version": 3, "blocks": [{"for_each": for_each_body}]}
 
 
 def test_typed_rows_bind_each_cell_by_declared_kind():

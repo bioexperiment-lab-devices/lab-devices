@@ -9,8 +9,8 @@ from tests.experiment_role_helpers import auto_roles
 
 def wf(blocks, streams=None, groups=None, roles=None):
     doc = {
-        "schema_version": 2,
-        "streams": {name: {} for name in (streams or [])},
+        "schema_version": 3,
+        "streams": {name: {"units": "unitless"} for name in (streams or [])},
         "groups": groups or {},
         "blocks": blocks,
     }
