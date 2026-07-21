@@ -1,0 +1,48 @@
+{
+  "doc_version": 1,
+  "name": "Group scope refs probe",
+  "description": null,
+  "workflow": {
+    "schema_version": 2,
+    "roles": { "top_pump": { "type": "pump" } },
+    "streams": { "od_top": { "units": "AU" } },
+    "groups": {
+      "probe_group": {
+        "params": [
+          { "name": "param_pump", "kind": "role", "device_type": "pump" },
+          { "name": "param_stream", "kind": "stream" },
+          { "name": "tube", "kind": "int" }
+        ],
+        "locals": {
+          "local_stream": { "kind": "stream", "units": "AU" },
+          "c": { "kind": "binding", "init": "0" }
+        },
+        "body": [
+          {
+            "command": {
+              "device": "{param_pump}",
+              "verb": "dispense",
+              "params": { "volume_ml": 1, "speed_ml_min": 5, "direction": "forward" }
+            },
+            "label": "pump via role param"
+          },
+          { "record": { "into": "{local_stream}", "value": "{c}" }, "label": "record into local stream" },
+          {
+            "branch": { "if": "count({param_stream}, last=5min) > 0", "then": [] },
+            "label": "branch on stream param"
+          }
+        ]
+      }
+    },
+    "blocks": [
+      {
+        "group_ref": {
+          "name": "probe_group",
+          "as": "p1",
+          "args": { "param_pump": "top_pump", "param_stream": "od_top", "tube": 1 }
+        },
+        "label": "call probe_group"
+      }
+    ]
+  }
+}

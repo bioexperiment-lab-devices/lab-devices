@@ -27,6 +27,7 @@ const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const FIXTURES = {
   morbidostat: path.join(repoRoot, 'examples/morbidostat.json'),
   torture: path.join(repoRoot, 'webapp/fixtures/ui-audit-torture.json'),
+  groupScopeRefs: path.join(repoRoot, 'webapp/fixtures/group-scope-refs.json'),
 }
 
 const VIEWPORTS = [
@@ -181,6 +182,43 @@ const states = [
       await gotoBuilder(page)
       await importDoc(page, FIXTURES.torture)
       await selectScope(page, 'deep_group')
+    },
+  },
+  {
+    name: 'group-scope-roles-streams',
+    description:
+      'editing probe_group: the Roles pump block shows top_pump AND the {param_pump} role ' +
+      'param under an "In this group" divider (its verb chips draggable), and the opened ' +
+      'Streams section shows od_top above the {param_stream}/{local_stream} subsection. The ' +
+      'state that makes the new palette subsections non-vacuous for R4/R5 and the ' +
+      'truncate-with-title rule.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.groupScopeRefs)
+      await selectScope(page, 'probe_group')
+      // Select the role-param badge so its draggable verb chips actually mount.
+      await page.locator('[id="role-{param_pump}"]').click()
+      await page.getByRole('button', { name: 'Streams', exact: true }).click()
+      await page.waitForTimeout(200)
+      // Assert the new DOM mounted, or the capture would be a vacuous clean pass.
+      if ((await page.locator('[id="role-{param_pump}"]').count()) !== 1) {
+        throw new Error('the {param_pump} role-param badge did not mount')
+      }
+    },
+  },
+  {
+    name: 'group-scope-expression',
+    description:
+      'the expression-help popover while editing probe_group: its Streams list includes ' +
+      '{param_stream}/{local_stream} and its Bindings list includes {tube}/{c}. Guards the ' +
+      'scope-aware help wiring.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.groupScopeRefs)
+      await selectScope(page, 'probe_group')
+      await selectBlock(page, /branch on stream param|^\s*If /)
+      await page.getByRole('button', { name: 'Expression help' }).first().click()
+      await page.waitForTimeout(200)
     },
   },
   {
