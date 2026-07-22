@@ -1,6 +1,7 @@
+from lab_devices.experiment.errors import ValidationError
 from lab_devices.experiment.workflow import ConstantDecl, Workflow
 from lab_devices.experiment.serialize import workflow_from_dict, workflow_to_dict
-from lab_devices.experiment.validate import binding_types
+from lab_devices.experiment.validate import binding_types, validate
 
 
 def test_workflow_defaults_constants_to_empty():
@@ -64,3 +65,57 @@ def test_constants_appear_in_binding_types_with_units():
 def test_derived_constant_infers_from_earlier_constant():
     w = workflow_from_dict(_doc({"DOSES": {"value": 3}, "TOTAL": {"value": "DOSES * 2"}}))
     assert binding_types(w)["TOTAL"].base == "int"
+
+
+def _messages(doc):
+    try:
+        validate(workflow_from_dict(doc))
+    except ValidationError as exc:
+        return [d.message for d in exc.diagnostics]
+    return []
+
+
+def test_constant_bad_identifier_rejected():
+    msgs = _messages(_doc({"1bad": {"value": 1}}))
+    assert any("identifier" in m for m in msgs)
+
+
+def test_constant_forward_reference_rejected():
+    # TOTAL declared before DOSES -> forward ref
+    msgs = _messages(_doc({"TOTAL": {"value": "DOSES * 2"}, "DOSES": {"value": 3}}))
+    assert any("DOSES" in m and "earlier" in m for m in msgs)
+
+
+def test_constant_self_reference_rejected():
+    msgs = _messages(_doc({"X": {"value": "X + 1"}}))
+    assert any("'X'" in m and "earlier" in m for m in msgs)
+
+
+def test_constant_reading_stream_rejected():
+    doc = {"schema_version": 3, "persistence": {"default": "in_memory", "format": "jsonl"},
+           "streams": {"od": {"units": "unitless"}},
+           "constants": {"K": {"value": "mean(od, last=5min)"}}, "blocks": []}
+    msgs = _messages(doc)
+    assert any("static" in m or "stream" in m for m in msgs)
+
+
+def test_compute_writing_constant_name_rejected():
+    doc = {"schema_version": 3, "persistence": {"default": "in_memory", "format": "jsonl"},
+           "constants": {"K": {"value": 1}},
+           "blocks": [{"compute": {"into": "K", "value": 2}}]}
+    msgs = _messages(doc)
+    assert any("'K'" in m and "constant" in m for m in msgs)
+
+
+def test_constant_name_colliding_with_stream_rejected():
+    doc = {"schema_version": 3, "persistence": {"default": "in_memory", "format": "jsonl"},
+           "streams": {"od": {"units": "unitless"}},
+           "constants": {"od": {"value": 1}}, "blocks": []}
+    msgs = _messages(doc)
+    assert any("'od'" in m for m in msgs)
+
+
+def test_valid_derived_constants_pass():
+    doc = _doc({"DOSES": {"value": 3}, "ML_PER_DOSE": {"value": 2.5},
+                "TOTAL_ML": {"value": "DOSES * ML_PER_DOSE"}})
+    assert _messages(doc) == []

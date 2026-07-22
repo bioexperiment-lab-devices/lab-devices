@@ -595,6 +595,38 @@ def _check_local_init(
         ))
 
 
+def _check_constants(w: Workflow, out: list[Diagnostic]) -> None:
+    """Constants are static and declaration-ordered (constants design §5): a valid identifier,
+    referencing only constants declared EARLIER, never a stream/window/runtime binding."""
+    seen: set[str] = set()
+    for name, decl in w.constants.items():
+        where = f"constants[{name!r}]"
+        if not _IDENT_RE.match(name):
+            out.append(Diagnostic("declaration", where,
+                                   f"constant name {name!r} must be an identifier"))
+        if isinstance(decl.value, str):
+            try:
+                expr = parse_expression(decl.value)
+            except ExpressionError as exc:
+                out.append(Diagnostic("declaration", where,
+                                      f"invalid constant expression: {exc}"))
+                seen.add(name)
+                continue
+            refs = references(expr)
+            bad_streams = sorted(refs.streams_windowed | refs.streams_counted)
+            if bad_streams:
+                reads = ", ".join(repr(n) for n in bad_streams)
+                out.append(Diagnostic("declaration", where,
+                    f"constant {name!r} must be static, but reads stream(s) {reads}; a constant "
+                    f"is evaluated before any block runs (constants design §5)"))
+            for b in sorted(refs.bindings):
+                if b not in seen:
+                    out.append(Diagnostic("declaration", where,
+                        f"constant {name!r} references {b!r}, which is not a constant declared "
+                        f"earlier; constants are evaluated top-to-bottom (constants design §5)"))
+        seen.add(name)
+
+
 def _check_declarations(w: Workflow, out: list[Diagnostic]) -> bool:
     """Every typed-declaration rule, on the authored doc (design 2026-07-20 §2, §4).
     True iff nothing new was found, i.e. the doc is safe to hand to the expander."""
@@ -1202,6 +1234,14 @@ def _check_namespaces(w: Workflow, out: list[Diagnostic]) -> None:
             f"name {n!r} is written by both operator_input and compute; a binding has "
             f"one kind of writer",
         ))
+    const_names = set(w.constants)
+    for n in sorted(const_names & declared):
+        out.append(Diagnostic("declaration", "names",
+            f"name {n!r} is used as both a constant and a stream"))
+    for n in sorted(const_names & binding_names):
+        out.append(Diagnostic("declaration", "bindings",
+            f"{n!r} is a constant and cannot also be written by compute or operator_input; "
+            f"constants are write-once (constants design §5)"))
 
 
 def _check_block(
@@ -1629,6 +1669,7 @@ def _validate_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
     expandable = _check_groups(workflow, out)
     _check_defaults(workflow, out)
     _check_namespaces(workflow, out)
+    _check_constants(workflow, out)
     stream_units = _stream_units(workflow)
     env = _TypeEnv(_collect_binding_types(workflow, stream_units), stream_units)
     for path, block in _iter_all_blocks(workflow):
