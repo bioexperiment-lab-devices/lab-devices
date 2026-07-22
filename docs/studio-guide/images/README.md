@@ -44,4 +44,15 @@ taking the shot. File names are relative to this `images/` folder.
 | `block-group-scope.png` | 04-blocks/groups | Scope switcher on a group (hatched bg); Inspector Params/Locals. |
 | `block-group-call.png` | 04-blocks/groups | Group-call block; Inspector Group picker, "As" prefix, Arg fields. |
 
+| `qs-a-new.png` | 02-quickstart/a-no-lab | Builder toolbar with name "First run" and empty canvas. |
+| `qs-a-operator-input.png` | 02-quickstart/a-no-lab | Operator input block; Inspector: dose_ml, float, min 0 max 50, prompt. |
+| `qs-a-finished-canvas.png` | 02-quickstart/a-no-lab | Finished canvas: Operator input, Compute, Record, Wait, Alarm; chip "valid". |
+| `qs-a-operator-prompt.png` | 02-quickstart/a-no-lab | Run-time operator prompt dialog "How many ml per dose?" with a number. |
+| `qs-a-record.png` | 02-quickstart/a-no-lab | Records tab: finished run, `doses` stream value + alarm (if 40 entered). |
+| `qs-b-roles.png` | 02-quickstart/b-pump-densitometer | Roles panel: `dye_pump` (pump), `od_meter` (densitometer) with swatches. |
+| `qs-b-finished-canvas.png` | 02-quickstart/b-pump-densitometer | set_thermostat, dispense, Loop×20 (measure→od, read_temperature→temp_c, Wait 1min). |
+| `qs-b-role-mapping.png` | 02-quickstart/b-pump-densitometer | Run tab role-mapping: dye_pump & od_meter device dropdowns + Start. |
+| `qs-b-live-chart.png` | 02-quickstart/b-pump-densitometer | Running experiment; live chart with `od` rising. |
+| `qs-b-record.png` | 02-quickstart/b-pump-densitometer | Records tab: finished run, `od` and `temp_c` charted. |
+
 <!-- SHOT-LIST: entries are appended by each section below this line -->
