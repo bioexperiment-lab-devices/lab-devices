@@ -1,7 +1,10 @@
+from lab_devices.experiment import ExperimentRun, RunOptions
 from lab_devices.experiment.errors import ValidationError
+from lab_devices.experiment.run import assign_block_ids
 from lab_devices.experiment.workflow import ConstantDecl, Workflow
 from lab_devices.experiment.serialize import workflow_from_dict, workflow_to_dict
 from lab_devices.experiment.validate import binding_types, validate
+from tests.fakeclock import FakeClock, drive
 
 
 def test_workflow_defaults_constants_to_empty():
@@ -119,3 +122,26 @@ def test_valid_derived_constants_pass():
     doc = _doc({"DOSES": {"value": 3}, "ML_PER_DOSE": {"value": 2.5},
                 "TOTAL_ML": {"value": "DOSES * ML_PER_DOSE"}})
     assert _messages(doc) == []
+
+
+def test_block_reading_constant_passes_dataflow_validation():
+    # The path-sensitive "may be read before it is written" analysis must know constants are
+    # bound before any block runs, or every block reading one is (wrongly) flagged.
+    doc = _doc({"THRESHOLD": {"value": 10}, "LIMIT": {"value": "THRESHOLD * 2"}})
+    doc["blocks"] = [{"compute": {"into": "seen_limit", "value": "LIMIT"}}]
+    assert _messages(doc) == []
+
+
+async def test_constant_is_bound_before_blocks_and_derives(fake_client):
+    # THRESHOLD=10, LIMIT=THRESHOLD*2=20 ; a compute copies LIMIT into a binding we can read back.
+    _, client = fake_client
+    doc = _doc({"THRESHOLD": {"value": 10}, "LIMIT": {"value": "THRESHOLD * 2"}})
+    doc["blocks"] = [{"compute": {"into": "seen_limit", "value": "LIMIT"}}]
+    workflow = workflow_from_dict(doc)
+    assign_block_ids(workflow)
+    run = ExperimentRun(client, workflow, options=RunOptions(clock=FakeClock()))
+    report = await drive(run._options.clock, run.execute())
+    assert report.status == "completed"
+    assert report.state.bindings["THRESHOLD"] == 10
+    assert report.state.bindings["LIMIT"] == 20
+    assert report.state.bindings["seen_limit"] == 20

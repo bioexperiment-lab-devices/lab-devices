@@ -1607,7 +1607,11 @@ def _visit_blocks(blocks: list[B.Block], prefix: str, state: _PathState, c: _Ctx
 
 
 def _analyze_paths(w: Workflow, out: list[Diagnostic]) -> None:
-    _visit_blocks(w.blocks, "blocks", _PathState(), _Ctx(w, out))
+    # Constants are bound before any block runs (constants design §5; engine seeding in
+    # ExperimentRun.__init__) -- the path-sensitive proof must start from that same fact, or
+    # every block reading a constant would be flagged as reading an unwritten binding.
+    initial = _PathState(bindings=set(w.constants))
+    _visit_blocks(w.blocks, "blocks", initial, _Ctx(w, out))
 
 
 def _check_abort_not_under_tolerance(w: Workflow, out: list[Diagnostic]) -> None:

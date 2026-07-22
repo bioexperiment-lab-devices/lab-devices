@@ -20,8 +20,10 @@ from lab_devices.experiment.errors import (
     UnknownRoleError,
     WorkflowLoadError,
 )
+from lab_devices.experiment.evaluate import evaluate
 from lab_devices.experiment.execute import execute_blocks
 from lab_devices.experiment.expand import expand_workflow_traced
+from lab_devices.experiment.expr import parse_expression
 from lab_devices.experiment.finalize import run_finalizer
 from lab_devices.experiment.persist import SinkSet
 from lab_devices.experiment.runlog import RunLogSink
@@ -141,6 +143,14 @@ class ExperimentRun:
         state = RunState()
         for stream_name in workflow.streams:
             state.streams[stream_name] = Stream()  # pre-created: count()==0 (§3)
+        # Seed constants before any block runs, in declaration order so a derived constant sees
+        # its (earlier) dependencies (constants design §5). Constant expressions reference only
+        # other constants, so `now` is irrelevant — pass 0.0.
+        for const_name, decl in workflow.constants.items():
+            value = decl.value
+            if isinstance(value, str):
+                value = evaluate(parse_expression(value), state, 0.0)
+            state.bind(const_name, value)
         self._ctx = RunContext(
             client=client, workflow=workflow, state=state, options=self._options,
             role_devices=role_devices, source_map=trace,
