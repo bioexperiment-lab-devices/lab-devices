@@ -55,4 +55,14 @@ taking the shot. File names are relative to this `images/` folder.
 | `qs-b-live-chart.png` | 02-quickstart/b-pump-densitometer | Running experiment; live chart with `od` rising. |
 | `qs-b-record.png` | 02-quickstart/b-pump-densitometer | Records tab: finished run, `od` and `temp_c` charted. |
 
+| `cb-01-add-dye-read-od.png` | 05-cookbook/01 | dispense (dye_pump) then measure (od_meter → od). |
+| `cb-02-hold-temperature-log.png` | 05-cookbook/02 | set_thermostat, then Loop×20 (read_temperature→temp_c, Wait 1min). |
+| `cb-03-timed-dosing.png` | 05-cookbook/03 | Loop×30 Pace 1min containing one dispense (medium_pump, 0.5 ml). |
+| `cb-04-dilute-when-high.png` | 05-cookbook/04 | Loop with measure→od, Branch (If last(od)>0.5 → dispense), Wait 1min. |
+| `cb-05-operator-dose.png` | 05-cookbook/05 | Operator input (dose_ml) above dispense with volume_ml in ƒ mode = `dose_ml`. |
+| `cb-06-parallel-vials.png` | 05-cookbook/06 | Parallel, three lanes, measure into od_1/od_2/od_3. |
+| `cb-07-group-body.png` | 05-cookbook/07 | `service` group scope (hatched); params meter (role), out (stream); body measure {meter}→{out}. |
+| `cb-07-service-group.png` | 05-cookbook/07 | Parallel > For each (3 rows) > one service({meter},{out}) group call. |
+| `cb-08-safety-guard.png` | 05-cookbook/08 | Loop: measure→od, Compute latch `warned`, Alarm on warned, Abort on last(od)<abort_od. |
+
 <!-- SHOT-LIST: entries are appended by each section below this line -->
