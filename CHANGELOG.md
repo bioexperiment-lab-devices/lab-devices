@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.4.0...v1.5.0) (2026-07-22)
+
+
+### Features
+
+* **studio:** role fixes — enum defaults + independent temperature read ([#76](https://github.com/bioexperiment-lab-devices/lab-devices/issues/76)) ([22d9703](https://github.com/bioexperiment-lab-devices/lab-devices/commit/22d9703edd7bf4aac70783e87a169b97690824a1))
+
 ## [1.4.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.3.0...v1.4.0) (2026-07-22)
 
 
