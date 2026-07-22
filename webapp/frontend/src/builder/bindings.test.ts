@@ -5,6 +5,7 @@ import {
   bindingReferences,
   collectBindingReaders,
   collectBindingWriters,
+  countBindingRefs,
 } from './bindings'
 
 const base = (uid: string, label: string | null = null) => ({
@@ -93,5 +94,17 @@ describe('bindingIndex', () => {
     const byName = Object.fromEntries(rows.map((r) => [r.name, r]))
     expect(byName['{p}'].decl).toBe('param')
     expect(byName['{c}'].decl).toBe('local')
+  })
+})
+
+describe('countBindingRefs', () => {
+  it('counts expression fields that reference a name', () => {
+    const tree = [
+      { uid: '1', kind: 'compute', into: 'x', value: 'K + 1' },
+      { uid: '2', kind: 'branch', condition: 'K > 0', then: [], else: [] },
+      { uid: '3', kind: 'wait', duration: '5min' },
+    ] as never
+    expect(countBindingRefs(tree, 'K')).toBe(2)
+    expect(countBindingRefs(tree, 'Z')).toBe(0)
   })
 })
