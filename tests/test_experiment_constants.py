@@ -1,5 +1,7 @@
+import pytest
+
 from lab_devices.experiment import ExperimentRun, RunOptions
-from lab_devices.experiment.errors import ValidationError
+from lab_devices.experiment.errors import ValidationError, WorkflowLoadError
 from lab_devices.experiment.run import assign_block_ids
 from lab_devices.experiment.workflow import ConstantDecl, Workflow
 from lab_devices.experiment.serialize import workflow_from_dict, workflow_to_dict
@@ -83,6 +85,16 @@ def test_constant_bad_identifier_rejected():
     assert any("identifier" in m for m in msgs)
 
 
+def test_constant_reserved_name_true_rejected():
+    msgs = _messages(_doc({"true": {"value": 1}}))
+    assert any("reserved" in m for m in msgs)
+
+
+def test_constant_reserved_name_and_rejected():
+    msgs = _messages(_doc({"and": {"value": 1}}))
+    assert any("reserved" in m for m in msgs)
+
+
 def test_constant_forward_reference_rejected():
     # TOTAL declared before DOSES -> forward ref
     msgs = _messages(_doc({"TOTAL": {"value": "DOSES * 2"}, "DOSES": {"value": 3}}))
@@ -145,3 +157,28 @@ async def test_constant_is_bound_before_blocks_and_derives(fake_client):
     assert report.state.bindings["THRESHOLD"] == 10
     assert report.state.bindings["LIMIT"] == 20
     assert report.state.bindings["seen_limit"] == 20
+
+
+def test_constant_missing_value_rejected_at_load():
+    with pytest.raises(WorkflowLoadError):
+        workflow_from_dict(_doc({"X": {}}))
+
+
+def test_constant_list_value_rejected_at_load():
+    with pytest.raises(WorkflowLoadError):
+        workflow_from_dict(_doc({"X": {"value": [1, 2, 3]}}))
+
+
+def test_constant_object_value_rejected_at_load():
+    with pytest.raises(WorkflowLoadError):
+        workflow_from_dict(_doc({"X": {"value": {"a": 1}}}))
+
+
+def test_constant_invalid_expression_rejected_at_load():
+    with pytest.raises(WorkflowLoadError):
+        workflow_from_dict(_doc({"X": {"value": "1 +"}}))
+
+
+def test_constant_bad_unit_rejected_at_load():
+    with pytest.raises(WorkflowLoadError):
+        workflow_from_dict(_doc({"X": {"value": 1, "as": "!!!"}}))

@@ -107,4 +107,8 @@ describe('countBindingRefs', () => {
     expect(countBindingRefs(tree, 'K')).toBe(2)
     expect(countBindingRefs(tree, 'Z')).toBe(0)
   })
+
+  it('counts a wait duration referencing the name', () => {
+    expect(countBindingRefs([{ uid: '1', kind: 'wait', duration: 'K' }] as never, 'K')).toBe(1)
+  })
 })

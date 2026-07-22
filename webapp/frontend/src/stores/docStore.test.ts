@@ -171,6 +171,16 @@ describe('docStore', () => {
       store().setScope(null)
       expect(store().removeConstant('MAX')).toBeNull()
     })
+
+    // A constant's value expression can reference an earlier constant (constants design §5);
+    // that reference must block deletion just like a block reference does.
+    it('refuses to delete a constant referenced by another constant\'s value', () => {
+      expect(store().addConstant('A', 1)).toBeNull()
+      expect(store().addConstant('B', 'A * 2')).toBeNull()
+      expect(store().removeConstant('A')).toMatch(/used by/)
+      expect(store().removeConstant('B')).toBeNull()
+      expect(store().removeConstant('A')).toBeNull()
+    })
   })
 
   it('loadDoc replaces state, clears history, and reads clean; markSaved clears dirty', () => {

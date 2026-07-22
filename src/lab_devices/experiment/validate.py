@@ -604,6 +604,9 @@ def _check_constants(w: Workflow, out: list[Diagnostic]) -> None:
         if not _IDENT_RE.match(name):
             out.append(Diagnostic("declaration", where,
                                    f"constant name {name!r} must be an identifier"))
+        elif name in _RESERVED_NAMES:
+            out.append(Diagnostic("declaration", where,
+                                   f"constant name {name!r} is reserved"))
         if isinstance(decl.value, str):
             try:
                 expr = parse_expression(decl.value)

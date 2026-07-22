@@ -15,7 +15,7 @@ import type {
   WorkflowJson,
 } from '../types/doc'
 import type { MappedDiagnostic } from '../builder/paths'
-import { countBindingRefs } from '../builder/bindings'
+import { bindingReferences, countBindingRefs } from '../builder/bindings'
 import { treeToDoc, type DocContent, type GroupDef } from '../builder/convert'
 import type { DraftView } from './draftStorage'
 import {
@@ -405,9 +405,18 @@ export const useDocStore = create<EditorState>()(
       // No renameConstant (out of scope) — unlike roles/streams/groups, constants have no
       // rename action, so there is no ref-rewrite cascade to thread through group bodies here.
       removeConstant: (name) => {
-        const { tree, groups } = get()
+        const { tree, groups, constants } = get()
         let refs = countBindingRefs(tree, name)
         for (const g of Object.values(groups)) refs += countBindingRefs(g.body, name)
+        // A constant's value expression can itself reference an earlier constant (constants
+        // design §5) — that reference lives in `constants`, not the tree/group bodies scanned
+        // above, so it must be counted separately or a still-referenced constant could be
+        // deleted out from under the one that derives from it.
+        for (const [otherName, decl] of Object.entries(constants)) {
+          if (otherName !== name && typeof decl.value === 'string') {
+            refs += bindingReferences(decl.value, new Set([name])).length
+          }
+        }
         if (refs > 0) return `constant '${name}' is used by ${refs} block${refs === 1 ? '' : 's'}`
         set((s) => ({ constants: removeKey(s.constants, name) }))
         return null

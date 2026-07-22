@@ -12,7 +12,7 @@ function coerceConstantValue(text: string): ParamValue {
   if (/^-?\d+\.\d+$/.test(s)) return Number(s)
   if (s === 'true') return true
   if (s === 'false') return false
-  return text
+  return s
 }
 
 const valueText = (v: ParamValue): string =>

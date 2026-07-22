@@ -92,6 +92,9 @@ function exprFields(node: BlockNode): Array<[string, string]> {
     case 'branch':
       push('condition', node.condition)
       break
+    case 'wait':
+      push('duration', node.duration)
+      break
     case 'loop':
       push('count', node.count)
       push('until', node.until)
