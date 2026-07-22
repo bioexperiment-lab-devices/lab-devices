@@ -35,4 +35,13 @@ taking the shot. File names are relative to this `images/` folder.
 | `block-loop.png` | 04-blocks/flow | Loop selected; Inspector Repeat=Until, an Until condition, Check dropdown. |
 | `block-for-each.png` | 04-blocks/flow | For each with a `tube` variable table and a Rows grid. |
 
+| `block-compute.png` | 04-blocks/data | Compute block; Inspector Into (binding), Value expression, Units→Cast. |
+| `block-record.png` | 04-blocks/data | Record block; Inspector "Into stream" picker, Value, Cast. |
+| `block-wait.png` | 04-blocks/pause | Wait block; Inspector Duration = `1min`. |
+| `block-operator-input.png` | 04-blocks/pause | Operator input block; Inspector Binding name, Type, Prompt. |
+| `block-alarm.png` | 04-blocks/safety | Alarm block; Inspector If condition + Message. |
+| `block-abort.png` | 04-blocks/safety | Abort block; Inspector If condition + Message + stop note. |
+| `block-group-scope.png` | 04-blocks/groups | Scope switcher on a group (hatched bg); Inspector Params/Locals. |
+| `block-group-call.png` | 04-blocks/groups | Group-call block; Inspector Group picker, "As" prefix, Arg fields. |
+
 <!-- SHOT-LIST: entries are appended by each section below this line -->
