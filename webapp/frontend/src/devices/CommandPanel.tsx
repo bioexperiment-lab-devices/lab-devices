@@ -40,14 +40,16 @@ export function CommandPanel(props: { lab: string; devices: LabDevice[] }) {
   }
 
   const commands = commandsFor(device.type)
-  const pickedDef = commands.find((c) => c.cmd === picked) ?? null
+  // `label` is the canonical UI identity (unique per type); `cmd` is the wire command and may
+  // be aliased (e.g. "Read temperature" is a second control backed by the `status` cmd).
+  const pickedDef = commands.find((c) => c.label === picked) ?? null
 
   const onCommand = (cmd: CommandDef) => {
     if (cmd.params.length === 0) {
       setPicked(null)
       void run(props.lab, device.id, cmd.cmd, null, cmd.isJob)
     } else {
-      setPicked((cur) => (cur === cmd.cmd ? null : cmd.cmd))
+      setPicked((cur) => (cur === cmd.label ? null : cmd.label))
     }
   }
 
@@ -80,7 +82,7 @@ export function CommandPanel(props: { lab: string; devices: LabDevice[] }) {
                   type="button"
                   disabled={busy}
                   onClick={() => onCommand(cmd)}
-                  className={inlineButtonClass({ active: picked === cmd.cmd })}
+                  className={inlineButtonClass({ active: picked === cmd.label })}
                 >
                   {cmd.label}
                 </button>
@@ -91,7 +93,7 @@ export function CommandPanel(props: { lab: string; devices: LabDevice[] }) {
       </div>
 
       {pickedDef !== null && (
-        <ParamForm key={pickedDef.cmd} lab={props.lab} deviceId={device.id} command={pickedDef} />
+        <ParamForm key={pickedDef.label} lab={props.lab} deviceId={device.id} command={pickedDef} />
       )}
     </div>
   )

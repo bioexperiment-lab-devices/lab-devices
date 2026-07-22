@@ -40,12 +40,20 @@ def test_unknown_verb_raises():
         lookup("toaster", "dispense")
 
 
-def test_every_actuating_entry_declares_channels():
+def test_channels_declared_unless_pure_read():
+    """Every actuating verb occupies a subsystem, so it must declare channels. The one
+    exception is a pure read: it actuates nothing and so occupies none. The invariant is
+    stated as a property (a channelless trait MUST be a pure immediate measurement read),
+    not an allow-list of names, so a future read is admitted and a mis-declared actuator that
+    omitted its channels still fails."""
     for key, trait in _REGISTRY.items():
-        if key == ("densitometer", "read_temperature"):
-            assert trait.channels == frozenset()  # a pure status read occupies no subsystem
-        else:
-            assert trait.channels, f"{key} has no channels"
+        if trait.channels:
+            continue
+        assert (
+            trait.measurement
+            and trait.completion == "immediate"
+            and trait.state_effect == "none"
+        ), f"{key} declares no channels but is not a pure immediate read"
 
 
 def test_channel_table():
