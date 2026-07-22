@@ -39,3 +39,111 @@
   background-repeat: repeat-y;
   background-position: left top;
 }
+
+/* ---------------------------------------------------------------------------
+ * Dark theme (design 2026-07-22-dark-theme §Architecture).
+ *
+ * Tailwind 4 compiles every color utility to var(--color-*), so this block IS the
+ * dark theme: a remap of exactly the tokens the app uses, stamped on by
+ * <html data-theme="dark"> (themeStore + the index.html boot script). Values are
+ * LITERAL OKLCH — a var() chain like `--color-slate-100: var(--color-slate-900)`
+ * goes circular the moment slate-900 is itself remapped. Sources: permutations of
+ * tailwindcss/theme.css steps, noted per line; interpolated values noted as such.
+ *
+ * Invariants (spec §Mapping strategy): elevation ordering preserved (white = raised
+ * card stays lighter than the slate-100 canvas); text tiers keep their hierarchy;
+ * state hues keep the family and swap the step (-50 tints → -950 end, -600/-700
+ * text → -300/-400); construct tints keep their five hues; role swatches stay
+ * saturated; hue stays reserved for state.
+ *
+ * A token used by a component but MISSING here renders at its light value on dark
+ * ground — `npm run capture` (both themes) is the enforcement, not eyes.
+ * ------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Surfaces & neutral text. Light-mode meaning in brackets. */
+  --color-white: oklch(27.9% 0.041 260.031); /* [cards] slate-800 */
+  --color-slate-50: oklch(24.5% 0.041 262); /* [subtle fill] interpolated 800↔900 */
+  --color-slate-100: oklch(20.8% 0.042 265.755); /* [canvas] slate-900 */
+  --color-slate-200: oklch(33% 0.042 261); /* [hover fill/dividers] interpolated 700↔800 */
+  --color-slate-300: oklch(37.2% 0.044 257.287); /* [borders] slate-700 */
+  --color-slate-400: oklch(55.4% 0.046 257.417); /* [muted icons] slate-500 */
+  --color-slate-500: oklch(70.4% 0.04 256.788); /* [text-hint] slate-400 */
+  --color-slate-600: oklch(76% 0.035 257); /* [text-caption] interpolated 300↔400 */
+  --color-slate-700: oklch(86.9% 0.022 252.894); /* [strong text] slate-300 */
+  --color-slate-900: oklch(96.8% 0.007 247.896); /* [primary text] slate-100 */
+
+  /* State: error (red) */
+  --color-red-50: oklch(25.8% 0.092 26.042); /* red-950 */
+  --color-red-100: oklch(30% 0.105 26); /* interpolated 900↔950 */
+  --color-red-200: oklch(39.6% 0.141 25.723); /* red-900 */
+  --color-red-400: oklch(70.4% 0.191 22.216); /* unchanged — reads on dark */
+  --color-red-500: oklch(63.7% 0.237 25.331); /* unchanged */
+  --color-red-600: oklch(70.4% 0.191 22.216); /* red-400 */
+  --color-red-700: oklch(80.8% 0.114 19.571); /* red-300 */
+
+  /* State: warning (amber) */
+  --color-amber-50: oklch(27.9% 0.077 45.635); /* amber-950 */
+  --color-amber-100: oklch(32% 0.09 46); /* interpolated 900↔950 */
+  --color-amber-200: oklch(41.4% 0.112 45.904); /* amber-900 */
+  --color-amber-300: oklch(47.3% 0.137 46.201); /* amber-800 */
+  --color-amber-400: oklch(82.8% 0.189 84.429); /* unchanged — reads on dark */
+  --color-amber-600: oklch(82.8% 0.189 84.429); /* amber-400 */
+  --color-amber-700: oklch(87.9% 0.169 91.605); /* amber-300 */
+  --color-amber-800: oklch(92.4% 0.12 95.746); /* amber-200 */
+  --color-amber-900: oklch(96.2% 0.059 95.617); /* amber-100 */
+
+  /* State: selection/info (blue) */
+  --color-blue-50: oklch(28.2% 0.091 267.935); /* blue-950 */
+  --color-blue-100: oklch(33% 0.115 266); /* interpolated 900↔950 */
+  --color-blue-200: oklch(37.9% 0.146 265.522); /* blue-900 */
+  --color-blue-300: oklch(42.4% 0.199 265.638); /* blue-800 */
+  --color-blue-400: oklch(70.7% 0.165 254.624); /* unchanged — focus ring */
+  --color-blue-500: oklch(62.3% 0.214 259.815); /* unchanged — selection border */
+  --color-blue-600: oklch(70.7% 0.165 254.624); /* blue-400 — primary buttons */
+  --color-blue-700: oklch(80.9% 0.105 251.813); /* blue-300 */
+  --color-blue-800: oklch(88.2% 0.059 254.128); /* blue-200 */
+
+  /* State: valid (emerald + the one green tint) */
+  --color-emerald-100: oklch(26.2% 0.051 172.552); /* emerald-950 */
+  --color-emerald-500: oklch(69.6% 0.17 162.48); /* unchanged */
+  --color-emerald-700: oklch(84.5% 0.143 164.978); /* emerald-300 */
+  --color-green-100: oklch(26.6% 0.065 152.934); /* green-950 */
+
+  /* Construct tints (constructTint.ts): -50 headers → -950, -200 borders → -800 */
+  --color-teal-50: oklch(27.7% 0.046 192.524); /* teal-950 */
+  --color-teal-200: oklch(43.7% 0.078 188.216); /* teal-800 */
+  --color-violet-50: oklch(28.3% 0.141 291.089); /* violet-950 */
+  --color-violet-100: oklch(33% 0.16 292); /* interpolated 900↔950 */
+  --color-violet-200: oklch(43.2% 0.232 292.759); /* violet-800 */
+  --color-fuchsia-50: oklch(29.3% 0.136 325.661); /* fuchsia-950 */
+  --color-fuchsia-200: oklch(45.2% 0.211 324.591); /* fuchsia-800 */
+  --color-lime-50: oklch(27.4% 0.072 132.109); /* lime-950 */
+  --color-lime-200: oklch(45.3% 0.124 130.933); /* lime-800 */
+
+  /* Construct/role text accents */
+  --color-teal-700: oklch(85.5% 0.138 181.071); /* teal-300 */
+  --color-violet-700: oklch(81.1% 0.111 293.571); /* violet-300 */
+
+  /* Role swatches (roleColors.ts) — saturated mid-steps read on dark; unchanged. */
+  --color-teal-500: oklch(70.4% 0.14 182.503);
+  --color-violet-500: oklch(60.6% 0.25 292.717);
+  --color-fuchsia-500: oklch(66.7% 0.295 322.15);
+  --color-lime-600: oklch(64.8% 0.2 131.684);
+  --color-cyan-600: oklch(60.9% 0.126 221.723);
+  --color-purple-500: oklch(62.7% 0.265 303.9);
+  --color-pink-500: oklch(65.6% 0.241 354.308);
+  --color-stone-500: oklch(55.3% 0.013 58.071);
+
+  /* --color-black intentionally NOT remapped: only use is dialog backdrops
+   * (backdrop:bg-black/30), correct in both themes. */
+}
+
+/* uPlot's zoom-selection box is a baked rgba(0,0,0,.07) — invisible on dark. */
+:root[data-theme='dark'] .u-select {
+  background: rgba(255, 255, 255, 0.14);
+}
