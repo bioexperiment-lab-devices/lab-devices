@@ -45,6 +45,7 @@ from lab_devices.experiment.units import UNITLESS, Unit, parse_unit, unit_str
 from lab_devices.experiment.serialize import load_workflow
 from lab_devices.experiment.workflow import (
     REFERENCE_KINDS,
+    ConstantDecl,
     Group,
     LocalDecl,
     ParamDecl,
@@ -594,6 +595,41 @@ def _check_local_init(
         ))
 
 
+def _check_constants(w: Workflow, out: list[Diagnostic]) -> None:
+    """Constants are static and declaration-ordered (constants design §5): a valid identifier,
+    referencing only constants declared EARLIER, never a stream/window/runtime binding."""
+    seen: set[str] = set()
+    for name, decl in w.constants.items():
+        where = f"constants[{name!r}]"
+        if not _IDENT_RE.match(name):
+            out.append(Diagnostic("declaration", where,
+                                   f"constant name {name!r} must be an identifier"))
+        elif name in _RESERVED_NAMES:
+            out.append(Diagnostic("declaration", where,
+                                   f"constant name {name!r} is reserved"))
+        if isinstance(decl.value, str):
+            try:
+                expr = parse_expression(decl.value)
+            except ExpressionError as exc:
+                out.append(Diagnostic("declaration", where,
+                                      f"invalid constant expression: {exc}"))
+                seen.add(name)
+                continue
+            refs = references(expr)
+            bad_streams = sorted(refs.streams_windowed | refs.streams_counted)
+            if bad_streams:
+                reads = ", ".join(repr(n) for n in bad_streams)
+                out.append(Diagnostic("declaration", where,
+                    f"constant {name!r} must be static, but reads stream(s) {reads}; a constant "
+                    f"is evaluated before any block runs (constants design §5)"))
+            for b in sorted(refs.bindings):
+                if b not in seen:
+                    out.append(Diagnostic("declaration", where,
+                        f"constant {name!r} references {b!r}, which is not a constant declared "
+                        f"earlier; constants are evaluated top-to-bottom (constants design §5)"))
+        seen.add(name)
+
+
 def _check_declarations(w: Workflow, out: list[Diagnostic]) -> bool:
     """Every typed-declaration rule, on the authored doc (design 2026-07-20 §2, §4).
     True iff nothing new was found, i.e. the doc is safe to hand to the expander."""
@@ -639,6 +675,29 @@ def _cast_unit(as_: object) -> Unit | None:
     return parse_unit(as_) if isinstance(as_, str) else None
 
 
+def _constant_type(
+    decl: ConstantDecl, types: Mapping[str, BindingType], stream_units: Mapping[str, Unit]
+) -> BindingType:
+    """Inferred type of one constant: literals map by Python type, expressions infer against the
+    constants declared before them; an `as` cast asserts the unit (constants design §5)."""
+    value = decl.value
+    if isinstance(value, str):
+        try:
+            inferred = infer_type(parse_expression(value), types, stream_units).type
+        except ExpressionError:
+            inferred = UNKNOWN
+    elif isinstance(value, bool):          # bool is an int subclass — check first
+        inferred = ScalarType("bool")
+    elif isinstance(value, int):
+        inferred = ScalarType("int")
+    else:                                   # float
+        inferred = ScalarType("number")
+    cast = _cast_unit(decl.as_)
+    if cast is not None:
+        inferred = ScalarType(inferred.base, cast)
+    return inferred
+
+
 def _collect_binding_types(w: Workflow, stream_units: Mapping[str, Unit]) -> dict[str, BindingType]:
     """Inferred type (base + unit) of every binding, in document order (design §4.1, §5):
     operator inputs from their declared `type`, compute bindings from their `value` expression
@@ -648,6 +707,9 @@ def _collect_binding_types(w: Workflow, stream_units: Mapping[str, Unit]) -> dic
 
     def record(name: str, t: BindingType) -> None:
         types[name] = t if name not in types else join_types(types[name], t)
+
+    for name, decl in w.constants.items():
+        types[name] = _constant_type(decl, types, stream_units)
 
     for _, b in _iter_all_blocks(w):
         if isinstance(b, B.OperatorInput) and isinstance(b.name, str):
@@ -1175,6 +1237,14 @@ def _check_namespaces(w: Workflow, out: list[Diagnostic]) -> None:
             f"name {n!r} is written by both operator_input and compute; a binding has "
             f"one kind of writer",
         ))
+    const_names = set(w.constants)
+    for n in sorted(const_names & declared):
+        out.append(Diagnostic("declaration", "names",
+            f"name {n!r} is used as both a constant and a stream"))
+    for n in sorted(const_names & binding_names):
+        out.append(Diagnostic("declaration", "bindings",
+            f"{n!r} is a constant and cannot also be written by compute or operator_input; "
+            f"constants are write-once (constants design §5)"))
 
 
 def _check_block(
@@ -1540,7 +1610,11 @@ def _visit_blocks(blocks: list[B.Block], prefix: str, state: _PathState, c: _Ctx
 
 
 def _analyze_paths(w: Workflow, out: list[Diagnostic]) -> None:
-    _visit_blocks(w.blocks, "blocks", _PathState(), _Ctx(w, out))
+    # Constants are bound before any block runs (constants design §5; engine seeding in
+    # ExperimentRun.__init__) -- the path-sensitive proof must start from that same fact, or
+    # every block reading a constant would be flagged as reading an unwritten binding.
+    initial = _PathState(bindings=set(w.constants))
+    _visit_blocks(w.blocks, "blocks", initial, _Ctx(w, out))
 
 
 def _check_abort_not_under_tolerance(w: Workflow, out: list[Diagnostic]) -> None:
@@ -1602,6 +1676,7 @@ def _validate_workflow(workflow: Workflow, out: list[Diagnostic]) -> None:
     expandable = _check_groups(workflow, out)
     _check_defaults(workflow, out)
     _check_namespaces(workflow, out)
+    _check_constants(workflow, out)
     stream_units = _stream_units(workflow)
     env = _TypeEnv(_collect_binding_types(workflow, stream_units), stream_units)
     for path, block in _iter_all_blocks(workflow):

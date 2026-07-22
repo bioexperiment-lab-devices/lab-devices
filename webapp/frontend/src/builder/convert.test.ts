@@ -310,6 +310,23 @@ describe('treeToDoc', () => {
     const content = docToTree(fixture('valid-od-growth'))
     expect(treeToDoc(content).workflow.streams?.od?.persistence).toBeUndefined()
   })
+
+  it('round-trips constants and places the key between streams and groups', () => {
+    const doc = {
+      doc_version: 1, name: 'c', description: null,
+      workflow: {
+        schema_version: 3,
+        persistence: { default: 'in_memory', format: 'jsonl' },
+        streams: { od: { units: 'unitless' } },
+        constants: { MAX: { value: 37, as: 'celsius' }, DERIVED: { value: 'MAX * 2' } },
+        blocks: [],
+      },
+    }
+    const back = treeToDoc(docToTree(doc as never))
+    expect(back.workflow.constants).toEqual(doc.workflow.constants)
+    const keys = Object.keys(back.workflow).filter((k) => ['streams', 'constants', 'groups'].includes(k))
+    expect(keys).toEqual(['streams', 'constants'])
+  })
 })
 
 describe('treeToDoc rejects a corrupt-but-shaped DocContent', () => {

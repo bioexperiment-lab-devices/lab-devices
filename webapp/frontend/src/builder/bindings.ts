@@ -92,6 +92,9 @@ function exprFields(node: BlockNode): Array<[string, string]> {
     case 'branch':
       push('condition', node.condition)
       break
+    case 'wait':
+      push('duration', node.duration)
+      break
     case 'loop':
       push('count', node.count)
       push('until', node.until)
@@ -172,4 +175,18 @@ export function bindingIndex(
       decl: w.length === 0 ? (declKind[name] ?? null) : null,
     }
   })
+}
+
+/** How many expression-bearing fields in `tree` reference the bare name `name`. Used by the
+ * constants delete-refusal check — constants live in the binding namespace and are cited inside
+ * expression strings, not structural node fields (constants design §7). */
+export function countBindingRefs(tree: BlockNode[], name: string): number {
+  const names = new Set([name])
+  let count = 0
+  visitNodes(tree, (node) => {
+    for (const [, text] of exprFields(node)) {
+      if (bindingReferences(text, names).length > 0) count++
+    }
+  })
+  return count
 }

@@ -6,6 +6,7 @@ import { BLOCK_SECTIONS, type BlockChip } from './paletteSections'
 import { Chip } from './Chip'
 import { RolesSection } from './RolesSection'
 import { StreamsPanel } from './StreamsPanel'
+import { ConstantsPanel } from './ConstantsPanel'
 import { BindingsPanel } from './BindingsPanel'
 import { KindIcon } from '../ui/icons'
 import { IconButton } from '../ui/IconButton'
@@ -135,6 +136,9 @@ export function Palette() {
       </Section>
       <Section title="Groups" defaultOpen={false}>
         <GroupsPanel />
+      </Section>
+      <Section title="Constants" defaultOpen={false}>
+        <ConstantsPanel />
       </Section>
       <Section title="Bindings" defaultOpen={false}>
         <BindingsPanel />

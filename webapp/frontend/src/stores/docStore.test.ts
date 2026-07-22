@@ -4,6 +4,7 @@ import { docToTree } from '../builder/convert'
 import {
   newPaletteNode,
   type CommandNode,
+  type ComputeNode,
   type GroupRefNode,
   type MeasureNode,
 } from '../builder/tree'
@@ -35,6 +36,11 @@ const cmd = (uid: string, device: string): CommandNode => ({
 
 const meas = (uid: string, device: string, into: string): MeasureNode => ({
   uid, kind: 'measure', device, verb: 'measure', into, params: {},
+  label: null, gapAfter: null, startOffset: null,
+})
+
+const comp = (uid: string, into: string, value: ComputeNode['value']): ComputeNode => ({
+  uid, kind: 'compute', into, value,
   label: null, gapAfter: null, startOffset: null,
 })
 
@@ -120,6 +126,61 @@ describe('docStore', () => {
     expect(store().streams.od600.units).toBe('mAU')
     store().removeBlock('m1')
     expect(store().removeStream('od600')).toBeNull()
+  })
+
+  describe('constants lifecycle', () => {
+    it('adds, edits, refuses dup, refuses delete-while-referenced, then deletes', () => {
+      expect(store().addConstant('MAX', 37)).toBeNull()
+      expect(store().constants.MAX).toEqual({ value: 37 })
+      expect(store().addConstant('MAX', 1)).toMatch(/already exists/)
+      expect(store().addConstant('1bad', 1)).toMatch(/identifier/)
+
+      store().setConstantUnit('MAX', 'celsius')
+      expect(store().constants.MAX).toEqual({ value: 37, as: 'celsius' })
+      store().setConstantValue('MAX', 'OTHER * 2')
+      expect(store().constants.MAX.value).toBe('OTHER * 2')
+
+      // an empty/null unit drops the `as` key rather than persisting it as `undefined`
+      store().setConstantUnit('MAX', null)
+      expect(store().constants.MAX).toEqual({ value: 'OTHER * 2' })
+
+      // reference it from a compute block, then deletion must be refused
+      store().insertBlock(comp('c1', 'y', 'MAX + 1'), { parentUid: null, slot: 'blocks', index: 0 })
+      expect(store().removeConstant('MAX')).toMatch(/used by/)
+      expect(store().constants).toHaveProperty('MAX')
+
+      store().removeBlock('c1')
+      expect(store().removeConstant('MAX')).toBeNull()
+      expect(store().constants).not.toHaveProperty('MAX')
+    })
+
+    // Same reasoning as removeRole/removeStream above (Task 9 review, Finding 1): a constant
+    // referenced only from a group body, never the main tree, must still refuse deletion.
+    it('refuses to delete a constant referenced only from a group body', () => {
+      expect(store().addConstant('MAX', 1)).toBeNull()
+      store().addGroup('service')
+      store().setScope('service')
+      store().insertBlock(comp('c1', 'y', 'MAX + 1'), { parentUid: null, slot: 'blocks', index: 0 })
+      store().setScope(null)
+      expect(store().tree).toEqual([]) // the only reference lives inside the group body
+      expect(store().removeConstant('MAX')).toMatch(/1 block/)
+      expect(store().constants).toHaveProperty('MAX')
+
+      store().setScope('service')
+      store().removeBlock('c1')
+      store().setScope(null)
+      expect(store().removeConstant('MAX')).toBeNull()
+    })
+
+    // A constant's value expression can reference an earlier constant (constants design §5);
+    // that reference must block deletion just like a block reference does.
+    it('refuses to delete a constant referenced by another constant\'s value', () => {
+      expect(store().addConstant('A', 1)).toBeNull()
+      expect(store().addConstant('B', 'A * 2')).toBeNull()
+      expect(store().removeConstant('A')).toMatch(/used by/)
+      expect(store().removeConstant('B')).toBeNull()
+      expect(store().removeConstant('A')).toBeNull()
+    })
   })
 
   it('loadDoc replaces state, clears history, and reads clean; markSaved clears dirty', () => {
@@ -299,6 +360,7 @@ describe('docStore', () => {
           metadata: { name: 'macro' },
           persistence: { default: 'in_memory', format: 'jsonl' },
           streams: {},
+          constants: { MAX: { value: 37, as: 'celsius' } },
           groups: {
             service: { params: [{ name: 'tube', kind: 'int' }], body: [{ wait: { duration: '{tube}s' } }] },
           },
@@ -512,6 +574,18 @@ describe('docStore', () => {
       expect(selectDirty(store())).toBe(true)
     })
 
+    // Mirrors the groups dirty-check test above (Task 9 review, Finding 3): nothing pinned
+    // `constants` being part of the dirty-check hash — mutation-tested by removing
+    // `constants: content.constants,` from `snapshotOf` and confirming the full suite stayed
+    // green without this test.
+    it('the dirty-check covers constants — adding one must not read clean', () => {
+      expect(selectDirty(store())).toBe(false)
+      store().addConstant('MAX', 37)
+      expect(selectDirty(store())).toBe(true)
+      const out = selectDoc(store()).workflow.constants
+      expect(out).toEqual({ MAX: { value: 37 } })
+    })
+
     it('setGroupParams stores typed decls; setGroupLocals stores locals; both round-trip and dirty', () => {
       loadDoc(docToTree({ doc_version: 1, name: 'g', description: null,
         workflow: { schema_version: 3, groups: { svc: { body: [] } }, blocks: [] } }), 'id')
@@ -535,6 +609,7 @@ const emptyDocContent = () => ({
   streams: {},
   tree: [],
   groups: {},
+  constants: {},
 })
 
 describe('loadDoc view rehydration', () => {

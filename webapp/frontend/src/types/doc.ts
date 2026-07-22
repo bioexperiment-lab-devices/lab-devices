@@ -110,6 +110,13 @@ export interface ComputeBody {
   as?: string | null // unit cast for the bound value (type-system design 2026-07-21 §6)
 }
 
+/** A workflow-global, write-once constant (constants design 2026-07-22). `value` mirrors
+ * ComputeBody.value (literal or expression string); `as` optionally asserts a unit. */
+export interface ConstantDeclJson {
+  value: ParamValue
+  as?: string | null
+}
+
 export interface RecordBody {
   into: string
   value: ParamValue
@@ -169,6 +176,7 @@ export interface WorkflowJson {
   persistence?: Record<string, unknown>
   roles?: Record<string, RoleDeclJson> // roles LIVE HERE now (schema 2)
   streams?: Record<string, StreamDeclJson>
+  constants?: Record<string, ConstantDeclJson>
   groups?: Record<string, GroupJson>
   defaults?: { retry?: RetryJson }
   blocks: BlockJson[]
