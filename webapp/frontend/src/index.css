@@ -75,6 +75,7 @@
   --color-slate-500: oklch(70.4% 0.04 256.788); /* [text-hint] slate-400 */
   --color-slate-600: oklch(76% 0.035 257); /* [text-caption] interpolated 300↔400 */
   --color-slate-700: oklch(86.9% 0.022 252.894); /* [strong text] slate-300 */
+  --color-slate-800: oklch(92.9% 0.013 255.508); /* [expr tokens] slate-200 */
   --color-slate-900: oklch(96.8% 0.007 247.896); /* [primary text] slate-100 */
 
   /* State: error (red) */
@@ -125,9 +126,10 @@
   --color-lime-50: oklch(27.4% 0.072 132.109); /* lime-950 */
   --color-lime-200: oklch(45.3% 0.124 130.933); /* lime-800 */
 
-  /* Construct/role text accents */
+  /* Construct/role text accents (incl. the expression-editor token palette) */
   --color-teal-700: oklch(85.5% 0.138 181.071); /* teal-300 */
   --color-violet-700: oklch(81.1% 0.111 293.571); /* violet-300 */
+  --color-fuchsia-700: oklch(83.3% 0.145 321.434); /* fuchsia-300 */
 
   /* Role swatches (roleColors.ts) — saturated mid-steps read on dark; unchanged. */
   --color-teal-500: oklch(70.4% 0.14 182.503);
