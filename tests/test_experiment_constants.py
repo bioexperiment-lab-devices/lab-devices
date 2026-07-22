@@ -1,5 +1,6 @@
 from lab_devices.experiment.workflow import ConstantDecl, Workflow
 from lab_devices.experiment.serialize import workflow_from_dict, workflow_to_dict
+from lab_devices.experiment.validate import binding_types
 
 
 def test_workflow_defaults_constants_to_empty():
@@ -48,3 +49,18 @@ def test_constants_key_sits_between_streams_and_groups():
     out = workflow_to_dict(workflow_from_dict(doc))
     keys = [k for k in out if k in ("streams", "constants", "groups")]
     assert keys == ["streams", "constants"]  # groups empty -> omitted; constants after streams
+
+
+def test_constants_appear_in_binding_types_with_units():
+    w = workflow_from_dict(_doc({"MAX_TEMP": {"value": 37.0, "as": "celsius"},
+                                 "DOSES": {"value": 3}}))
+    types = binding_types(w)
+    assert types["DOSES"].base == "int"
+    assert types["MAX_TEMP"].base == "number"
+    from lab_devices.experiment.units import unit_str
+    assert unit_str(types["MAX_TEMP"].unit) == "celsius"
+
+
+def test_derived_constant_infers_from_earlier_constant():
+    w = workflow_from_dict(_doc({"DOSES": {"value": 3}, "TOTAL": {"value": "DOSES * 2"}}))
+    assert binding_types(w)["TOTAL"].base == "int"

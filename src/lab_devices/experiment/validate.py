@@ -45,6 +45,7 @@ from lab_devices.experiment.units import UNITLESS, Unit, parse_unit, unit_str
 from lab_devices.experiment.serialize import load_workflow
 from lab_devices.experiment.workflow import (
     REFERENCE_KINDS,
+    ConstantDecl,
     Group,
     LocalDecl,
     ParamDecl,
@@ -639,6 +640,29 @@ def _cast_unit(as_: object) -> Unit | None:
     return parse_unit(as_) if isinstance(as_, str) else None
 
 
+def _constant_type(
+    decl: ConstantDecl, types: Mapping[str, BindingType], stream_units: Mapping[str, Unit]
+) -> BindingType:
+    """Inferred type of one constant: literals map by Python type, expressions infer against the
+    constants declared before them; an `as` cast asserts the unit (constants design §5)."""
+    value = decl.value
+    if isinstance(value, str):
+        try:
+            inferred = infer_type(parse_expression(value), types, stream_units).type
+        except ExpressionError:
+            inferred = UNKNOWN
+    elif isinstance(value, bool):          # bool is an int subclass — check first
+        inferred = ScalarType("bool")
+    elif isinstance(value, int):
+        inferred = ScalarType("int")
+    else:                                   # float
+        inferred = ScalarType("number")
+    cast = _cast_unit(decl.as_)
+    if cast is not None:
+        inferred = ScalarType(inferred.base, cast)
+    return inferred
+
+
 def _collect_binding_types(w: Workflow, stream_units: Mapping[str, Unit]) -> dict[str, BindingType]:
     """Inferred type (base + unit) of every binding, in document order (design §4.1, §5):
     operator inputs from their declared `type`, compute bindings from their `value` expression
@@ -648,6 +672,9 @@ def _collect_binding_types(w: Workflow, stream_units: Mapping[str, Unit]) -> dic
 
     def record(name: str, t: BindingType) -> None:
         types[name] = t if name not in types else join_types(types[name], t)
+
+    for name, decl in w.constants.items():
+        types[name] = _constant_type(decl, types, stream_units)
 
     for _, b in _iter_all_blocks(w):
         if isinstance(b, B.OperatorInput) and isinstance(b.name, str):
