@@ -246,3 +246,17 @@ async def test_validate_surfaces_constants(client: httpx.AsyncClient) -> None:
     body = resp.json()
     assert body["ok"] is True and body["diagnostics"] == []
     assert body["binding_types"]["MAX_TEMP"] == {"base": "number", "unit": "celsius"}
+
+
+async def test_valid_constants_fixture(client: httpx.AsyncClient) -> None:
+    """End-to-end golden fixture (constants design §5, task 13): a plain literal (`DOSES`), a
+    unit'd literal (`MAX_TEMP`), and a constant derived from an earlier one (`TOTAL_ML`), the
+    derived one read by both a `compute` and (transitively) an `alarm` guard. Exercises the
+    same expand -> engine parse/validate -> binding_types path as the other fixtures above,
+    end to end through the real backend rather than an inline workflow dict."""
+    resp = await client.post("/api/validate", json=load_fixture("valid-constants.json"))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True and body["diagnostics"] == []
+    assert body["binding_types"]["MAX_TEMP"] == {"base": "number", "unit": "celsius"}
+    assert body["binding_types"]["TOTAL_ML"]["base"] == "number"

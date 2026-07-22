@@ -40,6 +40,7 @@ A workflow is a single JSON object. Only `schema_version` and `blocks` are requi
 | `defaults` | no | `retry` only — a blanket `on_error` would make a missed injection silently survivable |
 | `roles` | no | named instrument slots (§5) |
 | `streams` | no | declared sample series; a block may only write a declared stream |
+| `constants` | no | named, write-once, workflow-global values (§8) |
 | `groups` | no | reusable, parametrized block bodies (§3) |
 | `blocks` | yes | the ordered tree the run executes |
 
@@ -627,3 +628,77 @@ document — one `service` group with locals rather than the empty-bodied stand-
 Experiment Studio persists an in-progress document to `localStorage`. A draft saved under v1 is
 discarded on load rather than restored, because a shallow shape check cannot tell a v1 body from
 a v2 one and would otherwise silently resurrect a document that no longer loads.
+
+## 8. Constants
+
+A constant is a named, write-once, workflow-global value, seeded into bindings before any block
+runs (constants design 2026-07-22 §5). It is declared under the top-level `constants` key, which
+sits between `streams` and `groups` in a document (§1):
+
+```jsonc
+{
+  "constants": {
+    "MAX_TEMP":  {"value": 37.0, "as": "celsius"},
+    "DOSES":     {"value": 3},
+    "TOTAL_ML":  {"value": "DOSES * 2.5"}
+  }
+}
+```
+
+Each entry is `{value, as?}`:
+
+- `value` is either a literal (`int`/`number`/`bool`) or an expression string, exactly like
+  `compute.value` (§6).
+- `as` optionally casts/asserts a unit, exactly like `compute`/`record`'s `as` (§7).
+
+**Declaration order is the reference order.** `constants` is a JSON object, so its key order
+*is* declaration order, and an expression may reference only a constant declared **earlier** in
+that same order — `TOTAL_ML` above may read `DOSES` because `DOSES` comes first; the reverse
+would be a load-time diagnostic. A constant expression may not reference a stream, an
+`operator_input`, or a `compute` binding either: constants are evaluated top-to-bottom once,
+before any block runs, so nothing runtime-written is available yet to read. This is the same
+reasoning as a group local's `init` restriction (§3.3), applied to every constant instead of just
+one hoisted `compute` per local.
+
+**Constants are immutable.** A name declared as a constant cannot also be written by `compute` or
+`operator_input`, and cannot double as a stream name — write-once is a validation error, not a
+style guideline.
+
+**Where a constant may be used:**
+
+- In every expression slot (§6): `branch.if`, `abort.if`, `alarm.if`, `compute.value`,
+  `record.value`, any duration slot, and `loop.count`.
+- In any `int`/`number`/`bool`-kind device or measure param (§6's "any device param slot"),
+  because those accept an expression string exactly like a duration slot does.
+
+**Where a constant may *not* be used (yet):**
+
+- A `string`-kind device param takes a literal string (or one of its declared `choices`), never
+  an expression — a constant reference there is inert text, not a lookup.
+- A `group_ref` arg or a `for_each` row cell for a **value kind** (`int`/`number`/`bool`/`string`)
+  is a typed hole substitution, not an evaluated expression (§3.4, §4): the raw JSON value is
+  checked against the param's kind directly, so writing a constant's name there is just a string
+  that fails that kind check, not a reference that resolves. Pass the constant's *value* as a
+  literal at the call site instead.
+
+Here is the whole mechanism in one loadable document — a plain literal, a unit'd literal, and a
+constant derived from an earlier one, read by both a `compute` and an `alarm` guard:
+
+```json
+{
+  "schema_version": 3,
+  "persistence": {"default": "in_memory", "format": "jsonl"},
+  "constants": {
+    "MAX_TEMP": {"value": 37.0, "as": "celsius"},
+    "DOSES": {"value": 3},
+    "TOTAL_ML": {"value": "DOSES * 2.5"}
+  },
+  "blocks": [
+    {"compute": {"into": "planned_ml", "value": "TOTAL_ML"}},
+    {"alarm": {"if": "planned_ml > 10", "message": "dose too large"}}
+  ]
+}
+```
+
+This is `webapp/fixtures/valid-constants.json`'s `workflow` object verbatim, and is exercised
+end to end (through `/api/validate`) by `test_valid_constants_fixture`.

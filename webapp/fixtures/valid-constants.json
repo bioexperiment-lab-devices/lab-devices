@@ -1,0 +1,18 @@
+{
+  "doc_version": 1,
+  "name": "Constants demo",
+  "description": "Reusable typed constants used across a guard and a compute.",
+  "workflow": {
+    "schema_version": 3,
+    "persistence": { "default": "in_memory", "format": "jsonl" },
+    "constants": {
+      "MAX_TEMP": { "value": 37.0, "as": "celsius" },
+      "DOSES": { "value": 3 },
+      "TOTAL_ML": { "value": "DOSES * 2.5" }
+    },
+    "blocks": [
+      { "compute": { "into": "planned_ml", "value": "TOTAL_ML" } },
+      { "alarm": { "if": "planned_ml > 10", "message": "dose too large" } }
+    ]
+  }
+}
