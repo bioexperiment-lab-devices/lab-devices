@@ -16,7 +16,6 @@ import { ScrollFades, useScrollEdges } from '../ui/ScrollX'
 import { useDismissable } from '../ui/useDismissable'
 import {
   cardBorderClass,
-  constructBorderClass,
   headerFillClass,
   interiorFillClass,
   isFlowKind,
@@ -556,17 +555,18 @@ function BranchLanes({ node }: { node: BranchNode }) {
     //     it belongs to the card, not to whichever arm happens to be empty. Same doc, same
     //     canvas: THEN 461.2px (its content) / ELSE 192px (the min-w-48 floor).
     <div className="flex gap-2">
-      {/* The arm separator reads `branch`'s tint out of CONSTRUCT_CHROME rather than repeating
-          `border-violet-200`: construct identity is encoded in exactly one place, so
-          retinting branch retints the arm separator too. */}
-      <div className="min-w-48 flex-initial px-1 pb-1">
-        <p className="flex h-6 items-center text-[10px] uppercase text-caption">then</p>
+      {/* Arms use the same p-1 as parallel lanes and are divided by the same plain slate hairline
+          (#5, #10): a Branch and a Parallel at the same depth inset their content equally, and the
+          divider is a clean neutral line matching the Toolbar's `w-px bg-slate-200`. */}
+      <div className="min-w-48 flex-initial p-1">
+        <p className="flex h-6 items-center px-1 text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
       </div>
-      <div className={'min-w-48 flex-initial border-l px-1 pb-1 ' + constructBorderClass('branch')}>
+      <span aria-hidden className="w-px self-stretch bg-slate-200" />
+      <div className="min-w-48 flex-initial p-1">
         {node.else === null ? (
           <>
-            <p className="flex h-6 items-center text-[10px] uppercase text-caption">else</p>
+            <p className="flex h-6 items-center px-1 text-[10px] uppercase text-caption">else</p>
             <div className="flex flex-col">
               {/* Mirrors the leading `DropSlot` of the THEN arm's BlockList — a vertical
                   DropSlot renders `my-0.5 h-2` (DropSlot.tsx), and this arm has no BlockList
@@ -589,7 +589,7 @@ function BranchLanes({ node }: { node: BranchNode }) {
           </>
         ) : (
           <>
-            <p className="flex h-6 items-center justify-between text-[10px] uppercase text-caption">
+            <p className="flex h-6 items-center justify-between px-1 text-[10px] uppercase text-caption">
               <span>else</span>
               {node.else.length === 0 && (
                 <IconButton
