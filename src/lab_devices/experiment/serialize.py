@@ -14,6 +14,7 @@ from lab_devices.experiment.units import parse_unit
 from lab_devices.experiment.workflow import (
     REFERENCE_KINDS,
     VALUE_KINDS,
+    ConstantDecl,
     Defaults,
     Group,
     LocalDecl,
@@ -574,6 +575,23 @@ def workflow_from_dict(d: Any) -> Workflow:
         units = _str(units, f"stream {name!r} units")
         parse_unit(units)  # validate the annotation now (raises UnitError on a bad unit)
         streams[name] = StreamDecl(units=units, persistence=s.get("persistence"))
+    constants: dict[str, ConstantDecl] = {}
+    for name, cv in _obj(d.get("constants", {}), "constants").items():
+        c = _obj(cv, f"constant {name!r}")
+        if "value" not in c:
+            raise WorkflowLoadError(f"constant {name!r} must declare a `value`")
+        value = c["value"]
+        if isinstance(value, str):
+            value = _checked_expr(value, f"constant {name!r} value")
+        elif not isinstance(value, (int, float, bool)):
+            raise WorkflowLoadError(
+                f"constant {name!r} value must be a number, bool, or expression string"
+            )
+        as_ = c.get("as")
+        if as_ is not None:
+            as_ = _str(as_, f"constant {name!r} as")
+            parse_unit(as_)  # validate the unit annotation now (raises UnitError on a bad unit)
+        constants[name] = ConstantDecl(value=value, as_=as_)
     groups: dict[str, Group] = {}
     for name, gv in _obj(d.get("groups", {}), "groups").items():
         g = _obj(gv, f"group {name!r}")
@@ -586,7 +604,7 @@ def workflow_from_dict(d: Any) -> Workflow:
     blocks = _children(d.get("blocks", []), "blocks", roles)
     return Workflow(
         schema_version=version, blocks=blocks, metadata=metadata, persistence=persistence,
-        streams=streams, groups=groups, roles=roles, defaults=defaults,
+        streams=streams, constants=constants, groups=groups, roles=roles, defaults=defaults,
     )
 
 
@@ -630,6 +648,11 @@ def workflow_to_dict(w: Workflow) -> dict[str, Any]:
             name: {k: v for k, v in (("units", s.units), ("persistence", s.persistence))
                    if v is not None}
             for name, s in w.streams.items()
+        }
+    if w.constants:
+        out["constants"] = {
+            name: ({"value": c.value} if c.as_ is None else {"value": c.value, "as": c.as_})
+            for name, c in w.constants.items()
         }
     if w.groups:
         groups_out: dict[str, Any] = {}
