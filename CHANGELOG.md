@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.3.0...v1.4.0) (2026-07-22)
+
+
+### Features
+
+* **studio:** dark theme ([#73](https://github.com/bioexperiment-lab-devices/lab-devices/issues/73)) ([3163bb7](https://github.com/bioexperiment-lab-devices/lab-devices/commit/3163bb7a7d1b80bb3d9305c2fc6c647e197833a3))
+* **studio:** workflow constants — declare and reuse typed values across a workflow ([#75](https://github.com/bioexperiment-lab-devices/lab-devices/issues/75)) ([25e519a](https://github.com/bioexperiment-lab-devices/lab-devices/commit/25e519aa65a3f05f970735bc6c5efb7c9607df65))
+
 ## [1.3.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.2.0...v1.3.0) (2026-07-21)
 
 
