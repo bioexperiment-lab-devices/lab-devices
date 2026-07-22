@@ -43,3 +43,27 @@ the **cookbook** open as you build.
 > **Note:** This first edition focuses on **creating** workflows. Running and analyzing are
 > covered only as far as the quickstarts need them; a full guide to the Run and Records
 > tabs comes later.
+
+<!--
+MAINTAINER COVERAGE MAP (not rendered) — spec: docs/superpowers/specs/2026-07-22-studio-user-guide-design.md §4
+  4.1 platform/shell ............. 01-overview
+  4.2 canvas & toolbar ........... 01-overview, 04-blocks/index
+  4.3 block-level common settings  04-blocks/index
+  4.4 device actions ............. 04-blocks/device-actions
+  4.5 flow blocks ................ 04-blocks/flow
+  4.6 data blocks ................ 04-blocks/data
+  4.7 pause blocks ............... 04-blocks/pause
+  4.8 safety blocks .............. 04-blocks/safety
+  4.9 groups ..................... 04-blocks/groups
+  4.10 roles ..................... 03-concepts/roles
+  4.11 streams ................... 03-concepts/streams
+  4.12 bindings & constants ...... 03-concepts/bindings-and-constants
+  4.13 expressions ............... 03-concepts/expressions
+  4.14 type system / units ....... 03-concepts/bindings-and-constants, 04-blocks/device-actions, flow, data, groups
+  4.15 validation & problems ..... 01-overview, 04-blocks/index
+  4.16 running (quickstart depth)  02-quickstart/a-no-lab, 02-quickstart/b-pump-densitometer
+  quickstarts (spec §5) .......... 02-quickstart/*
+  cookbook (spec §6) ............. 05-cookbook/* (8 recipes)
+Device facts pinned to src/lab_devices/experiment/registry.py (3 types: pump, valve, densitometer).
+-->
+
