@@ -27,11 +27,20 @@ describe('catalog integrity', () => {
     }
   })
 
-  it('no duplicate command names within a device type', () => {
+  it('no duplicate labels within a device type', () => {
+    // Labels are the CommandPanel's React key and must be unique; a cmd may be aliased
+    // (e.g. "Read temperature" is a second control backed by the `status` cmd).
     for (const cmds of Object.values(CATALOG)) {
-      const names = cmds.map((c) => c.cmd)
-      expect(new Set(names).size).toBe(names.length)
+      const labels = cmds.map((c) => c.label)
+      expect(new Set(labels).size).toBe(labels.length)
     }
+  })
+
+  it('densitometer exposes a Read temperature control backed by status', () => {
+    const temp = CATALOG.densitometer.find((c) => c.label === 'Read temperature')
+    expect(temp).toBeDefined()
+    expect(temp?.cmd).toBe('status')
+    expect(temp?.category).toBe('measure')
   })
 
   it('locate presets reference a real command of that type', () => {

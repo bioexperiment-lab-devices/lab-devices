@@ -76,7 +76,7 @@ export function CommandPanel(props: { lab: string; devices: LabDevice[] }) {
               <span className="w-24 shrink-0 text-xs text-caption">{label}</span>
               {group.map((cmd) => (
                 <button
-                  key={cmd.cmd}
+                  key={cmd.label}
                   type="button"
                   disabled={busy}
                   onClick={() => onCommand(cmd)}

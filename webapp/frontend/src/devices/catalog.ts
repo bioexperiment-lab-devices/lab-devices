@@ -141,6 +141,9 @@ export const CATALOG: Record<DeviceType, CommandDef[]> = {
       isJob: true,
       params: [{ name: 'include_raw', label: 'include raw', kind: 'bool' }],
     },
+    // Convenience alias of `status`: reads temperature without running the optics/LED, mirroring
+    // the engine's read_temperature verb. A deliberate cmd-alias — panel buttons key on label.
+    { cmd: 'status', label: 'Read temperature', category: 'measure', isJob: false, params: [] },
     { cmd: 'measure_blank', label: 'Measure blank', category: 'measure', isJob: true, params: [] },
     {
       cmd: 'get_readings',
