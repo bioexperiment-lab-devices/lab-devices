@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from lab_devices.experiment.blocks import Block, Retry
+from lab_devices.experiment.blocks import Block, Retry, ValueExpr
 from lab_devices.experiment.errors import UnknownRoleError
 
 ParamKind = Literal["int", "number", "bool", "string", "role", "stream", "binding"]
@@ -61,6 +61,16 @@ class RoleDecl:
     device: str | None = None  # optional direct binding for standalone (non-Studio) use
 
 
+@dataclass(frozen=True)
+class ConstantDecl:
+    """A named, write-once, workflow-global value seeded into RunState.bindings before any
+    block runs (constants design 2026-07-22). `value` is a literal or an expression over
+    constants declared EARLIER; `as_` optionally asserts a unit (mirrors compute's `as`)."""
+
+    value: ValueExpr
+    as_: str | None = None
+
+
 @dataclass
 class Group:
     name: str
@@ -86,6 +96,7 @@ class Workflow:
     streams: dict[str, StreamDecl] = field(default_factory=dict)
     groups: dict[str, Group] = field(default_factory=dict)
     roles: dict[str, RoleDecl] = field(default_factory=dict)
+    constants: dict[str, ConstantDecl] = field(default_factory=dict)
     defaults: Defaults = field(default_factory=Defaults)
 
     def role_type(self, role: str) -> str:
