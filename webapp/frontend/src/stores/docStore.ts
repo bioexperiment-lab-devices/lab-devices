@@ -4,8 +4,18 @@
 import { create } from 'zustand'
 import { useStore, type StoreApi } from 'zustand'
 import { temporal, type TemporalState } from 'zundo'
-import type { BindingTypeJson, ExperimentDocJson, LocalDeclJson, ParamDeclJson, RoleDeclJson, WorkflowJson } from '../types/doc'
+import type {
+  BindingTypeJson,
+  ConstantDeclJson,
+  ExperimentDocJson,
+  LocalDeclJson,
+  ParamDeclJson,
+  ParamValue,
+  RoleDeclJson,
+  WorkflowJson,
+} from '../types/doc'
 import type { MappedDiagnostic } from '../builder/paths'
+import { countBindingRefs } from '../builder/bindings'
 import { treeToDoc, type DocContent, type GroupDef } from '../builder/convert'
 import type { DraftView } from './draftStorage'
 import {
@@ -39,6 +49,9 @@ export const STREAM_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 // docs_store.py's `_remap`/paths.ts's `quotedGroupHeadEnd` (Finding 1 review).
 // Kept as its own constant since roles/streams/groups are three separate namespaces.
 export const GROUP_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+// Constants live in the binding namespace (constants design §7), so the identifier character
+// class matches STREAM_NAME_RE/GROUP_NAME_RE, not the lowercase-only ROLE_NAME_RE.
+export const CONSTANT_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 export interface DocSnapshot {
   name: string
@@ -49,6 +62,11 @@ export interface DocSnapshot {
   // persistence is a per-stream override (2026-07-14 review, I2) — no UI sets it, but it
   // must survive store round trips the same way workflow-level persistence/defaults do.
   streams: Record<string, { units: string | null; persistence?: string | null }>
+  // Workflow-global, write-once constants (constants design 2026-07-22) — like groups, the
+  // store has a full authoring API for this one (addConstant/setConstantValue/setConstantUnit/
+  // removeConstant), so it is a required field defaulting to {} rather than opaque carry-
+  // through like persistence/defaults/metadata below.
+  constants: Record<string, ConstantDeclJson>
   tree: BlockNode[]
   // Reusable, parametrized group bodies invoked via group_ref (design §5.2). Unlike
   // persistence/defaults/metadata below, groups is NOT opaque carry-through: the store has a
@@ -107,6 +125,10 @@ export interface EditorState extends DocSnapshot {
   renameStream: (from: string, to: string) => string | null
   removeStream: (name: string) => string | null
   setStreamUnits: (name: string, units: string | null) => void
+  addConstant: (name: string, value: ParamValue, unit?: string | null) => string | null
+  setConstantValue: (name: string, value: ParamValue) => void
+  setConstantUnit: (name: string, unit: string | null) => void
+  removeConstant: (name: string) => string | null
   setScope: (scope: string | null) => void
   focusRole: (name: string | null) => void
   scrollToBlock: (uid: string | null) => void
@@ -129,6 +151,7 @@ export const selectContent = (s: DocSnapshot): DocContent => ({
   description: s.description,
   roles: s.roles,
   streams: s.streams,
+  constants: s.constants,
   tree: s.tree,
   groups: s.groups,
   ...(s.persistence !== undefined ? { persistence: s.persistence } : {}),
@@ -148,6 +171,7 @@ export const snapshotOf = (content: DocContent): string =>
     description: content.description,
     roles: content.roles,
     streams: content.streams,
+    constants: content.constants,
     tree: content.tree,
     groups: content.groups,
     persistence: content.persistence,
@@ -165,6 +189,7 @@ const emptyContent = (): DocContent => ({
   description: null,
   roles: {},
   streams: {},
+  constants: {},
   tree: [],
   groups: {},
 })
@@ -230,10 +255,11 @@ export const useDocStore = create<EditorState>()(
     (set, get) => ({
       ...emptyContent(),
       // Restated explicitly (not just via the `...emptyContent()` spread above): DocContent
-      // declares `groups` optional (Record<...> | undefined) for callers that predate it, so
-      // TS widens the spread's `groups` to include `undefined` — but EditorState's `groups`
-      // is required, like `tree`. The runtime value is the same {} either way.
+      // declares `groups`/`constants` optional (Record<...> | undefined) for callers that
+      // predate them, so TS widens the spread's values to include `undefined` — but
+      // EditorState's fields are required, like `tree`. The runtime value is the same {} either way.
       groups: {},
+      constants: {},
       serverId: null,
       savedSnapshot: snapshotOf(emptyContent()),
       selectedUid: null,
@@ -354,6 +380,39 @@ export const useDocStore = create<EditorState>()(
           streams: name in s.streams ? { ...s.streams, [name]: { ...s.streams[name], units } } : s.streams,
         })),
 
+      addConstant: (name, value, unit) => {
+        if (!CONSTANT_NAME_RE.test(name)) return `constant name must be an identifier`
+        if (name in get().constants) return `constant '${name}' already exists`
+        const decl: ConstantDeclJson = unit ? { value, as: unit } : { value }
+        set((s) => ({ constants: { ...s.constants, [name]: decl } }))
+        return null
+      },
+
+      setConstantValue: (name, value) =>
+        set((s) => ({
+          constants: name in s.constants
+            ? { ...s.constants, [name]: { ...s.constants[name], value } }
+            : s.constants,
+        })),
+
+      setConstantUnit: (name, unit) =>
+        set((s) => ({
+          constants: name in s.constants
+            ? { ...s.constants, [name]: { ...s.constants[name], as: unit ?? undefined } }
+            : s.constants,
+        })),
+
+      // No renameConstant (out of scope) — unlike roles/streams/groups, constants have no
+      // rename action, so there is no ref-rewrite cascade to thread through group bodies here.
+      removeConstant: (name) => {
+        const { tree, groups } = get()
+        let refs = countBindingRefs(tree, name)
+        for (const g of Object.values(groups)) refs += countBindingRefs(g.body, name)
+        if (refs > 0) return `constant '${name}' is used by ${refs} block${refs === 1 ? '' : 's'}`
+        set((s) => ({ constants: removeKey(s.constants, name) }))
+        return null
+      },
+
       setScope: (scope) => set({ scope, selectedUid: null }),
       focusRole: (name) => set({ focusedRole: name }),
       scrollToBlock: (uid) => set({ scrollToUid: uid }),
@@ -437,6 +496,7 @@ export const useDocStore = create<EditorState>()(
         description: state.description,
         roles: state.roles,
         streams: state.streams,
+        constants: state.constants,
         tree: state.tree,
         // groups is a document field, exactly like tree — it belongs in the undo snapshot
         // (design §5.2). `scope` does NOT: it stays out entirely, same as selectedUid, so it
@@ -511,10 +571,14 @@ export function useTemporal<T>(selector: (s: TemporalState<DocSnapshot>) => T): 
 
 export function loadDoc(content: DocContent, serverId: string | null, view?: DraftView): void {
   // Unlike persistence/defaults/metadata (opaque carry-through, legitimately `undefined`),
-  // `groups` is a required field on the live state (like tree) — normalize it up front so
-  // `savedSnapshot` below is computed from the SAME value that lands in state, not from
-  // whatever `content.groups` happened to be before defaulting.
-  const normalized: DocContent = { ...content, groups: content.groups ?? {} }
+  // `groups`/`constants` are required fields on the live state (like tree) — normalize them
+  // up front so `savedSnapshot` below is computed from the SAME values that land in state, not
+  // from whatever `content.groups`/`content.constants` happened to be before defaulting.
+  const normalized: DocContent = {
+    ...content,
+    groups: content.groups ?? {},
+    constants: content.constants ?? {},
+  }
   useDocStore.setState({
     ...normalized,
     // Explicit, not just `...normalized`: zustand's setState (without `replace`) shallow-merges
