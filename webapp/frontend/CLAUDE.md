@@ -54,6 +54,18 @@
   rendered while looking perfect in source.
 - **Tailwind class names must be complete literals in source.** Tailwind 4 scans source
   text; `` `bg-${family}-500` `` compiles to no CSS at all.
+- **Dark theme is a palette remap, not a variant system.** `index.css`'s
+  `:root[data-theme='dark']` block redefines every in-use `--color-*` token; components
+  keep writing plain palette classes (`bg-white`, `text-red-600`) and MUST NOT use
+  `dark:` variants, hex, or arbitrary values — the remap is the only mechanism
+  (StreamChart's `CHART_THEMES` is the one sanctioned exception, uPlot needs concrete
+  strings). A palette step used by a component but absent from the remap renders at its
+  light value in dark mode — the expression editor shipped invisible (measured 1.00:1)
+  dark tokens exactly this way. `npm run capture` shoots BOTH themes (probe R5 enforces
+  AA on each); that is the enforcement, not eyes. Theme state lives in
+  `src/stores/themeStore.ts` (`studio.theme`); `index.html`'s inline script stamps
+  `<html data-theme>` pre-paint — its storage-key literal must match
+  `THEME_STORAGE_KEY` by hand.
 - Hatching (`bg-hatch`, `edge-hatch` in `index.css`) means exactly one thing: *this stands
   for something not shown here*. It has exactly two sanctioned uses — group scope and
   `group_ref`. A third dilutes it to decoration.
