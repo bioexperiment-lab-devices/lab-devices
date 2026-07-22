@@ -16,6 +16,8 @@ taking the shot. File names are relative to this `images/` folder.
 
 | File | Used in | What to capture |
 |------|---------|-----------------|
-| _(rows are added as each guide section is written)_ | | |
+| `overview-tabs.png` | 01-overview | The top tab bar (Builder/Run/Records/Devices/Labs) + theme toggle; Builder active. |
+| `overview-builder-anatomy.png` | 01-overview | Whole Builder with 5 numbered callouts: Palette, Canvas, Inspector, Toolbar, Problems strip. |
+| `overview-block-card.png` | 01-overview | One selected block card; label swatch, icon, summary, problem badge, Duplicate, Delete. |
 
 <!-- SHOT-LIST: entries are appended by each section below this line -->
