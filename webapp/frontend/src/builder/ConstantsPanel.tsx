@@ -46,15 +46,19 @@ export function ConstantsPanel() {
   const removeConstant = useDocStore((s) => s.removeConstant)
   const [newName, setNewName] = useState('')
   const [newValue, setNewValue] = useState('')
+  const [newUnit, setNewUnit] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const add = (): void => {
     if (!newName.trim()) return
-    const err = addConstant(newName.trim(), coerceConstantValue(newValue))
+    const nm = newName.trim()
+    const err = addConstant(nm, coerceConstantValue(newValue))
     setError(err)
     if (!err) {
+      if (newUnit.trim()) setConstantUnit(nm, newUnit.trim())
       setNewName('')
       setNewValue('')
+      setNewUnit('')
     }
   }
 
@@ -66,53 +70,69 @@ export function ConstantsPanel() {
         </p>
       )}
       <ul className="space-y-1">
+        {/* Stacked layout (#8/#9): the 256px palette can't fit name + expression + unit + badge +
+            delete on one row without starving the expression editor to one character. Name row,
+            then a full-width editor, then unit + type badge — the same shape as the create form. */}
         {Object.entries(constants).map(([name, decl]) => (
-          <li key={name} className="flex items-center gap-1 text-sm">
-            <span className="min-w-0 shrink-0 truncate font-mono text-caption" title={name}>
-              {name}
-            </span>
-            <div className="min-w-0 flex-1">
-              <ExpressionEditor
-                value={valueText(decl.value)}
-                expected="any"
-                placeholder="value or expression"
-                onCommit={(t) => setConstantValue(name, coerceConstantValue(t))}
+          <li key={name} className="space-y-1 border-b border-slate-200 pb-1 text-sm">
+            <div className="flex items-center gap-1">
+              <span className="min-w-0 flex-1 truncate font-mono text-caption" title={name}>
+                {name}
+              </span>
+              <IconButton
+                icon={X}
+                label="Delete constant"
+                destructive
+                onClick={() => setError(removeConstant(name))}
               />
             </div>
-            <input
-              value={decl.as ?? ''}
-              placeholder="unit"
-              onChange={(e) => setConstantUnit(name, e.target.value || null)}
-              className={controlClass({ width: 'w-14' })}
+            <ExpressionEditor
+              value={valueText(decl.value)}
+              expected="any"
+              placeholder="value or expression"
+              onCommit={(t) => setConstantValue(name, coerceConstantValue(t))}
             />
-            <TypeBadge name={name} />
-            <IconButton
-              icon={X}
-              label="Delete constant"
-              destructive
-              onClick={() => setError(removeConstant(name))}
-            />
+            <div className="flex items-center gap-1">
+              <input
+                value={decl.as ?? ''}
+                placeholder="unit"
+                onChange={(e) => setConstantUnit(name, e.target.value || null)}
+                className={controlClass({ width: 'w-20' })}
+              />
+              <TypeBadge name={name} />
+            </div>
           </li>
         ))}
       </ul>
-      <div className="flex items-center gap-1">
-        <input
-          value={newName}
-          placeholder="name"
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && add()}
-          className={controlClass({ mono: true, width: 'w-24' })}
+      {/* Create form mirrors the stacked edit rows: name + Add, a full-width expression editor for
+          the value, then a unit field (#8). ExpressionEditor commits on blur/Enter into newValue;
+          pressing Add (or Enter in the name/unit input) creates the constant. */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-1">
+          <input
+            value={newName}
+            placeholder="name"
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && add()}
+            className={controlClass({ mono: true, width: 'w-full' })}
+          />
+          <button onClick={add} className={inlineButtonClass()}>
+            Add
+          </button>
+        </div>
+        <ExpressionEditor
+          value={newValue}
+          expected="any"
+          placeholder="value or expression"
+          onCommit={(t) => setNewValue(t)}
         />
         <input
-          value={newValue}
-          placeholder="value"
-          onChange={(e) => setNewValue(e.target.value)}
+          value={newUnit}
+          placeholder="unit"
+          onChange={(e) => setNewUnit(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
           className={controlClass({ width: 'w-20' })}
         />
-        <button onClick={add} className={inlineButtonClass()}>
-          Add
-        </button>
       </div>
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>

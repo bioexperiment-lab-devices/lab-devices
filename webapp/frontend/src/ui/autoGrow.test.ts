@@ -27,6 +27,25 @@ describe('autoGrowHeight', () => {
   it('never returns a height below one line', () => {
     expect(autoGrowHeight({ scrollHeight: 0, lineHeight: 16, maxLines: 8 }).height).toBe(16)
   })
+
+  it('floors a single short line at minHeight when given', () => {
+    expect(autoGrowHeight({ scrollHeight: 20, lineHeight: 16, maxLines: 6, minHeight: 24 })).toEqual(
+      { height: 24, overflow: 'hidden' },
+    )
+  })
+
+  it('lets content taller than minHeight grow', () => {
+    expect(autoGrowHeight({ scrollHeight: 48, lineHeight: 16, maxLines: 6, minHeight: 24 })).toEqual(
+      { height: 48, overflow: 'hidden' },
+    )
+  })
+
+  it('defaults minHeight to lineHeight when omitted', () => {
+    expect(autoGrowHeight({ scrollHeight: 10, lineHeight: 16, maxLines: 6 })).toEqual({
+      height: 16,
+      overflow: 'hidden',
+    })
+  })
 })
 
 describe('collapseNewlines', () => {

@@ -39,3 +39,28 @@ describe('analyzeExpression', () => {
     expect(res.some((d) => /unknown binding/.test(d.message))).toBe(false)
   })
 })
+
+describe('analyzeExpression with {holes}', () => {
+  const holeScope = { streams: ['{od}'], bindings: ['{tube}', 'warm'] }
+
+  it('accepts a known stream hole inside a stat call', () => {
+    expect(analyzeExpression('mean({od}, last=5)', 'any', holeScope)).toEqual([])
+  })
+
+  it('accepts a known binding hole', () => {
+    expect(analyzeExpression('{tube}', 'any', holeScope)).toEqual([])
+  })
+
+  it('does not report "unexpected character" for a brace', () => {
+    const out = analyzeExpression('{tube} + warm', 'any', holeScope)
+    expect(out.some((p) => /unexpected character/.test(p.message))).toBe(false)
+  })
+
+  it('reports an unknown hole using its {name} form', () => {
+    const out = analyzeExpression('{bogus}', 'any', holeScope)
+    expect(out).toHaveLength(1)
+    expect(out[0].message).toBe("unknown binding '{bogus}'")
+    expect(out[0].pos).toBe(0)
+    expect(out[0].len).toBe('{bogus}'.length)
+  })
+})

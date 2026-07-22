@@ -12,6 +12,10 @@
  */
 export const CONTROL_H = 'h-6'
 
+/** The 24px pixel value behind CONTROL_H, for consumers that size imperatively (an
+ * auto-growing textarea) rather than via the class. Keep in lockstep with CONTROL_H. */
+export const CONTROL_H_PX = 24
+
 /** Border, background, horizontal padding, text size, and focus ring shared by every
  * text-entry control — the part of the visual contract that does NOT depend on height.
  * `controlClass` (fixed-height inputs/selects) and `textAreaClass` (height-free textareas)
