@@ -41,6 +41,33 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * Thin scrollbars (UI improvements 4, #2). The app defined none, so every
+ * overflow container fell back to the thick classic native bar — and because
+ * overflow-y-auto promotes overflow-x to auto, a stray horizontal overflow
+ * grew a second heavy bar. These use the slate divider tokens, so they remap
+ * with the dark theme automatically. OS overlay auto-hide stays OS-controlled;
+ * this only removes the "very bold" weight.
+ * ------------------------------------------------------------------------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-slate-300) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-slate-300);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-slate-400);
+}
+
+/* ---------------------------------------------------------------------------
  * Dark theme (design 2026-07-22-dark-theme §Architecture).
  *
  * Tailwind 4 compiles every color utility to var(--color-*), so this block IS the
