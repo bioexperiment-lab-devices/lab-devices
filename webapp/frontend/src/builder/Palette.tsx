@@ -78,23 +78,29 @@ function GroupsPanel() {
       <ul className="space-y-1">
         {entries.map(([name, group]) => (
           <li key={name} className="flex items-center gap-1 text-sm">
-            {/* min-w-0 on the chip + truncate on the name span: a long group name must
+            {/* min-w-0 on the chip + truncate on the name+params span: a long signature must
                 ellipsize inside the 256px palette (with its full text in `title`), the same
                 way role badges and the device-type heading do — without this the chip sizes to
-                the untruncated name and makes the palette a horizontal scroller (the metric
+                the untruncated signature and makes the palette a horizontal scroller (the metric
                 the scope-switcher-long-group capture state exercises now that it opens this
-                panel). The icon and the params suffix stay shrink-0 so the name is what gives. */}
+                panel). The icon stays shrink-0 so the signature is what gives. */}
             <Chip
               id={`palette-group-${name}`}
               payload={{ source: 'palette-group', name }}
               className="h-6 min-w-0"
             >
               <KindIcon kind="group_ref" className="mr-1 shrink-0" />
-              <span className="min-w-0 truncate font-mono" title={name}>
+              {/* Name + params share one truncating region so a multi-param signature ellipsizes
+                  inside the chip instead of spilling under the edit/delete icons (#3); the Chip
+                  itself clips to its rounded box. Full signature in `title`. */}
+              <span
+                className="min-w-0 truncate font-mono"
+                title={`${name}(${group.params.map((p) => p.name).join(', ')})`}
+              >
                 {name}
-              </span>
-              <span className="ml-1 shrink-0 text-caption">
-                ({group.params.map((p) => p.name).join(', ')})
+                <span className="ml-1 text-caption">
+                  ({group.params.map((p) => p.name).join(', ')})
+                </span>
               </span>
             </Chip>
             <IconButton

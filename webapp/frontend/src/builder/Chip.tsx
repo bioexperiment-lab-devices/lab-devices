@@ -21,7 +21,7 @@ export function Chip(props: {
       {...listeners}
       {...attributes}
       className={
-        'flex cursor-grab select-none items-center rounded border border-slate-300 bg-white px-2 py-1 text-xs shadow-sm ' +
+        'flex cursor-grab select-none items-center overflow-hidden rounded border border-slate-300 bg-white px-2 py-1 text-xs shadow-sm ' +
         (isDragging ? 'opacity-40' : 'hover:border-slate-400') +
         (props.className ? ' ' + props.className : '')
       }
