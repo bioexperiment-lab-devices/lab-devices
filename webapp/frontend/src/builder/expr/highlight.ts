@@ -4,6 +4,7 @@
  * language (§3.4: amber = draft, red = server-confirmed). Contrast verified via
  * `npm run capture` (probe R5). */
 import { KEYWORDS, STAT_FNS, tokenize, type Token } from './tokenize'
+import { maskHoles } from './holes'
 
 export type SpanClass =
   | 'fn'
@@ -60,7 +61,10 @@ function clsFor(tok: Token, next: Token | undefined): SpanClass {
 }
 
 function classify(text: string): Array<{ start: number; end: number; cls: SpanClass }> {
-  const { tokens, error } = tokenize(text)
+  // Tokenize the hole-masked text so a group-body {name} lexes as a name reference (the braces
+  // otherwise abort the lexer, painting everything after them as one error span). Masking is
+  // equal-length, so every span position still indexes the ORIGINAL text 1:1.
+  const { tokens, error } = tokenize(maskHoles(text).masked)
   const out: Array<{ start: number; end: number; cls: SpanClass }> = []
   let cursor = 0
   const significant = tokens.filter((t) => t.kind !== 'END')
