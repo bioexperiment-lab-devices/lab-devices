@@ -10,6 +10,7 @@ import { useActiveTree, useDocStore } from '../stores/docStore'
 import { autoGrowHeight, collapseNewlines } from '../ui/autoGrow'
 import { textAreaClass, CONTROL_H_PX } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
+import { AnchoredPopup } from '../ui/AnchoredPopup'
 import { useDismissable } from '../ui/useDismissable'
 import {
   analyzeExpression,
@@ -155,9 +156,11 @@ export function ExpressionEditor(props: {
     else applyInsert(w.example)
   }
 
-  // The ref wraps BOTH the trigger and the panel: if the trigger sat outside it, clicking
-  // it while open would dismiss and immediately re-open (spec §4.2, finding #6).
-  const wrapRef = useDismissable(helpOpen, () => setHelpOpen(false))
+  // The help panel is portalled out of `wrapRef`'s subtree (#7), so it is passed to
+  // useDismissable as the `extra` "inside" container — otherwise a click on a help chip reads as
+  // outside and closes the popover it landed on (spec §3.6: the popover must stay open to compose).
+  const helpPanelRef = useRef<HTMLDivElement>(null)
+  const wrapRef = useDismissable(helpOpen, () => setHelpOpen(false), helpPanelRef)
 
   return (
     <div ref={wrapRef} className="relative">
@@ -275,9 +278,15 @@ export function ExpressionEditor(props: {
           ))}
         </div>
       )}
-      {popup && <CompletionPopup popup={popup} onPick={accept} />}
+      {popup && (
+        <AnchoredPopup anchorRef={wrapRef} align="left">
+          <CompletionPopup popup={popup} onPick={accept} />
+        </AnchoredPopup>
+      )}
       {helpOpen && help && (
-        <HelpPopover help={help} onName={onName} onFn={onFn} onWindow={onWindow} />
+        <AnchoredPopup anchorRef={wrapRef} align="right" panelRef={helpPanelRef}>
+          <HelpPopover help={help} onName={onName} onFn={onFn} onWindow={onWindow} />
+        </AnchoredPopup>
       )}
     </div>
   )
@@ -291,7 +300,7 @@ function CompletionPopup(props: {
     <ul
       role="listbox"
       aria-label="Completions"
-      className="absolute left-0 z-20 mt-1 max-h-48 w-56 overflow-auto rounded border border-slate-300 bg-white py-0.5 text-xs shadow-lg"
+      className="max-h-48 w-56 overflow-auto rounded border border-slate-300 bg-white py-0.5 text-xs shadow-lg"
     >
       {props.popup.set.items.map((it, i) => (
         <li key={it.kind + it.label} role="option" aria-selected={i === props.popup.index}>
@@ -330,7 +339,7 @@ function HelpPopover(props: {
   const chipClass = 'inline-flex h-6 items-center rounded px-1 font-mono hover:bg-slate-100'
   const stop = (e: { preventDefault: () => void }) => e.preventDefault()
   return (
-    <div className="absolute right-0 z-20 mt-1 w-72 rounded border border-slate-300 bg-white p-2 text-xs shadow-lg">
+    <div className="w-72 rounded border border-slate-300 bg-white p-2 text-xs shadow-lg">
       <p className="font-semibold text-slate-600">Streams</p>
       <p className="mb-1 font-mono text-caption">
         {help.streams.length > 0
