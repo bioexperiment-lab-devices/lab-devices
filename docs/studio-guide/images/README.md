@@ -20,4 +20,10 @@ taking the shot. File names are relative to this `images/` folder.
 | `overview-builder-anatomy.png` | 01-overview | Whole Builder with 5 numbered callouts: Palette, Canvas, Inspector, Toolbar, Problems strip. |
 | `overview-block-card.png` | 01-overview | One selected block card; label swatch, icon, summary, problem badge, Duplicate, Delete. |
 
+| `concept-roles-panel.png` | 03-concepts/roles | Roles panel grouped by device type, one role selected showing its swatch + verb chips. |
+| `concept-streams-panel.png` | 03-concepts/streams | Streams panel with two streams (`od` AU, `temp_c` °C); units field + source tags. |
+| `concept-bindings-panel.png` | 03-concepts/bindings-and-constants | Bindings panel, one binding expanded: type badge, writer, readers. |
+| `concept-constants-panel.png` | 03-concepts/bindings-and-constants | Constants panel with `target_od = 0.6`, `cycle_min = 60`; value, unit, type badge. |
+| `concept-expression-editor.png` | 03-concepts/expressions | Expression field editing `mean(od, last=5) > 0.6` with autocomplete popup + highlighting. |
+
 <!-- SHOT-LIST: entries are appended by each section below this line -->
