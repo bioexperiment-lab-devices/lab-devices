@@ -8,9 +8,12 @@ export function autoGrowHeight(m: {
   scrollHeight: number
   lineHeight: number
   maxLines: number
+  /** Floor for the returned height (defaults to one line). The expression editor passes the
+   * 24px control height so a single-line expression matches sibling inputs (#12). */
+  minHeight?: number
 }): { height: number; overflow: 'hidden' | 'auto' } {
   const cap = m.lineHeight * m.maxLines
-  const wanted = Math.max(m.scrollHeight, m.lineHeight)
+  const wanted = Math.max(m.scrollHeight, m.minHeight ?? m.lineHeight)
   if (wanted > cap) return { height: cap, overflow: 'auto' }
   return { height: wanted, overflow: 'hidden' }
 }

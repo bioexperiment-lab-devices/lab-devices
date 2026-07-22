@@ -8,7 +8,7 @@ import { SquareFunction } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useActiveTree, useDocStore } from '../stores/docStore'
 import { autoGrowHeight, collapseNewlines } from '../ui/autoGrow'
-import { textAreaClass } from '../ui/controls'
+import { textAreaClass, CONTROL_H_PX } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
 import { useDismissable } from '../ui/useDismissable'
 import {
@@ -95,6 +95,7 @@ export function ExpressionEditor(props: {
       scrollHeight: el.scrollHeight,
       lineHeight,
       maxLines: MAX_LINES,
+      minHeight: CONTROL_H_PX,
     })
     el.style.height = `${height}px`
     el.style.overflowY = overflow
