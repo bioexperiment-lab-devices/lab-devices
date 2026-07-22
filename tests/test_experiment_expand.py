@@ -1,7 +1,7 @@
 import pytest
 
 from lab_devices.experiment.errors import WorkflowLoadError
-from lab_devices.experiment.expand import _substitute, expand_dict
+from lab_devices.experiment.expand import _substitute, expand_dict, expand_dict_traced
 
 
 def _wf(blocks, groups=None):
@@ -244,3 +244,12 @@ def test_residual_hole_after_expansion_raises():
         expand_dict(_wf([{"for_each": {"vars": [{"name": "t", "kind": "int"}],
                                        "in": [{"t": 1}],
                                        "body": [{"wait": {"duration": "{nope}s"}}]}}]))
+
+
+def test_expand_preserves_constants():
+    # Regression guard (constants design §5): expand_dict_traced copies the input dict via
+    # copy.deepcopy, so the top-level `constants` key rides through unchanged.
+    doc = {"schema_version": 3, "persistence": {"default": "in_memory", "format": "jsonl"},
+           "constants": {"K": {"value": 1}}, "blocks": []}
+    expanded, _ = expand_dict_traced(doc)
+    assert expanded["constants"] == {"K": {"value": 1}}

@@ -232,3 +232,17 @@ async def test_binding_types_empty_when_doc_fails_to_load(client: httpx.AsyncCli
     body = resp.json()
     assert body["binding_types"] == {}
     assert body["ok"] is False and body["diagnostics"]
+
+
+async def test_validate_surfaces_constants(client: httpx.AsyncClient) -> None:
+    """A workflow-global constant survives expand and is typed into `binding_types` just like
+    an operator_input/compute binding (constants design §5)."""
+    workflow = {
+        "schema_version": 3,
+        "constants": {"MAX_TEMP": {"value": 37.0, "as": "celsius"}},
+        "blocks": [],
+    }
+    resp = await client.post("/api/validate", json=_doc(workflow))
+    body = resp.json()
+    assert body["ok"] is True and body["diagnostics"] == []
+    assert body["binding_types"]["MAX_TEMP"] == {"base": "number", "unit": "celsius"}
