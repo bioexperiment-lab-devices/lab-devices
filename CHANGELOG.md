@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.1](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.5.0...v1.5.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* **studio:** UI improvements 4 — eleven Builder fixes ([#80](https://github.com/bioexperiment-lab-devices/lab-devices/issues/80)) ([bab2320](https://github.com/bioexperiment-lab-devices/lab-devices/commit/bab2320616d49243a6bd6326f8330302d4288f1c))
+
+
+### Documentation
+
+* **studio:** Experiment Studio user guide (workflow authoring) ([#78](https://github.com/bioexperiment-lab-devices/lab-devices/issues/78)) ([5b7b515](https://github.com/bioexperiment-lab-devices/lab-devices/commit/5b7b515b4a7059301b3ed098d0617672d606ed60))
+
 ## [1.5.0](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.4.0...v1.5.0) (2026-07-22)
 
 
