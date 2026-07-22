@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Experiment Studio</title>
+    <script>
+      // Stamp the theme BEFORE first paint — React mounting later is what makes a
+      // store-only approach flash light on every dark-mode load. Key literal must
+      // match THEME_STORAGE_KEY in src/stores/themeSetting.ts.
+      ;(function () {
+        var t = null
+        try {
+          t = localStorage.getItem('studio.theme')
+        } catch (e) {}
+        if (t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches))
+          document.documentElement.dataset.theme = 'dark'
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
