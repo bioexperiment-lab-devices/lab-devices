@@ -26,4 +26,13 @@ taking the shot. File names are relative to this `images/` folder.
 | `concept-constants-panel.png` | 03-concepts/bindings-and-constants | Constants panel with `target_od = 0.6`, `cycle_min = 60`; value, unit, type badge. |
 | `concept-expression-editor.png` | 03-concepts/expressions | Expression field editing `mean(od, last=5) > 0.6` with autocomplete popup + highlighting. |
 
+| `block-command.png` | 04-blocks/device-actions | Command block (pump `dispense`) with Role/Verb/params in the Inspector. |
+| `block-measure.png` | 04-blocks/device-actions | Measure block (densitometer `measure`) with Role/Verb/params + "Into stream" picker. |
+| `block-retry.png` | 04-blocks/device-actions | Retry section for `dispense` showing the amber "allow repeat" hazard, Attempts, Backoff. |
+| `block-serial.png` | 04-blocks/flow | Serial block containing three stacked children. |
+| `block-parallel.png` | 04-blocks/flow | Parallel block with 2–3 lanes and the "+ lane" button. |
+| `block-branch.png` | 04-blocks/flow | Branch with If, a then lane, and an else lane. |
+| `block-loop.png` | 04-blocks/flow | Loop selected; Inspector Repeat=Until, an Until condition, Check dropdown. |
+| `block-for-each.png` | 04-blocks/flow | For each with a `tube` variable table and a Rows grid. |
+
 <!-- SHOT-LIST: entries are appended by each section below this line -->
