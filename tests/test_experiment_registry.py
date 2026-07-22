@@ -40,9 +40,20 @@ def test_unknown_verb_raises():
         lookup("toaster", "dispense")
 
 
-def test_every_entry_declares_channels():
+def test_channels_declared_unless_pure_read():
+    """Every actuating verb occupies a subsystem, so it must declare channels. The one
+    exception is a pure read: it actuates nothing and so occupies none. The invariant is
+    stated as a property (a channelless trait MUST be a pure immediate measurement read),
+    not an allow-list of names, so a future read is admitted and a mis-declared actuator that
+    omitted its channels still fails."""
     for key, trait in _REGISTRY.items():
-        assert trait.channels, f"{key} has no channels"
+        if trait.channels:
+            continue
+        assert (
+            trait.measurement
+            and trait.completion == "immediate"
+            and trait.state_effect == "none"
+        ), f"{key} declares no channels but is not a pure immediate read"
 
 
 def test_channel_table():
@@ -57,13 +68,46 @@ def test_channel_table():
     assert lookup("densitometer", "set_thermostat").channels == frozenset({"thermal"})
     assert lookup("densitometer", "stop").channels == frozenset({"optics", "thermal"})
     assert lookup("densitometer", "stop_monitoring").channels == frozenset({"optics"})
+    assert lookup("densitometer", "read_temperature").channels == frozenset()
 
 
 def test_measurement_flags():
     measuring = {key for key, t in _REGISTRY.items() if t.measurement}
-    assert measuring == {("densitometer", "measure"), ("densitometer", "measure_blank")}
-    for key in measuring:
+    assert measuring == {
+        ("densitometer", "measure"),
+        ("densitometer", "measure_blank"),
+        ("densitometer", "read_temperature"),
+    }
+    # Job-based measurements poll to completion; read_temperature is an immediate status read.
+    for key in [("densitometer", "measure"), ("densitometer", "measure_blank")]:
         assert _REGISTRY[key].completion == "job"
+    assert _REGISTRY[("densitometer", "read_temperature")].completion == "immediate"
+
+
+def test_param_defaults_and_on_omit():
+    dispense = {p.name: p for p in _REGISTRY[("pump", "dispense")].params}
+    assert dispense["direction"].default == "forward"
+    rotate = {p.name: p for p in _REGISTRY[("pump", "rotate")].params}
+    assert rotate["direction"].default == "forward"
+    thermo = {p.name: p for p in _REGISTRY[("densitometer", "set_thermostat")].params}
+    assert thermo["enabled"].default is True
+    meas = {p.name: p for p in _REGISTRY[("densitometer", "measure")].params}
+    assert meas["include_raw"].default is False
+    setpos = {p.name: p for p in _REGISTRY[("valve", "set_position")].params}
+    assert setpos["rotation"].on_omit == "default" and setpos["rotation"].default is None
+    conf = {p.name: p for p in _REGISTRY[("valve", "configure")].params}
+    assert conf["default_rotation"].on_omit == "unchanged"
+    assert conf["hold_torque"].on_omit == "unchanged"
+
+
+def test_read_temperature_is_a_channelless_immediate_measurement():
+    t = lookup("densitometer", "read_temperature")
+    assert t.completion == "immediate"
+    assert t.measurement is True
+    assert t.result_field == "temperature_c"
+    assert t.retry_safe is True
+    assert t.channels == frozenset()
+    assert t.params == ()
 
 
 def test_param_specs_dispense():
@@ -77,14 +121,14 @@ def test_param_specs_dispense():
 def test_param_specs_spot_checks():
     rotate = {s.name: s for s in lookup("pump", "rotate").params}
     assert rotate["direction"] == ParamSpec(
-        "direction", "string", required=True, values=("forward", "reverse")
+        "direction", "string", required=True, values=("forward", "reverse"), default="forward"
     )
     assert rotate["speed_ml_min"] == ParamSpec("speed_ml_min", "number", required=True)
     setpos = {s.name: s for s in lookup("valve", "set_position").params}
     assert setpos["position"] == ParamSpec("position", "int", required=True)
     assert setpos["rotation"].kind == "string"
     thermo = {s.name: s for s in lookup("densitometer", "set_thermostat").params}
-    assert thermo["enabled"] == ParamSpec("enabled", "bool", required=True)
+    assert thermo["enabled"] == ParamSpec("enabled", "bool", required=True, default=True)
     assert thermo["target_c"].kind == "number"
     led = {s.name: s for s in lookup("densitometer", "set_led").params}
     assert led["level"] == ParamSpec("level", "int", required=True)
@@ -252,6 +296,7 @@ _RETRY_SAFE = {
     ("valve", "stop"): True,
     ("densitometer", "measure"): True,
     ("densitometer", "measure_blank"): True,
+    ("densitometer", "read_temperature"): True,
     ("densitometer", "set_led"): True,
     ("densitometer", "set_thermostat"): True,
     ("densitometer", "set_tube_correction"): True,

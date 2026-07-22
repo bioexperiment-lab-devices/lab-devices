@@ -17,12 +17,16 @@ Kind = Literal["number", "int", "bool", "string"]
 class ParamSpec:
     """One verb parameter: its scalar kind and whether the verb requires it (design §4).
     `values` closes a string param over an explicit literal set (an enum): the device
-    accepts exactly these spellings, so the validator can reject the rest at load."""
+    accepts exactly these spellings, so the validator can reject the rest at load.
+    `default`/`on_omit` are UI-seed hints only (they do NOT change validation or execution):
+    the Builder seeds `default` and labels a param's empty option from `on_omit`."""
 
     name: str
     kind: Kind
     required: bool = False
     values: tuple[str, ...] | None = None
+    default: str | int | bool | None = None
+    on_omit: Literal["default", "unchanged"] | None = None
 
 
 @dataclass
@@ -65,7 +69,7 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
         params=(
             ParamSpec("volume_ml", "number", required=True),
             ParamSpec("speed_ml_min", "number"),
-            ParamSpec("direction", "string", values=("forward", "reverse")),
+            ParamSpec("direction", "string", values=("forward", "reverse"), default="forward"),
             ParamSpec("drop_suckback_ml", "number"),
         ),
     ),
@@ -78,7 +82,9 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
         Teardown("stop"),
         channels=_MOTOR,
         params=(
-            ParamSpec("direction", "string", required=True, values=("forward", "reverse")),
+            ParamSpec(
+                "direction", "string", required=True, values=("forward", "reverse"), default="forward"
+            ),
             ParamSpec("speed_ml_min", "number", required=True),
         ),
     ),
@@ -109,7 +115,7 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
         retry_safe=True,
         params=(
             ParamSpec("position", "int", required=True),
-            ParamSpec("rotation", "string", values=("shortest", "direct", "wrap")),
+            ParamSpec("rotation", "string", values=("shortest", "direct", "wrap"), on_omit="default"),
         ),
     ),
     # Declares the current physical position (no motion) — pure absolute state write.
@@ -127,8 +133,13 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
         channels=_MOTOR,
         retry_safe=True,
         params=(
-            ParamSpec("default_rotation", "string", values=("shortest", "direct", "wrap")),
-            ParamSpec("hold_torque", "bool"),
+            ParamSpec(
+                "default_rotation",
+                "string",
+                values=("shortest", "direct", "wrap"),
+                on_omit="unchanged",
+            ),
+            ParamSpec("hold_torque", "bool", on_omit="unchanged"),
         ),
     ),
     # Safe-state primitive; a no-op when already idle.
@@ -142,11 +153,22 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
         measurement=True,
         result_field="absorbance",
         retry_safe=True,
-        params=(ParamSpec("include_raw", "bool"),),
+        params=(ParamSpec("include_raw", "bool", default=False),),
     ),
     # Re-measures the blank and overwrites the stored baseline: last-write-wins, no accumulation.
     ("densitometer", "measure_blank"): Trait(
         "job", "none", channels=_OPTICS, measurement=True, result_field="slope", retry_safe=True
+    ),
+    # Independent temperature read: `status` returns temperature_c without running the optics, so
+    # this occupies NO subsystem (channels=frozenset()) and can run while the thermostat mode is
+    # open on _THERMAL. Immediate (status is a fast read, not a job); pure read → retry_safe.
+    ("densitometer", "read_temperature"): Trait(
+        "immediate",
+        "none",
+        channels=frozenset(),
+        measurement=True,
+        result_field="temperature_c",
+        retry_safe=True,
     ),
     # Absolute LED level (0-20), diagnostic: no dosing, no accumulation.
     ("densitometer", "set_led"): Trait(
@@ -165,7 +187,7 @@ _REGISTRY: dict[tuple[str, str], Trait] = {
         channels=_THERMAL,
         retry_safe=True,
         params=(
-            ParamSpec("enabled", "bool", required=True),
+            ParamSpec("enabled", "bool", required=True, default=True),
             ParamSpec("target_c", "number"),
         ),
     ),

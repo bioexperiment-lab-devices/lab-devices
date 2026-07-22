@@ -20,6 +20,7 @@ import { ExpressionEditor } from './ExpressionEditor'
 import { fieldDiagnostics, unclaimedDiagnostics } from './paths'
 import { InspectorSection } from './InspectorSection'
 import { coerceParamInput, coerceValueInput, paramInputText } from './params'
+import { emptyOptionLabel } from './paramDefaults'
 import { useScopeRefs } from './scopeRefs'
 import { StreamIntoPicker } from './StreamIntoPicker'
 import {
@@ -893,14 +894,16 @@ function ParamInput(props: {
   const [exprMode, setExprMode] = useState(typeof value === 'string')
   if (spec.type === 'string') {
     if (spec.values !== undefined) {
-      const current = typeof value === 'string' ? value : ''
+      const dflt = typeof spec.default === 'string' ? spec.default : ''
+      const current = typeof value === 'string' ? value : dflt
+      const empty = emptyOptionLabel(spec)
       return (
         <select
           value={current}
           onChange={(e) => onCommit(e.target.value === '' ? undefined : e.target.value)}
           className={controlClass()}
         >
-          <option value="">— unset —</option>
+          {empty !== null && <option value="">{empty}</option>}
           {spec.values.map((v) => (
             <option key={v} value={v}>
               {v}
@@ -921,7 +924,9 @@ function ParamInput(props: {
     )
   }
   if (spec.type === 'bool' && !exprMode && typeof value !== 'string') {
-    const current = value === true ? 'true' : value === false ? 'false' : ''
+    const dfltBool = typeof spec.default === 'boolean' ? (spec.default ? 'true' : 'false') : ''
+    const current = value === true ? 'true' : value === false ? 'false' : dfltBool
+    const empty = emptyOptionLabel(spec)
     return (
       <div className="flex items-center gap-1">
         <select
@@ -932,7 +937,7 @@ function ParamInput(props: {
           }}
           className={controlClass()}
         >
-          <option value="">— unset —</option>
+          {empty !== null && <option value="">{empty}</option>}
           <option value="true">true</option>
           <option value="false">false</option>
         </select>

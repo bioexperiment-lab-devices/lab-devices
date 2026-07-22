@@ -241,6 +241,24 @@ describe('newPaletteNode seeds', () => {
     const p = newPaletteNode('parallel')
     expect(p.kind === 'parallel' && p.children.map((c) => c.kind)).toEqual(['serial', 'serial'])
   })
+  it('newVerbNode seeds params that declare a default', () => {
+    const node = newVerbNode('feed_pump', 'dispense', {
+      kind: 'command',
+      params: [
+        { name: 'volume_ml', type: 'number', required: true },
+        {
+          name: 'direction',
+          type: 'string',
+          required: false,
+          values: ['forward', 'reverse'],
+          default: 'forward',
+        },
+      ],
+      result_field: null,
+      retry_safe: false,
+    } as VerbSpec)
+    expect(node.kind === 'command' && node.params).toEqual({ direction: 'forward' })
+  })
 })
 
 describe('wrapAsLane', () => {

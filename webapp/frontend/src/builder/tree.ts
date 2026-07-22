@@ -3,6 +3,7 @@
  * return new trees (zustand/zundo snapshot immutability). */
 import type { ParamValue, RetryJson, ParamDeclJson } from '../types/doc'
 import type { VerbSpec } from '../types/catalog'
+import { seedParams } from './paramDefaults'
 
 export type InputType = 'int' | 'float' | 'bool' | 'enum'
 /** Blocks that hold a body and decide what runs, in what order, and how many times. This is
@@ -413,7 +414,8 @@ export function newGroupRefNode(name: string): BlockNode {
 }
 
 export function newVerbNode(role: string, verb: string, spec: VerbSpec): BlockNode {
+  const params = seedParams(spec.params)
   return spec.kind === 'measure'
-    ? { ...nodeBase(), kind: 'measure', device: role, verb, into: '', params: {} }
-    : { ...nodeBase(), kind: 'command', device: role, verb, params: {} }
+    ? { ...nodeBase(), kind: 'measure', device: role, verb, into: '', params }
+    : { ...nodeBase(), kind: 'command', device: role, verb, params }
 }

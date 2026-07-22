@@ -62,3 +62,10 @@ class Densitometer(Device):
     async def read_raw(self, *, level: int | None = None) -> Job:
         params = {"level": level} if level is not None else None
         return await self._start_job("read_raw", params, result_model=ReadRawResult)
+
+    async def read_temperature(self) -> DensitometerStatus:
+        """Independent temperature read: polls `status` (no optics/LED run). See spec §3.8.
+
+        Temperature rides inside the optics `measure` job too, but `status` returns it without
+        actuating anything — so a workflow can record temperature without running the optics."""
+        return DensitometerStatus.from_raw(await self.command("status"))

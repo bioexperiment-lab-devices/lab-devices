@@ -9,6 +9,10 @@ export interface ParamSpec {
   required: boolean
   // Present when the param is a closed enum: the device accepts exactly these spellings.
   values?: string[]
+  // UI-seed hints (webapp design): the Builder seeds `default` and labels the empty option
+  // from `on_omit`. Absent when the param has no canonical default / no special omit meaning.
+  default?: string | number | boolean
+  on_omit?: 'default' | 'unchanged'
 }
 
 export interface VerbSpec {
