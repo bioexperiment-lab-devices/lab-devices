@@ -415,6 +415,9 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
       />
       {node.children.map((lane, i) => (
         <Fragment key={lane.uid}>
+          {/* Plain slate hairline between lanes (#10): no rounded corners, no construct tint,
+              matching the Toolbar's `w-px bg-slate-200` divider. */}
+          {i > 0 && <span aria-hidden className="w-px self-stretch bg-slate-200" />}
           <Lane lane={lane} index={i} />
           <DropSlot at={{ parentUid: node.uid, slot: 'children', index: i + 1 }} horizontal hint={false} />
         </Fragment>
@@ -441,13 +444,14 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
   )
 }
 
-/** One lane of a Parallel. A `serial` child IS the lane (spec §3.4): its children render
- * directly in the lane box and this header row is the serial's handle — click selects it
- * (the Inspector edits its label/on_error there), drag moves/reorders it, and its label,
- * fault markers and diagnostics show here, since there is no card to carry them. Emptying
- * a lane therefore never destroys it; the ✕ (empty lanes only) and select+Delete stay the
- * explicit removal paths. Any other kind is a legacy/imported bare-block lane and keeps
- * the card rendering — both committed fixtures contain such lanes (spec §5). */
+/** One lane of a Parallel — feature-equivalent regardless of the child's kind (#1). A `serial`
+ * child IS the lane (spec §3.4): its children render directly in the body and this header row is
+ * the serial's handle — click selects it, drag moves/reorders it, and its label, fault markers and
+ * diagnostics show here. Any other kind is a legacy/imported bare-block lane whose single block
+ * renders as a card in the body; the lane header still carries the SAME lane-level select, drag and
+ * duplicate, so every lane looks and behaves the same. Delete stays empty-only — a bare-block lane
+ * is never empty, so it is removed via its card's ✕ or select+Delete, exactly like a populated
+ * serial lane. Lanes separate with a plain slate hairline drawn by ParallelLanes (#10). */
 function Lane({ lane, index }: { lane: BlockNode; index: number }) {
   const select = useDocStore((s) => s.select)
   const selected = useDocStore((s) => s.selectedUid === lane.uid)
@@ -458,22 +462,8 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
     id: blockDraggableId(lane.uid),
     data: { source: 'canvas', uid: lane.uid } satisfies DragPayload,
   })
-  if (lane.kind !== 'serial') {
-    return (
-      <div
-        className={
-          'min-w-48 flex-initial rounded p-1' +
-          (index > 0 ? ' border-l ' + constructBorderClass('parallel') : '')
-        }
-      >
-        <div className="flex h-6 items-center px-1 text-[10px] uppercase text-caption">
-          lane {index + 1}
-        </div>
-        <BlockView node={lane} />
-      </div>
-    )
-  }
   const marker = faultMarker(lane).trim()
+  const canDelete = lane.kind === 'serial' && lane.children.length === 0
   return (
     <div
       id={`block-${lane.uid}`}
@@ -483,12 +473,9 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
         select(lane.uid)
       }}
       className={
-        // No idle box: lanes separate with a single hairline (index > 0), in parallel's
-        // construct tint so retinting the map retints the separator too. Selection is the
-        // ring alone — same `ring-2 ring-blue-400` as BlockView, with no border for it to
-        // compete with.
+        // Selection is the ring alone — same `ring-2 ring-blue-400` as BlockView, with no border
+        // for it to compete with. Lane separators live in ParallelLanes as standalone hairlines.
         'min-w-48 flex-initial rounded p-1 ' +
-        (index > 0 ? 'border-l ' + constructBorderClass('parallel') + ' ' : '') +
         (selected ? 'ring-2 ring-blue-400 ' : '') +
         (isDragging ? 'opacity-40' : '')
       }
@@ -524,7 +511,7 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
               duplicateBlock(lane.uid)
             }}
           />
-          {lane.children.length === 0 && (
+          {canDelete && (
             <IconButton
               icon={X}
               label="Remove lane"
@@ -537,7 +524,11 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
           )}
         </span>
       </div>
-      <BlockList parentUid={lane.uid} slot="children" items={lane.children} />
+      {lane.kind === 'serial' ? (
+        <BlockList parentUid={lane.uid} slot="children" items={lane.children} />
+      ) : (
+        <BlockView node={lane} />
+      )}
     </div>
   )
 }
