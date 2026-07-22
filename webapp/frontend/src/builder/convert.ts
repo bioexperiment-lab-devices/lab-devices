@@ -46,6 +46,11 @@ export interface DocContent {
   // `in_memory` workflow default must survive Save, or its samples are silently never
   // written to disk at all.
   streams: Record<string, { units: string | null; persistence?: string | null }>
+  // Workflow-global, write-once constants (constants design 2026-07-22) — a plain record like
+  // streams, not block nodes, so no node translation is needed here or in blockToNode/
+  // nodeToBlock. Carried opaquely for the same reason as persistence/defaults/metadata: the
+  // builder has no UI for constants yet, but a hand-authored constant must survive Save.
+  constants?: Record<string, import('../types/doc').ConstantDeclJson>
   tree: BlockNode[]
   // Carried opaquely — the builder has no UI for either, but it must not destroy them on
   // save (2026-07-14 review, Fix 1): a hand-authored workflow.defaults.retry is a
@@ -109,6 +114,7 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
   for (const [name, role] of Object.entries(wf.roles ?? {})) {
     roles[name] = role.device !== undefined ? { type: role.type, device: role.device } : { type: role.type }
   }
+  const constants = wf.constants
   return {
     name: doc.name,
     description: doc.description ?? null,
@@ -119,6 +125,7 @@ export function docToTree(doc: ExperimentDocJson): DocContent {
     ...(wf.metadata !== undefined ? { metadata: wf.metadata } : {}),
     ...(wf.persistence !== undefined ? { persistence: wf.persistence } : {}),
     ...(wf.defaults !== undefined ? { defaults: wf.defaults } : {}),
+    ...(constants !== undefined ? { constants } : {}),
   }
 }
 
@@ -260,10 +267,10 @@ export function treeToDoc(content: DocContent): ExperimentDocJson {
     }
   }
   // Key order mirrors workflow_to_dict: schema_version, metadata, persistence, defaults,
-  // roles, streams, groups, blocks — all conditional sections omitted when empty. defaults,
-  // roles and groups are spread into the literal at their canonical position rather than
-  // assigned afterward — an object-literal-plus-post-assignment cannot land a conditional key
-  // ahead of keys that must appear unconditionally after it.
+  // roles, streams, constants, groups, blocks — all conditional sections omitted when empty.
+  // defaults, roles, constants and groups are spread into the literal at their canonical
+  // position rather than assigned afterward — an object-literal-plus-post-assignment cannot
+  // land a conditional key ahead of keys that must appear unconditionally after it.
   const workflow: WorkflowJson = {
     schema_version: 3,
     // content.name stays authoritative for metadata.name (the builder edits the doc name,
@@ -278,6 +285,11 @@ export function treeToDoc(content: DocContent): ExperimentDocJson {
     // minimal workflow.
     ...(Object.keys(roles).length > 0 ? { roles } : {}),
     streams,
+    // constants omitted entirely when absent/empty, so a constant-free doc round-trips
+    // byte-identically to today (mirrors the roles/groups conditional-spread pattern above).
+    ...(content.constants !== undefined && Object.keys(content.constants).length > 0
+      ? { constants: content.constants }
+      : {}),
     // groups omitted entirely when empty (serialize.py:445 `if w.groups:`), so a group-less
     // doc round-trips byte-identically to today.
     ...(groups !== undefined ? { groups } : {}),
