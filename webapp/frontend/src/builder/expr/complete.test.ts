@@ -47,6 +47,14 @@ describe('completionsAt', () => {
   })
 })
 
+describe('constants in scope', () => {
+  it('completes a constant name from scope.bindings', () => {
+    const s = completionsAt('FEED', 4, { streams: [], bindings: ['FEED_RATE'] })
+    expect(labels(s)).toContain('FEED_RATE')
+    expect(s?.items.find((i) => i.label === 'FEED_RATE')).toMatchObject({ kind: 'binding' })
+  })
+})
+
 describe('insideStatCallArgs', () => {
   it('detects the inside of an open stat call', () => {
     expect(insideStatCallArgs('mean(od', 7)).toBe(true)

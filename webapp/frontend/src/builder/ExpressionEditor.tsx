@@ -41,6 +41,9 @@ export function ExpressionEditor(props: {
 }) {
   const { expected = 'any' } = props
   const streams = useDocStore((s) => s.streams)
+  // Workflow-global constants (constants design 2026-07-22) are top-level, not group-scoped —
+  // union them into `bindings` unconditionally, unlike `scopeBindingNames(group)` below.
+  const constants = useDocStore((s) => s.constants)
   // Bindings must be collected from the ACTIVE scope, not always the main tree (2026-07-16
   // review, Finding 1): a group body is unreachable from `tree` (a `group_ref` node has no
   // `childSlots`), so an expression inside a group — e.g. morbidostat.json's `groups.service`,
@@ -57,9 +60,15 @@ export function ExpressionEditor(props: {
   const scope = useMemo<ExprScope>(
     () => ({
       streams: scopeStreamNames(streams, group),
-      bindings: Array.from(new Set([...collectBindings(activeTree), ...scopeBindingNames(group)])),
+      bindings: Array.from(
+        new Set([
+          ...collectBindings(activeTree),
+          ...scopeBindingNames(group),
+          ...Object.keys(constants),
+        ]),
+      ),
     }),
-    [streams, group, activeTree],
+    [streams, group, activeTree, constants],
   )
   const help = useMemo<ExpressionHelp | null>(
     () => (expression ? buildExpressionHelp(expression, scope.streams, scope.bindings) : null),

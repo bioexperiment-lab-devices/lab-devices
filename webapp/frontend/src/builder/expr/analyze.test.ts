@@ -34,4 +34,8 @@ describe('analyzeExpression', () => {
     expect(analyzeExpression('2.5', 'int', scope)).toHaveLength(1)
     expect(analyzeExpression('2', 'int', scope)).toEqual([])
   })
+  it('does not flag a constant in scope as an unknown binding', () => {
+    const res = analyzeExpression('FEED_RATE * 2', 'any', { streams: [], bindings: ['FEED_RATE'] })
+    expect(res.some((d) => /unknown binding/.test(d.message))).toBe(false)
+  })
 })
