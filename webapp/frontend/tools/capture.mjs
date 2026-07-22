@@ -23,6 +23,13 @@ const arg = (name, fallback) => {
 const outDir = path.resolve(arg('out', 'capture-out'))
 const baseUrl = arg('url', 'http://localhost:5173')
 
+const themeArg = arg('theme', 'both')
+const THEMES = themeArg === 'both' ? ['light', 'dark'] : [themeArg]
+if (!THEMES.every((t) => t === 'light' || t === 'dark')) {
+  console.error(`--theme must be light, dark, or both; got "${themeArg}"`)
+  process.exit(1)
+}
+
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const FIXTURES = {
   morbidostat: path.join(repoRoot, 'examples/morbidostat.json'),
@@ -580,15 +587,35 @@ await mkdir(outDir, { recursive: true })
 const report = []
 let failures = 0
 
-for (const vp of VIEWPORTS) {
+for (const t of THEMES) await mkdir(path.join(outDir, t), { recursive: true })
+// Theme-major, then viewport, then state — flatMap instead of a third nesting level so
+// the loop body (and its indentation history in blame) stays put.
+for (const [theme, vp] of THEMES.flatMap((t) => VIEWPORTS.map((v) => [t, v]))) {
   for (const state of states) {
     const context = await browser.newContext({ viewport: { width: vp.width, height: vp.height } })
+    // Through the app's OWN mechanism (the index.html boot script reads this key), not a
+    // direct data-theme stamp — so every capture also exercises the no-flash boot path,
+    // and a broken boot script fails loudly here.
+    await context.addInitScript((t) => {
+      try {
+        localStorage.setItem('studio.theme', t)
+      } catch {}
+    }, theme)
     const page = await context.newPage()
     // Import over a dirty doc pops a confirm(); always take the destructive branch.
     page.on('dialog', (d) => void d.accept())
-    const id = `${state.name}@${vp.name}`
+    const id = `${theme}/${state.name}@${vp.name}`
     try {
       await state.setup(page)
+      // A dark capture whose page silently stayed light would probe the LIGHT theme under
+      // a dark label — the vacuous-pass trap again. Assert the stamp took.
+      const stamped = await page.evaluate(() => document.documentElement.dataset.theme)
+      if (theme === 'dark' && stamped !== 'dark') {
+        throw new Error('dark capture but <html data-theme> is not "dark"')
+      }
+      if (theme === 'light' && stamped === 'dark') {
+        throw new Error('light capture but <html data-theme> is "dark"')
+      }
       const violations = await page.evaluate(probeRules)
       // Not a rule (the probe has exactly five), but the number the layout work is judged
       // on: does the document, or the Canvas's single scroller, exceed the viewport?
@@ -623,7 +650,7 @@ for (const vp of VIEWPORTS) {
         }
       })
       await page.screenshot({ path: path.join(outDir, `${id}.png`), fullPage: false })
-      report.push({ state: state.name, viewport: vp.name, violations, metrics })
+      report.push({ theme, state: state.name, viewport: vp.name, violations, metrics })
       const tally = violations.reduce((a, v) => ({ ...a, [v.rule]: (a[v.rule] ?? 0) + 1 }), {})
       const overflow = metrics.pageOverflowsViewport
         ? ` PAGE-OVERFLOW ${metrics.documentScrollWidth}>${metrics.viewportWidth}`
@@ -633,7 +660,7 @@ for (const vp of VIEWPORTS) {
       )
     } catch (e) {
       failures += 1
-      report.push({ state: state.name, viewport: vp.name, error: String(e) })
+      report.push({ theme, state: state.name, viewport: vp.name, error: String(e) })
       console.error(`${id}: ERROR ${e}`)
     }
     await context.close()

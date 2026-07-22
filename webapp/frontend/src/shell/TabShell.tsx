@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { labScopedTab, TABS, type Tab } from './tabs'
+import { ThemeToggle } from './ThemeToggle'
 
 export function TabShell(props: {
   active: Tab
@@ -52,6 +53,7 @@ export function TabShell(props: {
           ))}
         </nav>
         <span className="ml-auto flex min-w-0 items-center gap-3 self-center py-3">
+          <ThemeToggle />
           {/* The pill claims the current view is bound to a lab, so it may only appear where
               that is true. On the Builder it read as an unmet precondition for work that has
               no lab dependency at all; on Records it read as a filter over a table that is
