@@ -39,3 +39,16 @@ files = ["experiment_studio"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+# Ruff's DEFAULT rule set is not a stable contract, and this package installs ruff unpinned
+# (`ruff>=0.4` in the dev extra, no lock file — unlike the library, whose poetry.lock holds it at
+# 0.15.20). 0.16 widened the defaults to include bugbear, isort, bandit and blind-except, which
+# turned the backend lint red on every branch at once — main included — without a line of code
+# changing: 71 findings, 37 of them B008 on FastAPI's own `Depends(...)` idiom.
+#
+# So state the set this package has actually been linted under since it was created — ruff's
+# historical default — rather than inheriting whatever a future release decides it should be.
+# Adopting a wider set stays possible; it is then a deliberate change with its fixes in the same
+# commit, which is the opposite of what a background release upgrade gives you.
+select = ["E4", "E7", "E9", "F"]
