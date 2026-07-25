@@ -2,7 +2,14 @@ import { useDroppable } from '@dnd-kit/core'
 import { useDocStore } from '../stores/docStore'
 import { canDrop, type SlotRef } from './tree'
 import { slotDroppableId, type DragPayload } from './dnd'
-import { LANE_DIVIDER_INSET, LANE_EDGE_W, LANE_GUTTER_W } from './laneLayout'
+import {
+  CHIP_GAP,
+  CHIP_MIN_H,
+  DROP_SLOT_V,
+  LANE_DIVIDER_INSET,
+  LANE_EDGE_W,
+  LANE_GUTTER_W,
+} from './laneLayout'
 
 /** Insertion bar between blocks (or a dashed hint box for empty lists). Highlights only
  * when the active drag may legally drop here — a container can never enter its own
@@ -33,7 +40,13 @@ export function DropSlot(props: {
       <div
         ref={setNodeRef}
         className={
-          'flex-1 rounded border border-dashed px-2 py-3 text-center text-xs ' +
+          // The hint stands in for a lane's CARDS, so it is sized and placed like them (#3): at
+          // least one card tall, carrying the 12px a DropSlot would put above and below a card,
+          // and growing to fill whatever the tallest sibling lane sets. It IS the leading slot
+          // (index 0), so nothing earlier can supply that air — it has to be margin here. The
+          // old `py-3` made the box 42px against a 34px card.
+          'flex flex-1 items-center justify-center rounded border border-dashed px-2 ' +
+          `text-center text-xs ${CHIP_GAP} ${CHIP_MIN_H} ` +
           // A horizontal hint is the empty state of a parallel's lane row, and that row's body no
           // longer has horizontal padding of its own (the gutters supply it), so the hint carries
           // its own 8px. A vertical hint's padding still comes from the parent body.
@@ -58,7 +71,7 @@ export function DropSlot(props: {
       className={
         (horizontal
           ? `self-stretch ${divider ? `flex justify-center ${LANE_GUTTER_W}` : LANE_EDGE_W} `
-          : 'my-0.5 h-2 ') +
+          : `${DROP_SLOT_V} `) +
         'shrink-0 rounded transition-colors ' +
         (highlight ? 'bg-blue-400' : isOver ? 'bg-red-200' : 'bg-transparent')
       }
