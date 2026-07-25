@@ -237,13 +237,14 @@ reading of a summary survives the split.
 
 Three load-bearing details:
 
-- **`min-w-0` on the head and label, not `max-w-*`.** A flex item with `min-width: 0` contributes
-  ZERO to its flex container's min-content size. So a pathological
-  `bioreactor_left_densitometer · read_optical_density` can no longer widen the canvas at all: it
-  ellipsizes inside whatever width the lane gives it, with the parent's `title` carrying the full
-  text (probe R2 — truncate-without-title — satisfied). This is why `max-w-80` and `max-w-40` are
-  DELETED rather than tightened; they were caps on an intrinsic contribution that no longer
-  exists.
+- **`contain: inline-size` on the cluster, plus `min-w-0` on the head and label.** These are two
+  different jobs and both are needed — see §5.3, which corrects the first draft of this section.
+  `min-w-0` is a layout-time permission to shrink, so the head ellipsizes instead of overflowing.
+  Containment is what stops it widening the canvas. Together they let a pathological
+  `bioreactor_left_densitometer · read_optical_density` ellipsize inside whatever width the lane
+  gives it while contributing nothing to the tree's width, with `title` carrying the full text
+  (probe R2 — truncate-without-title — satisfied). That is why `max-w-80` and `max-w-40` are
+  DELETED rather than tightened.
 - **`gap-x-1` stands in for the segments' leading spaces.** Segments carry their own separators
   (`' · '`, `' ('`, `' → '`), and a flex item's leading whitespace collapses at the start of its
   line box. 4px is a space's width at `text-sm`, so this is visually a no-op.
@@ -260,7 +261,47 @@ no breakpoint to tune.
 a single unbreakable token — a long expression with no spaces — from setting a large min-content
 size. Unlike `break-word` it DOES reduce the intrinsic minimum.
 
-### 5.3 Vertical metric
+### 5.3 CORRECTION — `min-w-0` does not reduce an intrinsic contribution
+
+The first draft of §5.2 claimed a flex item with `min-width: 0` "contributes ZERO to its flex
+container's min-content size". **That is false, and the implementation measured it false.**
+
+`min-width: 0` overrides the automatic minimum size, which is a permission to shrink BELOW the
+content at layout time. It does not change what the item reports as its min-content
+contribution, and a `truncate` (`white-space: nowrap`) span reports its full untruncated text.
+The `min-w-0 truncate` idiom works everywhere else in this app only because every other user of
+it — the Palette (`w-64`), the Inspector (`w-80`), the side panels — sits inside a container
+whose width is fixed from above. The canvas is the one place where the container's width is
+derived from its contents, and there the idiom is circular: the ellipsis never engages because
+the container simply grows.
+
+Measured on morbidostat at 1440×900 with `w-fit` and `min-w-0` alone: the canvas's min-content
+was **3619px** against 766px of room, so `fit-content` clamped at 3619 and nothing wrapped —
+while the very same tree laid out correctly when its width was forced to 766px. Neutralising
+`white-space: nowrap` on the truncating spans dropped min-content to 766px, which identifies
+them as the entire 2853px gap.
+
+The fix is size containment in the inline axis — `contain: inline-size`, exposed as the
+`contain-inline` utility in `index.css`. A contained box's inline size is computed as if it were
+empty, so it contributes nothing intrinsically, while its BLOCK size still tracks its content,
+which is exactly what lets a card grow taller as its header wraps. Same case, with containment:
+**766px**.
+
+It goes on two boxes, both of which already take their width from a parent and so have no need
+to size themselves:
+
+- the card's text cluster (`flex-1` inside the header row), and
+- the lane's header row (stretched by the lane's flex column), whose nowrap label would
+  otherwise set the lane's min-content.
+
+Deliberately `contain: inline-size` and not `container-type: inline-size`: the sizing behaviour
+is wanted, registering a query container is not.
+
+Consequence worth stating plainly, because it is the property this whole design turns on: **no
+card's text can widen the canvas any more. Only lane and arm floors can** — which is Cause C,
+and out of scope by §1.3.
+
+### 5.4 Vertical metric
 
 The header row becomes `items-start`; `KindIcon` and the collapse chevron get an
 `h-6 items-center` wrapper; the text cluster takes `py-0.5` so its 20px first line centres against
@@ -272,17 +313,22 @@ card is simply taller than the band's minimum — which container cards already 
 
 ## 6. Expected outcome
 
-At 1440×900, canvas usable width 766px (798px client − 32px `p-4`):
+At 1440×900, canvas usable width 766px (798px client − 32px `p-4`). Predicted from the class
+arithmetic before implementing, measured after — full table in
+[`docs/ui-improvements-7/README.md`](../../ui-improvements-7/README.md):
 
-| state | today | predicted | fits? |
+| state | before | predicted | **measured** |
 | --- | --- | --- | --- |
-| `builder-morbidostat` | 2057px | ~720px (3 lanes × 192px floor + gutters + `+ lane` + nesting) | **yes** |
-| `branch-selected` | 1770px | ~1350px (8 arms × 192px floor) | no — Cause C, out of scope |
-| `builder-torture` | 3934px | floor-driven; long names no longer contribute | partly |
+| `builder-morbidostat` | 1935px | ~720px | **fits — no scroller** |
+| `branch-selected` | 1701px | ~1350px (8 arms × 192px floor) | 905px — still scrolls, Cause C |
+| `builder-torture` | 3642px | floor-driven | 1770px (−51%) |
 
-These are predictions from the class arithmetic. `npm run capture` decides, and the
-`canvasScrollerOverflow` metric it already records per state/viewport/theme is the acceptance
-number.
+13 of 57 measured state/viewport combinations stopped scrolling horizontally; every one
+narrowed and none got wider. 0 probe violations across 114 state/viewport/theme combinations,
+both before and after.
+
+(The before column is measured on `e549c8c`, not the older figures quoted in §1 which came from
+`docs/ui-improvements-3/after/probe.json` — PR #83 had already narrowed the canvas somewhat.)
 
 ## 7. Risks
 

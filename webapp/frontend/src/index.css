@@ -29,6 +29,34 @@
   );
 }
 
+/* "My width comes from my parent; my contents may not vote on it."
+ *
+ * The canvas is sized `w-fit` (Canvas.tsx) so that a squeezed card wraps instead of forcing
+ * the canvas wide. `fit-content` clamps at the MIN-CONTENT size, so anything that reports a
+ * large min-content still widens the canvas no matter how well it wraps — and `truncate`
+ * (`white-space: nowrap`) reports the full untruncated text as its min-content.
+ *
+ * `min-width: 0` does NOT fix that. It lets a flex item shrink below its content at layout
+ * time, which is why the `min-w-0 truncate` idiom works everywhere else in this app — every
+ * other user of it (Palette w-64, Inspector w-80, the panels) sits inside a container with a
+ * width fixed from above. It does not reduce the item's intrinsic contribution, so under
+ * content-derived sizing the ellipsis never engages and the container just gets wider.
+ * MEASURED on morbidostat at 1440x900: the canvas's min-content was 3619px against 766px of
+ * room, while the very same tree laid out perfectly when forced to 766px. Every pixel of that
+ * 2853px gap was nowrap text voting on a width it had no business setting.
+ *
+ * Size containment in the inline axis is the actual fix: the box's inline size is computed as
+ * if it were empty, so it contributes nothing intrinsically, while its BLOCK size still tracks
+ * its content — which is what lets a card grow taller as its header wraps. Same 3619px case:
+ * 766px. `contain: inline-size` and not `container-type: inline-size` because we want the
+ * sizing behaviour only, not to register a query container.
+ *
+ * Apply it to a box whose width already comes from elsewhere (a `flex-1` item, a stretched
+ * block). Applying it to a box that must SIZE ITSELF collapses that box to nothing. */
+@utility contain-inline {
+  contain: inline-size;
+}
+
 @utility edge-hatch {
   background-image: repeating-linear-gradient(
     45deg,

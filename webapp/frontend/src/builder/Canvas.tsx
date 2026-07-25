@@ -389,16 +389,24 @@ function BlockView({ node }: { node: BlockNode }) {
             the 24px control row beside it, which is what keeps an UNWRAPPED leaf card at exactly
             CHIP_H_PX (8px py-1 + 24px + 2px border = 34px) and PR #83's chip band intact.
             `items-center` and never `items-baseline`: an overflow:hidden box's baseline is its
-            bottom margin edge, so `truncate` + baseline alignment misaligns. */}
+            bottom margin edge, so `truncate` + baseline alignment misaligns.
+
+            `contain-inline` (index.css) is what makes the whole thing work under a `w-fit`
+            canvas: it stops this cluster's text from voting on the canvas's width, so a card can
+            never widen the tree — only lane and arm floors can. Its width comes from `flex-1`,
+            so it has no need to size itself; its height still tracks the wrapped lines. */}
         <span
           title={blockSummary(node)}
-          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 py-0.5"
+          className="contain-inline flex min-w-0 flex-1 flex-wrap items-center gap-x-1 py-0.5"
         >
-          {/* `min-w-0`, NOT the old `max-w-80`. A flex item with min-width:0 contributes ZERO to
-              its container's min-content size, so a pathological
-              `bioreactor_left_densitometer · read_optical_density` can no longer widen the canvas
-              at all: it ellipsizes inside whatever width its lane has. That is strictly stronger
-              than a cap, which is why both max-widths are gone rather than tightened.
+          {/* `min-w-0` is what lets this ellipsize instead of overflowing; the CLUSTER's
+              `contain-inline` is what stops it widening the canvas. Both are needed and they do
+              different jobs — min-width:0 is a layout-time permission to shrink, not a reduction
+              of the intrinsic contribution (index.css spells out the 3619px-vs-766px measurement
+              that proves it). With containment above, `bioreactor_left_densitometer ·
+              read_optical_density` ellipsizes inside whatever width its lane has and contributes
+              nothing to the tree's width, which is why the old `max-w-80` cap is gone rather than
+              tightened.
               The `title` is repeated HERE and not merely inherited from the cluster because
               probe R2 (truncate-without-title) reads `el.title` on the ellipsising element
               itself, not on an ancestor. */}
@@ -639,7 +647,11 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
       <div
         {...listeners}
         {...attributes}
-        className="flex h-6 min-w-0 shrink-0 cursor-grab items-center gap-1 px-1 text-[10px] uppercase text-caption"
+        // `contain-inline` for the same reason as a card's text cluster (index.css): the label
+        // below is nowrap, and without containment its full text would set this lane's
+        // min-content and widen the whole canvas. The row's width comes from the lane's column
+        // stretch, so it has no need to size itself.
+        className="contain-inline flex h-6 min-w-0 shrink-0 cursor-grab items-center gap-1 px-1 text-[10px] uppercase text-caption"
       >
         <span className="shrink-0">lane {index + 1}</span>
         {diags.length > 0 && (

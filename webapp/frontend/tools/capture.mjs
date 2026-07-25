@@ -73,7 +73,14 @@ async function selectBlock(page, re) {
   const uid = await page.evaluate((src) => {
     const rx = new RegExp(src)
     for (const el of document.querySelectorAll('[id^="block-"]')) {
-      const header = el.firstElementChild
+      // The header is the card's first direct DIV child, NOT its first element child. A card
+      // also carries absolutely-positioned decoration as SPANs — the role rail and the action
+      // overlay — and the rail is rendered first, so `firstElementChild` returned an empty span
+      // and every ROLE-BEARING block silently stopped matching (12 setup failures across
+      // `inspector-retry-hazard` and `inspector-bool-param-toggle`, both of which select a
+      // `device · verb` card). The click below already used `> div`; this makes the lookup agree
+      // with it instead of depending on a card having no decoration before its header.
+      const header = el.querySelector(':scope > div')
       if (header && rx.test(header.textContent ?? '')) return el.id
     }
     return null
