@@ -6,6 +6,7 @@ import { useRoleColorStore } from '../stores/roleColorStore'
 import { diagnosticsByUid, type MappedDiagnostic } from './paths'
 import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
+import { LANE_DIVIDER_INSET, LANE_PAD } from './laneLayout'
 import { assignRoleColors } from './roleColors'
 import { blockSummary, blockSummaryParts, faultMarker } from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
@@ -390,7 +391,12 @@ function ContainerBody({ node }: { node: BlockNode }) {
   if (body === null) return null
   return (
     <DepthContext.Provider value={depth}>
-      <div className={`rounded-b px-2 pb-2 ${fill}`}>{body}</div>
+      {/* A parallel supplies its own horizontal air through the lane gutters (laneLayout.ts) —
+          its edge drop slot IS the 8px inset — so a `px-2` here would stack a second one on top
+          of it and push lane content deeper than every other construct's (comment #5). */}
+      <div className={`rounded-b pb-2 ${node.kind === 'parallel' ? '' : 'px-2'} ${fill}`}>
+        {body}
+      </div>
     </DepthContext.Provider>
   )
 }
@@ -407,20 +413,32 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
     // container. Sizing to content also keeps the "+ lane" button next to the last lane rather
     // than shoved to the far edge by the lanes' growth.
     <div className="flex items-stretch">
-      <DropSlot
-        at={{ parentUid: node.uid, slot: 'children', index: 0 }}
-        horizontal
-        hint={node.children.length === 0}
-      />
       {node.children.map((lane, i) => (
         <Fragment key={lane.uid}>
-          {/* Plain slate hairline between lanes (#10): no rounded corners, no construct tint,
-              matching the Toolbar's `w-px bg-slate-200` divider. */}
-          {i > 0 && <span aria-hidden className="w-px self-stretch bg-slate-200" />}
+          {/* The gutter BEFORE lane i, and the row's only horizontal spacing (comment #5): the
+              leading one is the row's 8px edge inset, every later one is a 16px gutter carrying
+              the centred hairline. Slot indices are unchanged — slot i still inserts before
+              lane i — so nothing about the drag targets moves, only their geometry. */}
+          <DropSlot
+            at={{ parentUid: node.uid, slot: 'children', index: i }}
+            horizontal
+            hint={false}
+            divider={i > 0}
+          />
           <Lane lane={lane} index={i} />
-          <DropSlot at={{ parentUid: node.uid, slot: 'children', index: i + 1 }} horizontal hint={false} />
         </Fragment>
       ))}
+      {node.children.length === 0 ? (
+        <DropSlot at={{ parentUid: node.uid, slot: 'children', index: 0 }} horizontal hint />
+      ) : (
+        // The append slot doubles as the divider that gives "+ lane" a compartment of its own.
+        <DropSlot
+          at={{ parentUid: node.uid, slot: 'children', index: node.children.length }}
+          horizontal
+          hint={false}
+          divider
+        />
+      )}
       <button
         title="Add lane"
         onClick={(e) => {
@@ -433,9 +451,10 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
         }}
         // `stretch` instead of the 24px token: this button runs the full height of the lanes
         // beside it, which is why it is the one sanctioned height exception (controls.ts).
-        // `m-1` is the button's existing inset from the lane row, and it is a margin — not a
-        // width or a colour — so nothing in the helper competes with it in the cascade.
-        className={inlineButtonClass({ subtle: true, stretch: true }) + ' m-1'}
+        // Its LEFT air comes from the divider gutter before it; `mr-2` gives the row the same
+        // 8px right edge the leading slot gives it on the left. Margins — not widths or colours
+        // — so nothing in the helper competes with them in the cascade.
+        className={inlineButtonClass({ subtle: true, stretch: true }) + ' my-1 mr-2'}
       >
         <Plus size={12} aria-hidden className="mr-0.5" />lane
       </button>
@@ -473,8 +492,10 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
       }}
       className={
         // Selection is the ring alone — same `ring-2 ring-blue-400` as BlockView, with no border
-        // for it to compete with. Lane separators live in ParallelLanes as standalone hairlines.
-        'min-w-48 flex-initial rounded p-1 ' +
+        // for it to compete with. Lane separators live in the gutters (DropSlot), and the lane
+        // takes vertical padding only: horizontal padding here would stack on top of the gutter
+        // and put this lane's cards deeper than a loop's body (comment #5).
+        `min-w-48 flex-initial rounded ${LANE_PAD} ` +
         (selected ? 'ring-2 ring-blue-400 ' : '') +
         (isDragging ? 'opacity-40' : '')
       }
@@ -555,15 +576,17 @@ function BranchLanes({ node }: { node: BranchNode }) {
     //     it belongs to the card, not to whichever arm happens to be empty. Same doc, same
     //     canvas: THEN 461.2px (its content) / ELSE 192px (the min-w-48 floor).
     <div className="flex gap-2">
-      {/* Arms use the same p-1 as parallel lanes and are divided by the same plain slate hairline
-          (#5, #10): a Branch and a Parallel at the same depth inset their content equally, and the
-          divider is a clean neutral line matching the Toolbar's `w-px bg-slate-200`. */}
-      <div className="min-w-48 flex-initial p-1">
+      {/* Arms carry the same LANE_PAD as parallel lanes and are divided by the same hairline at
+          the same inset (#5, #10, laneLayout.ts): a Branch and a Parallel at the same depth inset
+          their content equally — 8px, like every other construct — and their dividers cover the
+          arms' cards without running into the tinted header. The row's `gap-2` already puts 8px
+          on each side of the hairline, which is a parallel's 16px gutter by another route. */}
+      <div className={`min-w-48 flex-initial ${LANE_PAD}`}>
         <p className="flex h-6 items-center px-1 text-[10px] uppercase text-caption">then</p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
       </div>
-      <span aria-hidden className="w-px self-stretch bg-slate-200" />
-      <div className="min-w-48 flex-initial p-1">
+      <span aria-hidden className={`w-px self-stretch bg-slate-200 ${LANE_DIVIDER_INSET}`} />
+      <div className={`min-w-48 flex-initial ${LANE_PAD}`}>
         {node.else === null ? (
           <>
             <p className="flex h-6 items-center px-1 text-[10px] uppercase text-caption">else</p>
