@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.2](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.5.1...v1.5.2) (2026-07-25)
+
+
+### Bug Fixes
+
+* **studio:** UI improvements 5 — lane gutters, expression box, binding autocomplete ([#81](https://github.com/bioexperiment-lab-devices/lab-devices/issues/81)) ([a146865](https://github.com/bioexperiment-lab-devices/lab-devices/commit/a146865803730b539bb717b6a6147d87855a220b))
+
 ## [1.5.1](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.5.0...v1.5.1) (2026-07-22)
 
 
