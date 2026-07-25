@@ -7,6 +7,7 @@
   it enforces the ≥24×24px hit area, contrast, and title/aria-label).
 - Toolbar-row exception: a button that must visually match adjacent labeled buttons (e.g. the Toolbar's Undo/Redo) may inline a Lucide icon inside the shared button class instead of IconButton, provided it keeps an explicit `aria-label`, a `title`, and a ≥24×24px rendered hit area.
 - Anchor exception: an icon-only action that must be a link (e.g. a download `<a href>`) uses `iconButtonClass()` from src/ui/IconButton.tsx to get the same hit area/contrast, plus explicit `title` and `aria-label`.
+- Value exception: a control whose affordance IS a value rather than an icon (the Roles section's colour swatch, which opens the colour menu) uses `iconButtonClass()` for the same 24px hit area and focus ring, plus explicit `title` and `aria-label`, and renders the value inside. It renders a value, not a glyph — this is not a licence for raw glyph buttons, which stay banned.
 - Brand marks, if ever needed, come from **Simple Icons** (https://simpleicons.org).
 - **No raw glyph characters for interactive controls** (no ✕ ⧉ ✎ ▾ ↻ ⭳ buttons).
   Semantic notation stays typographic: `∀` (for_each), `R×N` retry marker, `⤳`

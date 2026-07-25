@@ -104,35 +104,36 @@ export function ConstantsPanel() {
           </li>
         ))}
       </ul>
-      {/* Create form mirrors the stacked edit rows: name + Add, a full-width expression editor for
-          the value, then a unit field (#8). ExpressionEditor commits on blur/Enter into newValue;
-          pressing Add (or Enter in the name/unit input) creates the constant. */}
+      {/* Create form mirrors the stacked edit rows, with `Add` as the LAST control the user
+          reaches rather than the second (#2): name, then a full-width expression editor for the
+          value, then unit + Add. ExpressionEditor commits on blur/Enter into newValue; pressing
+          Add (or Enter in the name/unit input) creates the constant. */}
       <div className="space-y-1">
-        <div className="flex items-center gap-1">
-          <input
-            value={newName}
-            placeholder="name"
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && add()}
-            className={controlClass({ mono: true, width: 'w-full' })}
-          />
-          <button onClick={add} className={inlineButtonClass()}>
-            Add
-          </button>
-        </div>
+        <input
+          value={newName}
+          placeholder="name"
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+          className={controlClass({ mono: true, width: 'w-full' })}
+        />
         <ExpressionEditor
           value={newValue}
           expected="any"
           placeholder="value or expression"
           onCommit={(t) => setNewValue(t)}
         />
-        <input
-          value={newUnit}
-          placeholder="unit"
-          onChange={(e) => setNewUnit(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && add()}
-          className={controlClass({ width: 'w-20' })}
-        />
+        <div className="flex items-center gap-1">
+          <input
+            value={newUnit}
+            placeholder="unit"
+            onChange={(e) => setNewUnit(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && add()}
+            className={controlClass({ width: 'w-20' })}
+          />
+          <button onClick={add} className={inlineButtonClass()}>
+            Add
+          </button>
+        </div>
       </div>
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
