@@ -89,9 +89,16 @@ export function StreamsPanel() {
                   setError(null)
                   cancelled.current = false
                 }}
-                className={inlineButtonClass()}
+                // Sizing to content let one long name push the 256px palette into horizontal
+                // scroll (#7 — measured 254 -> 437px scrollWidth). Both inputs in this panel were
+                // already capped at w-24; the display button was not. Capping the input's
+                // maxLength instead would not help: names arrive from imported docs too, so it is
+                // the RENDER that has to be bounded.
+                className={inlineButtonClass({ shrinkable: true })}
               >
-                {name}
+                <span className="min-w-0 truncate" title={name}>
+                  {name}
+                </span>
               </button>
             )}
             <input

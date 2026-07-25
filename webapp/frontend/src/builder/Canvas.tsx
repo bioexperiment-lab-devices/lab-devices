@@ -1,4 +1,13 @@
-import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { ChevronDown, ChevronRight, Copy, Plus, X } from 'lucide-react'
 import { useActiveTree, useDocStore } from '../stores/docStore'
@@ -6,7 +15,7 @@ import { useRoleColorStore } from '../stores/roleColorStore'
 import { diagnosticsByUid, type MappedDiagnostic } from './paths'
 import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
-import { LANE_DIVIDER_INSET, LANE_PAD } from './laneLayout'
+import { CHIP_GAP, LANE_DIVIDER_INSET, LANE_LABEL_H, LANE_PAD } from './laneLayout'
 import { assignRoleColors } from './roleColors'
 import { blockSummary, blockSummaryParts, faultMarker } from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
@@ -202,7 +211,10 @@ function ScopeSwitcher() {
 function BlockList(props: { parentUid: string | null; slot: string; items: BlockNode[] }) {
   const { parentUid, slot, items } = props
   return (
-    <div className="flex flex-col">
+    // `min-h-0 flex-1` is what lets an empty list's hint span a taller sibling lane (#3). It is
+    // inert in this component's other parents (a loop's body, the canvas root): flex-basis does
+    // not apply to a block-level child of a block-level box.
+    <div className="flex min-h-0 flex-1 flex-col">
       <DropSlot at={{ parentUid, slot, index: 0 }} horizontal={false} hint={items.length === 0} />
       {items.map((node, i) => (
         <Fragment key={node.uid}>
@@ -276,7 +288,11 @@ function BlockView({ node }: { node: BlockNode }) {
           headerFillClass(node.kind)
         }
       >
-        {isContainer ? (
+        {/* No placeholder for a leaf. Reserving the chevron's 24px on every leaf card put its
+            icon in the same column as a container's chevron, which bought a rhythm nobody asked
+            for at the price of 24px of horizontal space on every leaf — and leaves are the
+            majority of cards. Leaf content now starts at the card's padding edge. */}
+        {isContainer && (
           <IconButton
             icon={collapsed ? ChevronRight : ChevronDown}
             label={collapsed ? 'Expand' : 'Collapse'}
@@ -285,8 +301,6 @@ function BlockView({ node }: { node: BlockNode }) {
               toggleCollapsed(node.uid)
             }}
           />
-        ) : (
-          <span aria-hidden className="h-6 w-6 shrink-0" />
         )}
         {swatch && (
           <span
@@ -401,6 +415,24 @@ function ContainerBody({ node }: { node: BlockNode }) {
   )
 }
 
+/** A column OUTSIDE any lane that reproduces a lane's vertical geometry, so its child fills
+ * exactly the band a lane's CARDS occupy (#4): the lane's own padding, then the invisible
+ * counterpart of the `LANE N` label row, then the band, bracketed by the air a vertical DropSlot
+ * puts above and below a card.
+ *
+ * Two things need it, and neither lives inside a `Lane` so neither inherits any of it: the
+ * "+ lane" button, and the lane row's own empty state (a parallel whose lanes have all been
+ * deleted), which has no lanes to align with but still has "+ lane" beside it. Expressed as
+ * geometry rather than as a hand-tuned `mt-10 mb-4`, so it tracks the tokens in laneLayout.ts. */
+function ChipBand({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={`flex flex-col ${LANE_PAD} ` + (className ?? '')}>
+      <span aria-hidden className={`shrink-0 ${LANE_LABEL_H}`} />
+      <div className={`flex min-h-0 flex-1 items-stretch ${CHIP_GAP}`}>{children}</div>
+    </div>
+  )
+}
+
 function ParallelLanes({ node }: { node: ParallelNode }) {
   const insertBlock = useDocStore((s) => s.insertBlock)
   return (
@@ -429,7 +461,10 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
         </Fragment>
       ))}
       {node.children.length === 0 ? (
-        <DropSlot at={{ parentUid: node.uid, slot: 'children', index: 0 }} horizontal hint />
+        // No lanes to align with, so the hint borrows the same band "+ lane" beside it uses.
+        <ChipBand>
+          <DropSlot at={{ parentUid: node.uid, slot: 'children', index: 0 }} horizontal hint />
+        </ChipBand>
       ) : (
         // The append slot doubles as the divider that gives "+ lane" a compartment of its own.
         <DropSlot
@@ -439,25 +474,27 @@ function ParallelLanes({ node }: { node: ParallelNode }) {
           divider
         />
       )}
-      <button
-        title="Add lane"
-        onClick={(e) => {
-          e.stopPropagation()
-          insertBlock(newPaletteNode('serial'), {
-            parentUid: node.uid,
-            slot: 'children',
-            index: node.children.length,
-          })
-        }}
-        // `stretch` instead of the 24px token: this button runs the full height of the lanes
-        // beside it, which is why it is the one sanctioned height exception (controls.ts).
-        // Its LEFT air comes from the divider gutter before it; `mr-2` gives the row the same
-        // 8px right edge the leading slot gives it on the left. Margins — not widths or colours
-        // — so nothing in the helper competes with them in the cascade.
-        className={inlineButtonClass({ subtle: true, stretch: true }) + ' my-1 mr-2'}
-      >
-        <Plus size={12} aria-hidden className="mr-0.5" />lane
-      </button>
+      {/* The band puts this button on the same lines as the lanes' cards (#4) instead of running
+          the whole interior height including the `LANE N` label row. Its LEFT air comes from the
+          divider gutter before it; `mr-2` gives the row the same 8px right edge the leading slot
+          gives it on the left. `stretch` in a flex ROW is full height at content width — this
+          button must NOT take a `width`, or it stops fitting its label. */}
+      <ChipBand className="mr-2">
+        <button
+          title="Add lane"
+          onClick={(e) => {
+            e.stopPropagation()
+            insertBlock(newPaletteNode('serial'), {
+              parentUid: node.uid,
+              slot: 'children',
+              index: node.children.length,
+            })
+          }}
+          className={inlineButtonClass({ subtle: true, stretch: true })}
+        >
+          <Plus size={12} aria-hidden className="mr-0.5" />lane
+        </button>
+      </ChipBand>
     </div>
   )
 }
@@ -495,7 +532,10 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
         // for it to compete with. Lane separators live in the gutters (DropSlot), and the lane
         // takes vertical padding only: horizontal padding here would stack on top of the gutter
         // and put this lane's cards deeper than a loop's body (comment #5).
-        `min-w-48 flex-initial rounded ${LANE_PAD} ` +
+        // `flex flex-col` (#3): the lane must be a column so its BlockList can take the height
+        // left over after the label row. Without it the lane stretches to the tallest sibling
+        // but its contents do not, and an empty lane's hint has nothing to fill.
+        `flex min-w-48 flex-initial flex-col rounded ${LANE_PAD} ` +
         (selected ? 'ring-2 ring-blue-400 ' : '') +
         (isDragging ? 'opacity-40' : '')
       }
@@ -503,7 +543,7 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
       <div
         {...listeners}
         {...attributes}
-        className="flex h-6 min-w-0 cursor-grab items-center gap-1 px-1 text-[10px] uppercase text-caption"
+        className="flex h-6 min-w-0 shrink-0 cursor-grab items-center gap-1 px-1 text-[10px] uppercase text-caption"
       >
         <span className="shrink-0">lane {index + 1}</span>
         {lane.label && (
@@ -547,7 +587,14 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
       {lane.kind === 'serial' ? (
         <BlockList parentUid={lane.uid} slot="children" items={lane.children} />
       ) : (
-        <BlockView node={lane} />
+        // A legacy bare-block lane has no BlockList and therefore no drop slots, but it must
+        // still present the SAME band as its serial siblings: without this its card sits 12px
+        // above theirs in the same row, and "+ lane" — which has no way to know which kind of
+        // lane it stands beside — sizes itself against a band that is 24px shorter than the one
+        // it was built for (measured: an 18px button, under the 24px hit-area floor).
+        <div className={`flex min-h-0 flex-1 flex-col ${CHIP_GAP}`}>
+          <BlockView node={lane} />
+        </div>
       )}
     </div>
   )
@@ -581,30 +628,34 @@ function BranchLanes({ node }: { node: BranchNode }) {
           their content equally — 8px, like every other construct — and their dividers cover the
           arms' cards without running into the tinted header. The row's `gap-2` already puts 8px
           on each side of the hairline, which is a parallel's 16px gutter by another route. */}
-      <div className={`min-w-48 flex-initial ${LANE_PAD}`}>
-        <p className="flex h-6 items-center px-1 text-[10px] uppercase text-caption">then</p>
+      {/* `flex flex-col` for the same reason a Lane is one (#3): the arm stretches to its
+          sibling, and its BlockList has to stretch with it or an empty arm's hint fills nothing. */}
+      <div className={`flex min-w-48 flex-initial flex-col ${LANE_PAD}`}>
+        <p className="flex h-6 shrink-0 items-center px-1 text-[10px] uppercase text-caption">
+          then
+        </p>
         <BlockList parentUid={node.uid} slot="then" items={node.then} />
       </div>
       <span aria-hidden className={`w-px self-stretch bg-slate-200 ${LANE_DIVIDER_INSET}`} />
-      <div className={`min-w-48 flex-initial ${LANE_PAD}`}>
+      <div className={`flex min-w-48 flex-initial flex-col ${LANE_PAD}`}>
         {node.else === null ? (
           <>
-            <p className="flex h-6 items-center px-1 text-[10px] uppercase text-caption">else</p>
-            <div className="flex flex-col">
-              {/* Mirrors the leading `DropSlot` of the THEN arm's BlockList — a vertical
-                  DropSlot renders `my-0.5 h-2` (DropSlot.tsx), and this arm has no BlockList
-                  to render one. Without it the two arms' first rows sit 12px out of line.
-                  If DropSlot's vertical size changes, change this to match. */}
-              <div className="my-0.5 h-2" />
+            <p className="flex h-6 shrink-0 items-center px-1 text-[10px] uppercase text-caption">
+              else
+            </p>
+            {/* The same band the THEN arm's cards occupy (#4). This replaces a hand-copied
+                `my-0.5 h-2` spacer whose comment asked the next reader to keep it in sync with
+                DropSlot by hand; CHIP_GAP is that sync. */}
+            <div className={`flex min-h-0 flex-1 items-stretch ${CHIP_GAP}`}>
               <button
                 onClick={(e) => {
                   e.stopPropagation()
                   patchBlock(node.uid, { else: [] })
                 }}
-                // Same control as the Inspector's "+ add else lane" (Inspector.tsx), and
-                // routed through the same helper so a change to the subtle variant reaches
-                // both. h-6 matches the old py-1.5 + text-xs box to the pixel.
-                className={inlineButtonClass({ subtle: true, width: 'w-full' })}
+                // Same control as the Inspector's "+ add else lane" (Inspector.tsx), and routed
+                // through the same helper so a change to the subtle variant reaches both. No
+                // `width`: the button fits its label and the band gives it its height.
+                className={inlineButtonClass({ subtle: true, stretch: true })}
               >
                 <Plus size={12} aria-hidden className="mr-0.5" />add else
               </button>
@@ -612,7 +663,7 @@ function BranchLanes({ node }: { node: BranchNode }) {
           </>
         ) : (
           <>
-            <p className="flex h-6 items-center justify-between px-1 text-[10px] uppercase text-caption">
+            <p className="flex h-6 shrink-0 items-center justify-between px-1 text-[10px] uppercase text-caption">
               <span>else</span>
               {node.else.length === 0 && (
                 <IconButton

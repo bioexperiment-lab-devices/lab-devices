@@ -35,6 +35,7 @@ const FIXTURES = {
   morbidostat: path.join(repoRoot, 'examples/morbidostat.json'),
   torture: path.join(repoRoot, 'webapp/fixtures/ui-audit-torture.json'),
   groupScopeRefs: path.join(repoRoot, 'webapp/fixtures/group-scope-refs.json'),
+  uiSix: path.join(repoRoot, 'webapp/fixtures/ui-improvements-6.json'),
 }
 
 const VIEWPORTS = [
@@ -522,6 +523,33 @@ const states = [
       )
       if (!roleColumnFiltered) {
         throw new Error("for_each grid did not render a role-filtered select for the 'meter' column")
+      }
+    },
+  },
+  {
+    name: 'ui-improvements-6',
+    description:
+      'the chip-band fixture: a parallel whose lanes are 1 chip / empty / tall-with-a-nested-' +
+      'parallel, a branch with no else arm, a branch with an empty else arm, and an empty loop ' +
+      "body — every filler that has to span the band a lane's cards occupy, each beside a " +
+      'sibling that actually holds cards. Streams and Constants are opened and a role selected ' +
+      'so the rebuilt badge (swatch trigger + rename/delete INSIDE the active badge), the ' +
+      'device-type hairline, the reordered constants form and the capped stream name all ' +
+      'actually mount: R4 cannot report on a row that never renders.',
+    setup: async (page) => {
+      await gotoBuilder(page)
+      await importDoc(page, FIXTURES.uiSix)
+      await page.getByRole('button', { name: 'Streams', exact: true }).click()
+      await page.getByRole('button', { name: 'Constants', exact: true }).click()
+      await page.locator('[id="role-od_a"]').click()
+      await page.waitForTimeout(200)
+      // Assert the state actually mounted, or this is a vacuous clean pass — the whole point of
+      // the state is the DOM the active badge only renders while a role is selected.
+      if ((await page.getByRole('button', { name: 'Colour for od_a' }).count()) !== 1) {
+        throw new Error('the active role badge did not mount its swatch trigger')
+      }
+      if ((await page.getByRole('button', { name: 'Rename od_a' }).count()) !== 1) {
+        throw new Error('the active role badge did not mount its rename control')
       }
     },
   },

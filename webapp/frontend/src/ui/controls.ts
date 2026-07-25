@@ -98,11 +98,24 @@ export function textAreaClass(
  * height rule (see frontend/CLAUDE.md) still has exactly one home: a caller that needs a
  * non-24px button asks for it by name, and there is no silent `h-6`/`self-stretch` clash. */
 export function inlineButtonClass(
-  opts: { subtle?: boolean; danger?: boolean; active?: boolean; width?: string; stretch?: boolean } = {},
+  opts: {
+    subtle?: boolean
+    danger?: boolean
+    active?: boolean
+    width?: string
+    stretch?: boolean
+    shrinkable?: boolean
+  } = {},
 ): string {
   return (
     `${opts.stretch ? 'self-stretch' : CONTROL_H} ${opts.width ? opts.width + ' ' : ''}` +
-    'inline-flex shrink-0 items-center justify-center rounded border px-2 text-xs ' +
+    'inline-flex items-center justify-center rounded border px-2 text-xs ' +
+    // `shrinkable` is for a button whose LABEL is user data (the Streams panel's name), where
+    // sizing to content lets one long value push the 256px palette into horizontal scroll —
+    // measured 254 -> 437px scrollWidth. It SELECTS the shrinkable box rather than appending one,
+    // for the same cascade reason as `width`; the caller puts a `truncate` span with its own
+    // `title` inside, which is also what the probe's truncate-without-title rule requires.
+    (opts.shrinkable ? 'min-w-0 max-w-full ' : 'shrink-0 ') +
     'disabled:opacity-40 ' +
     // Each variant SELECTS a whole border/bg set rather than appending one (the cascade
     // reasoning behind `width`): appending `border-blue-500` onto a baked `border-slate-300`

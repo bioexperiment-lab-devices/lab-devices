@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Palette as PaletteIcon, Pencil, Plus, X } from 'lucide-react'
+import { Pencil, Plus, X } from 'lucide-react'
 import { useCatalogStore } from '../stores/catalogStore'
 import { useDocStore } from '../stores/docStore'
 import { useRoleColorStore } from '../stores/roleColorStore'
@@ -11,7 +11,7 @@ import { assignRoleColors, ROLE_SWATCH_CLASSES, ROLE_SWATCH_LABELS, roleColorKey
 import { Chip } from './Chip'
 import { KindIcon } from '../ui/icons'
 import { badgeClass, CONTROL_H, controlClass, inlineButtonClass } from '../ui/controls'
-import { IconButton } from '../ui/IconButton'
+import { IconButton, iconButtonClass } from '../ui/IconButton'
 import { useDismissable } from '../ui/useDismissable'
 
 /** The Roles section, grouped by device type (spec §3.3): per type, radio-style role
@@ -68,10 +68,6 @@ function RoleTypeBlock({
   const [error, setError] = useState<string | null>(null)
   const cancelled = useRef(false)
   const selected = effectiveSelection(group.roles, picked)
-  // A group role param ({hole}) is a read-only reference here — authored in the group's Params
-  // panel — so it never enters the rename input and the rename/delete/colour cluster is hidden
-  // while one is selected (renameRole/removeRole act on `s.roles`, which has no {hole} key).
-  const selectedIsParam = selected !== null && paramNames.has(selected)
   const topRoles = group.roles.filter((r) => !paramNames.has(r))
   const groupParams = group.roles.filter((r) => paramNames.has(r))
   const isFocusedHere = focusedRole !== null && group.roles.includes(focusedRole)
@@ -111,29 +107,63 @@ function RoleTypeBlock({
   // to read as the {hole} it is, and never swaps into the rename input (isParam guard).
   const badge = (name: string) => {
     const isParam = paramNames.has(name)
-    return editing && name === selected && !isParam ? (
-      <input
-        key={name}
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => {
-          if (cancelled.current) {
-            cancelled.current = false
-            return
-          }
-          commitRename()
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commitRename()
-          if (e.key === 'Escape') {
-            cancelled.current = true
-            setEditing(false)
-          }
-        }}
-        className={controlClass({ mono: true, width: 'w-28' })}
-      />
-    ) : (
+    const active = name === selected
+    const focusRing = focusedRole === name ? ' ring-2 ring-amber-400' : ''
+    if (editing && active && !isParam) {
+      return (
+        <input
+          key={name}
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            if (cancelled.current) {
+              cancelled.current = false
+              return
+            }
+            commitRename()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitRename()
+            if (e.key === 'Escape') {
+              cancelled.current = true
+              setEditing(false)
+            }
+          }}
+          className={controlClass({ mono: true, width: 'w-28' })}
+        />
+      )
+    }
+    // The ACTIVE badge carries the controls that act on it (#5). They used to sit in a
+    // right-aligned cluster below the row, acting on "whichever badge is selected" with nothing
+    // on screen tying the two together. It is a <span>, not a <button>, because a button may not
+    // contain buttons — it keeps `badgeClass` so both states are the same 24px box, and the name
+    // span inherits the click that used to belong to the whole badge. A group param ({hole}) is a
+    // read-only reference authored in the group's Params panel, so it never gets controls and
+    // never enters the rename input (renameRole/removeRole act on `s.roles`, which has no {hole}
+    // key) — it falls through to the plain button below.
+    if (active && !isParam) {
+      return (
+        <span key={name} id={`role-${name}`} className={badgeClass({ active: true }) + focusRing}>
+          <RoleColorPicker name={name} type={group.type} swatch={assigned[name] ?? null} />
+          <span className="mx-1 min-w-0 truncate" title={name}>
+            {name}
+          </span>
+          <IconButton icon={Pencil} label={`Rename ${name}`} onClick={startRename} />
+          <IconButton
+            icon={X}
+            label={`Delete ${name}`}
+            destructive
+            onClick={() => {
+              const err = removeRole(name)
+              setError(err)
+              if (err === null) setPicked(null)
+            }}
+          />
+        </span>
+      )
+    }
+    return (
       <button
         key={name}
         id={`role-${name}`}
@@ -142,10 +172,7 @@ function RoleTypeBlock({
           setEditing(false)
           setError(null)
         }}
-        className={
-          badgeClass({ active: name === selected }) +
-          (focusedRole === name ? ' ring-2 ring-amber-400' : '')
-        }
+        className={badgeClass({ active }) + focusRing}
       >
         {assigned[name] && (
           <span aria-hidden className={`mr-1 h-2.5 w-2.5 shrink-0 rounded-sm ${assigned[name]}`} />
@@ -174,27 +201,6 @@ function RoleTypeBlock({
       <div className="mb-1 flex flex-wrap items-center gap-1">
         {topRoles.map((name) => badge(name))}
         <AddRoleForm type={group.type} onAdded={setPicked} />
-        {/* rename/delete/colour act on `selected` and only make sense for a real top-level
-            role — a group param is edited in the group's Params panel, so hide the cluster
-            (and never render the rename input) when the selection is a param, and hide it
-            entirely when the group has no roles at all (nothing to act on). */}
-        {group.roles.length > 0 && !selectedIsParam && (
-          <span className="ml-auto flex items-center">
-            {selected && <RoleColorPicker name={selected} type={group.type} />}
-            <IconButton icon={Pencil} label="Rename selected role" onClick={startRename} />
-            <IconButton
-              icon={X}
-              label="Delete selected role"
-              destructive
-              onClick={() => {
-                if (!selected) return
-                const err = removeRole(selected)
-                setError(err)
-                if (err === null) setPicked(null)
-              }}
-            />
-          </span>
-        )}
       </div>
       {/* Additive "In this group" divider (design 2026-07-21): the active group's role params,
           only ever non-empty inside that group's scope. */}
@@ -210,7 +216,11 @@ function RoleTypeBlock({
       )}
       {error && <p className="mb-1 text-xs text-red-600">{error}</p>}
       {selected !== null && verbs !== null && (
-        <div className="flex flex-wrap gap-1">
+        // The roles a type has and the verbs you can drag from it are two different kinds of
+        // thing stacked in one card (#6). This row only renders when a role is SELECTED, and a
+        // selection implies the type has roles, so "if any roles exist for this type" and "this
+        // row is rendering" are the same condition — no extra guard.
+        <div className="flex flex-wrap gap-1 border-t border-slate-200 pt-1.5">
           {Object.entries(verbs).map(([verb, spec]) => (
             <Chip
               key={verb}
@@ -251,7 +261,16 @@ function RoleTypeBlock({
  * still crop it. The panel stays `visibility: hidden` until a position is known, so it never
  * flashes at (0, 0) for a frame. `useDismissable`'s `extra` ref is what keeps a click landing
  * on the portaled panel from reading as "outside" and immediately closing it. */
-function RoleColorPicker({ name, type }: { name: string; type: string }) {
+function RoleColorPicker({
+  name,
+  type,
+  swatch,
+}: {
+  name: string
+  type: string
+  /** The role's assigned swatch class, or null when it has no colour. */
+  swatch: string | null
+}) {
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const ref = useDismissable(open, () => setOpen(false), panelRef)
@@ -289,14 +308,29 @@ function RoleColorPicker({ name, type }: { name: string; type: string }) {
 
   return (
     <div ref={ref} className="relative inline-flex">
-      <IconButton
-        icon={PaletteIcon}
-        label={`Colour for ${name}`}
+      {/* The swatch IS the trigger (#5): a colour control that looks like a colour. It borrows
+          `iconButtonClass` for the 24px hit area rather than being 10px of clickable square
+          (probe rule `tiny-target`), and carries its own title/aria-label — a colour value is not
+          a Lucide icon, so IconButton cannot render it. See frontend/CLAUDE.md. */}
+      <button
+        type="button"
+        title={`Colour for ${name}`}
+        aria-label={`Colour for ${name}`}
         onClick={(e) => {
           e.stopPropagation()
           setOpen((v) => !v)
         }}
-      />
+        className={iconButtonClass()}
+      >
+        {/* A role with NO colour is a distinct state from one whose colour is auto-assigned
+            (roleColorStore.ts: an explicit null override vs. an absent key), so it needs a
+            visible target of its own — a hollow ring, not a missing square. SELECTED, not
+            appended: only one paint rule is ever emitted. */}
+        <span
+          aria-hidden
+          className={'h-2.5 w-2.5 rounded-sm ' + (swatch ?? 'border border-slate-400')}
+        />
+      </button>
       {open &&
         createPortal(
           <div

@@ -1,0 +1,115 @@
+{
+  "doc_version": 1,
+  "name": "UI improvements 6 — lane geometry",
+  "description": "Boundary fixture for the chip band (design 2026-07-25). Every construct that has to fill the band a lane's cards occupy appears here at least once, beside a sibling that actually holds cards, so an empty band can be compared against a populated one. Also carries the palette's overflow cases: a long stream name, a long role name, a device type with no roles, and constants with and without units. NOT a runnable experiment — the guards are constants so the shape, not the science, is what is under test.",
+  "workflow": {
+    "schema_version": 3,
+    "metadata": {
+      "author": "ui-improvements-6",
+      "description": "lane geometry"
+    },
+    "constants": {
+      "SETTLE_S": { "value": 5 },
+      "MAX_TEMP": { "value": 37.0, "as": "celsius" }
+    },
+    "roles": {
+      "od_a": { "type": "densitometer" },
+      "od_b": { "type": "densitometer" },
+      "pump_a": { "type": "pump" },
+      "role_with_a_deliberately_overlong_name_for_badge_truncation": { "type": "pump" }
+    },
+    "streams": {
+      "od_1": { "units": "AU" },
+      "optical_density_channel_three_normalised_long": { "units": "unitless" }
+    },
+    "blocks": [
+      {
+        "parallel": {
+          "children": [
+            {
+              "serial": {
+                "children": [{ "alarm": { "if": "SETTLE_S > 100", "message": "one chip lane" } }]
+              },
+              "label": "one chip"
+            },
+            { "serial": { "children": [] }, "label": "empty lane" },
+            {
+              "serial": {
+                "children": [
+                  { "measure": { "device": "od_a", "verb": "measure", "into": "od_1" } },
+                  {
+                    "command": {
+                      "device": "pump_a",
+                      "verb": "dispense",
+                      "params": { "volume_ml": 1.0 }
+                    }
+                  },
+                  {
+                    "parallel": {
+                      "children": [
+                        {
+                          "serial": {
+                            "children": [
+                              { "command": { "device": "pump_a", "verb": "stop", "params": {} } }
+                            ]
+                          }
+                        },
+                        { "serial": { "children": [] } }
+                      ]
+                    },
+                    "label": "nested: the band must work at depth"
+                  },
+                  { "wait": { "duration": "5s" } }
+                ]
+              },
+              "label": "tall lane"
+            }
+          ]
+        },
+        "label": "one chip | empty | tall"
+      },
+      {
+        "branch": {
+          "if": "SETTLE_S > 1",
+          "then": [
+            { "measure": { "device": "od_b", "verb": "measure", "into": "od_1" } },
+            {
+              "command": {
+                "device": "pump_a",
+                "verb": "rotate",
+                "params": { "direction": "forward", "speed_ml_min": 1.0 }
+              }
+            }
+          ]
+        },
+        "label": "else absent: the \"+ add else\" band"
+      },
+      {
+        "branch": {
+          "if": "SETTLE_S > 1",
+          "then": [{ "abort": { "if": "MAX_TEMP > 200", "message": "never" } }],
+          "else": []
+        },
+        "label": "else empty: the else-arm hint band"
+      },
+      {
+        "loop": { "count": 2, "body": [] },
+        "label": "empty body: a band with no sibling to stretch to"
+      },
+      {
+        "operator_input": {
+          "name": "confirm_ready",
+          "type": "bool",
+          "prompt": "Ready to start?"
+        }
+      },
+      { "compute": { "into": "planned_ml", "value": "SETTLE_S * 2" } },
+      {
+        "record": {
+          "into": "optical_density_channel_three_normalised_long",
+          "value": "planned_ml"
+        }
+      }
+    ]
+  }
+}
