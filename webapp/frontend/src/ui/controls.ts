@@ -64,12 +64,22 @@ export function controlClass(
 /** Textareas. Shares `controlSurfaceClass` with `controlClass` but deliberately carries no
  * `h-*` class: a textarea's height is driven by its content (see `autoGrow.ts`), never by
  * the fixed single-line token. `py-0.5` replaces the vertical space `CONTROL_H` would have
- * fixed. `fillParent` adds `max-h-full` so a flex parent can bound the growth instead. */
+ * fixed. `fillParent` adds `max-h-full` so a flex parent can bound the growth instead.
+ *
+ * `block` is load-bearing, not cosmetic. Tailwind's preflight does not blockify form controls
+ * (it sets only `resize: vertical` on textarea), so a textarea is inline-block by default and a
+ * block wrapper therefore puts it on a LINE BOX — which in standards mode carries the strut of
+ * the wrapper's own font and adds ~4px of descender space BELOW the control. The expression
+ * editor's highlight overlay is `absolute inset-0`, i.e. what it paints is the WRAPPER, so that
+ * strut is what made the visible box taller than the box you type in once #12 raised the input
+ * to 24px (measured on the real app: wrapper 28px, control 24px). A block-level textarea
+ * generates no line box, so wrapper and control are the same box by construction. Probe R6
+ * `control-wrapper-gap` is the enforcement — 66 hits across the capture states before this. */
 export function textAreaClass(
   opts: { mono?: boolean; fillParent?: boolean; ghost?: boolean } = {},
 ): string {
   return (
-    `w-full py-0.5 ${controlSurfaceClass(opts)} ` + (opts.fillParent ? 'max-h-full' : '')
+    `block w-full py-0.5 ${controlSurfaceClass(opts)} ` + (opts.fillParent ? 'max-h-full' : '')
   ).trim()
 }
 

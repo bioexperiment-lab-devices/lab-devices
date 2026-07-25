@@ -1,6 +1,15 @@
+<!doctype html>
 <meta charset="utf-8" />
 <title>probe self-test</title>
 <style>
+  /* Two things make this fixture model the app's layout rather than a browser default: the
+     doctype above puts it in STANDARDS mode — in quirks mode a line box holding only a replaced
+     element skips the strut, so R6's plant cannot exist there and the rule was silently
+     unprovable — and this border-box rule stands in for Tailwind's preflight, which is why an
+     `h-6` control measures exactly 24px in the app. Without them the plants test layout the app
+     never produces. */
+  * { box-sizing: border-box; }
+
   .clip { overflow-x: hidden; width: 50px; }
   .clip > span { display: inline-block; width: 200px; }
   .trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 40px; }
@@ -130,3 +139,38 @@
 
 <!-- TRAP R5: text-caption on white = 7.58:1, the ordinary passing case. -->
 <div class="slate-600">ordinary caption text</div>
+
+<!-- PLANT R6: a textarea left at its browser-default display:inline-block, alone in a BLOCK
+     wrapper. An inline-level child sits on a line box, so the wrapper gains the parent font's
+     descender space below the control and measures ~5px taller than the box you type in. That
+     is PR #80's expression editor exactly: its highlight overlay is `absolute inset-0`, so the
+     size it paints is the WRAPPER's, and the visible box stopped matching the active one. -->
+     The absolutely positioned sibling is the overlay itself, so this doubles as the test for
+     the exclusion that lets it be there: an out-of-flow child must not count as a second
+     in-flow child, or the real editor would be skipped and the rule would watch nothing. -->
+<div style="position: relative; font-size: 14px; line-height: 20px">
+  <div style="position: absolute; inset: 0"></div>
+  <textarea style="display: inline-block; height: 24px; margin: 0; padding: 0; border: 0"></textarea>
+</div>
+
+<!-- TRAP R6a: the same wrapper with a BLOCK textarea — no line box, no strut, wrapper == control.
+     This is the fixed shape; if it ever fires, the rule is measuring something other than the gap. -->
+<div style="font-size: 14px; line-height: 20px">
+  <textarea style="display: block; height: 24px; margin: 0; padding: 0; border: 0"></textarea>
+</div>
+
+<!-- TRAP R6b: a wrapper holding a label AND the control. The extra height is ordinary layout,
+     not a strut, and the app's FieldRow (src/builder/fields.tsx) is built exactly this way — so
+     without the sole-in-flow-child condition every field in the Inspector becomes a standing hit. -->
+<div style="font-size: 14px; line-height: 20px">
+  <span>label</span>
+  <textarea style="display: inline-block; height: 24px; margin: 0; padding: 0; border: 0"></textarea>
+</div>
+
+<!-- TRAP R6c: a flex column that STRETCHES a short textarea (the Inspector's `fillParent`
+     description field). The wrapper is legitimately far taller than the control and there is no
+     line box in a flex formatting context, so a rule that ignored the parent's display would
+     report a 76px "gap" that is not a defect. -->
+<div style="display: flex; flex-direction: column; height: 100px">
+  <textarea style="height: 24px; margin: 0; padding: 0; border: 0"></textarea>
+</div>

@@ -307,5 +307,51 @@ export function probeRules() {
     }
   }
 
+  // R6 — a control's wrapper is taller than the control it wraps. PR #80's #12 shape: Tailwind's
+  // preflight does not blockify form controls (it sets only `resize: vertical` on textarea), so a
+  // textarea stays display:inline-block, and a BLOCK wrapper therefore puts it on a line box and
+  // adds the parent font's descender space below it. Anything painted at the wrapper's size — the
+  // expression editor's highlight overlay is `absolute inset-0` — then draws a box the control
+  // does not have, and the box you see stops being the box you type in. R4 could not catch this:
+  // its walker collects BUTTON/INPUT/SELECT only, and adding TEXTAREA there would flag every
+  // legitimately multi-line editor sitting beside its 24px ƒ button.
+  //
+  // Two conditions keep it free of false positives:
+  //   • the textarea must be its parent's ONLY in-flow child — an absolutely positioned sibling
+  //     (that overlay) does not count, but a label or a second control means the extra height is
+  //     ordinary layout (the app's FieldRow is span + control);
+  //   • the parent must be a BLOCK container — the strut is a line-box artifact, and a flex/grid
+  //     parent blockifies its children, so a stretched short textarea in a flex column (the
+  //     Inspector's fillParent description) is not a defect and must not be reported as one.
+  // An auto-grown textarea cannot trip it either: the wrapper grows with the control.
+  for (const el of document.querySelectorAll('textarea')) {
+    const parent = el.parentElement
+    if (!parent) continue
+    const ps = getComputedStyle(parent)
+    if (ps.display !== 'block') continue
+    const siblings = Array.from(parent.children).filter((c) => {
+      if (c === el) return false
+      const p = getComputedStyle(c).position
+      return p !== 'absolute' && p !== 'fixed'
+    })
+    if (siblings.length > 0) continue
+    const num = (v) => parseFloat(v) || 0
+    const inner =
+      parent.getBoundingClientRect().height -
+      num(ps.paddingTop) -
+      num(ps.paddingBottom) -
+      num(ps.borderTopWidth) -
+      num(ps.borderBottomWidth)
+    const es = getComputedStyle(el)
+    const outer = el.getBoundingClientRect().height + num(es.marginTop) + num(es.marginBottom)
+    if (outer > 0 && inner - outer > 1) {
+      out.push({
+        rule: 'control-wrapper-gap',
+        selector: cssPath(el),
+        detail: `wrapper ${inner.toFixed(1)}px vs control ${outer.toFixed(1)}px`,
+      })
+    }
+  }
+
   return out
 }

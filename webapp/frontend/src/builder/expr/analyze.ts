@@ -74,7 +74,12 @@ export function analyzeExpression(
   const result = parseExpression(masked)
   if (!result.ok) {
     const { message, pos, atEnd } = result.error
-    return [{ message, pos, len: atEnd ? 0 : 1 }]
+    // `{` has no role in the grammar except as a group-body hole, so a lex error landing on one
+    // is always an unfinished reference — say that instead of quoting the character. This is what
+    // the user reads for the 300ms between typing `{od` and typing `}` (comment #13), and it is
+    // the message beside the very field where `{` now opens the hole completions.
+    const friendly = text[pos] === '{' ? "unfinished {binding} — add the closing '}'" : message
+    return [{ message: friendly, pos, len: atEnd ? 0 : 1 }]
   }
   const problems: ExprProblem[] = []
   walk(result.ast, maskScope(scope), problems)

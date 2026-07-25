@@ -7,6 +7,13 @@ describe('analyzeExpression', () => {
   it('empty text has no problems', () => {
     expect(analyzeExpression('  ', 'any', scope)).toEqual([])
   })
+  it('names an unfinished hole instead of quoting the raw character', () => {
+    // What the user stares at for the 300ms between typing `{od` and typing `}`.
+    const [p] = analyzeExpression('{budge', 'any', { streams: [], bindings: ['{budget}'] })
+    expect(p.message).toBe("unfinished {binding} — add the closing '}'")
+    expect(p.pos).toBe(0)
+  })
+
   it('reports a parse error with its position', () => {
     const p = analyzeExpression('mean(od', 'any', scope)
     expect(p).toHaveLength(1)
