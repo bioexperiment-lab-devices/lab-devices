@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.3](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.5.2...v1.5.3) (2026-07-25)
+
+
+### Bug Fixes
+
+* **studio:** UI improvements 6 — chip band, role badge controls, palette overflow ([#83](https://github.com/bioexperiment-lab-devices/lab-devices/issues/83)) ([cc8bc5d](https://github.com/bioexperiment-lab-devices/lab-devices/commit/cc8bc5d1c0a8ddf0b3c9e6a6041aac076a168174))
+
 ## [1.5.2](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.5.1...v1.5.2) (2026-07-25)
 
 
