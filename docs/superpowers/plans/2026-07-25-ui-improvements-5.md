@@ -1130,3 +1130,33 @@ cd /Users/khamit/lab-devices && git pull && git worktree remove ../lab-devices-u
 **Types.** `divider?: boolean` is declared in Task 3 Step 5 and used only there and in Step 6. `Completion.match` is added in Task 4 Step 3 and set on every construction site in the same block. `LANE_PAD`/`LANE_DIVIDER_INSET` are created in Task 3 Step 3 and imported in Steps 5-7; `LANE_EDGE_W`/`LANE_GUTTER_W` are used only by `DropSlot`, `LANE_PAD_PX`/`LANE_DIVIDER_TOP_PX` only by the test.
 
 **Known sequencing note.** Task 2 Step 5 stashes and rebuilds to get a pre-fix measurement. Run it before Task 3 touches the same tree, or the stash will carry lane changes too.
+
+---
+
+## Deviations from this plan (recorded after execution)
+
+1. **The R6 plant did not fire as written.** `tools/probe-selftest.html` had no doctype, so it
+   rendered in **quirks mode**, where a line box holding only a replaced element skips the strut
+   — the fixture was structurally unable to express the defect. Fixed by adding `<!doctype html>`
+   plus a `* { box-sizing: border-box }` rule standing in for Tailwind's preflight; without the
+   second, standards mode made the R4 "matching row" trap fire (3 → 4 hits). The plant also
+   gained the absolutely positioned overlay sibling, so it doubles as the test for the
+   abspos-exclusion the real editor depends on.
+
+2. **Root cause of #12 was confirmed by measurement before the fix, not assumed.** Real app:
+   wrapper 28px / textarea 24px / overlay 28px, `parentDisplay: block`, `taDisplay: inline-block`.
+   Two isolated repros of the strut failed first (both quirks mode), which is what exposed
+   deviation 1.
+
+3. **The indentation assertion is 9px, not 8px.** The script measures from the card's *outer*
+   edge, which includes its 1px border: 1 + 8. All 10 containers in morbidostat and all 14 in the
+   torture fixture report 9, uniformly — that is the passing state, not a failure.
+
+4. **Backend CI was already red on `main`.** ruff 0.16 widened its default rule set and the
+   backend installs ruff unpinned, so `webapp-backend` failed with 71 findings in untouched files
+   (37 × B008 on FastAPI's `Depends`). Fixed here by pinning the rule set explicitly — see the
+   `ci(studio):` commit. Not foreseen by this plan and unrelated to the three fixes.
+
+5. **Not done:** the plan's Task 2 Step 5 `git stash` dance was unnecessary — the pre-fix capture
+   ran against the already-built `dist` before the source edit, so the before/after numbers (66 →
+   0) came from two ordinary builds.
