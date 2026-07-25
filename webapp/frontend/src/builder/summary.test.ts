@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { blockSummary, blockSummaryParts, formatParams } from './summary'
+import { blockSummary, blockSummaryParts, formatParams, splitSummary } from './summary'
 import { newPaletteNode } from './tree'
 import type { BlockNode } from './tree'
 
@@ -273,5 +273,95 @@ describe('blockSummaryParts', () => {
   it('emits no marker segment when neither retry nor on_error is set', () => {
     const node = ALL_KIND_FIXTURES.find((n) => n.kind === 'wait')!
     expect(blockSummaryParts(node).filter((p) => p.role === 'marker')).toHaveLength(0)
+  })
+})
+
+/** splitSummary partitions blockSummaryParts into the run the card must keep on one line (the
+ * block's IDENTITY) and the run it may reflow below (its DETAIL). The canvas renders the head in
+ * a `whitespace-nowrap` flex item and the tail in a wrapping one, so this table is the pinned
+ * statement of which words are allowed to be separated by a line break and which are not.
+ *
+ * The expected strings are literals derived by hand from reading blockSummaryParts, in the same
+ * spirit as PINNED_SUMMARIES above: computing them from splitSummary's own output would be
+ * tautological. They keep their leading separators (' · ', ' (', ' → ') because splitSummary
+ * partitions the segment array WITHOUT touching any segment's text — that is what keeps
+ * blockSummary byte-identical, and the totality test below is what pins it. */
+const HEAD_TAIL: Array<[BlockNode, string, string]> = [
+  [{ uid: 'x', kind: 'command', device: 'pump1', verb: 'dispense', params: { volume_ml: 5 }, ...base },
+    'pump1 · dispense', ' (volume_ml=5)'],
+  [{ uid: 'x', kind: 'measure', device: 'od_meter', verb: 'measure', into: 'od', params: {}, ...base },
+    'od_meter · measure', ' → od'],
+  [{ uid: 'x', kind: 'group_ref', name: 'service', as: null, args: { tube: 1 }, ...base },
+    'service', '(tube=1)'],
+  [{ uid: 'x', kind: 'serial', children: [], ...base }, 'Serial', ' · 0'],
+  [{ uid: 'x', kind: 'parallel', children: [], ...base }, 'Parallel', ' · 0 lanes'],
+  [{ uid: 'x', kind: 'branch', condition: 'count(od_1, last=11min) > 0', then: [], else: null, ...base },
+    'If', ' count(od_1, last=11min) > 0'],
+  [{ uid: 'x', kind: 'loop', mode: 'count', count: 2, until: '', check: 'after', pace: null, body: [], ...base },
+    'Loop', ' ×2'],
+  [{ uid: 'x', kind: 'loop', mode: 'until', count: 2, until: 'mean(od, last=3) > 0.6', check: 'after', pace: null, body: [], ...base },
+    'Loop until', ' mean(od, last=3) > 0.6'],
+  [{ uid: 'x', kind: 'for_each', vars: [{ name: 'tube', kind: 'int' }], rows: [{ tube: 1 }, { tube: 2 }, { tube: 3 }], body: [], ...base },
+    'For each', ' tube × 3'],
+  [{ uid: 'x', kind: 'compute', into: 'r_est', value: '24 * (mean(od_1, last=5) - mean(od_1, last=10))', ...base },
+    'r_est', ' = 24 * (mean(od_1, last=5) - mean(od_1, last=10))'],
+  [{ uid: 'x', kind: 'record', into: 'od_log', value: 'od', ...base }, 'od_log', ' ← od'],
+  [{ uid: 'x', kind: 'wait', duration: '30s', ...base }, 'wait', ' 30s'],
+  // The one kind whose head spans THREE segments — verb, a bare-space detail, then subject. A
+  // rule that stopped at the FIRST subject/verb instead of the last would give 'input' here and
+  // let the canvas break 'input' from 'od_min'.
+  [{ uid: 'x', kind: 'operator_input', name: 'od_min', inputType: 'float', prompt: null, min: null, max: null, choices: null, ...base },
+    'input od_min', ' (float)'],
+  [{ uid: 'x', kind: 'alarm', condition: 'od > 2', message: '', ...base }, 'Alarm if', ' od > 2'],
+  [{ uid: 'x', kind: 'abort', condition: 'estop', message: '', ...base }, 'Abort if', ' estop'],
+  // The fault marker is detail: it may reflow below the identity like any other tail segment.
+  [{ uid: 'x', kind: 'command', device: 'pump1', verb: 'dispense', params: {}, ...base, retry: { attempts: 3 } },
+    'pump1 · dispense', ' R×3'],
+]
+
+const join = (segs: ReturnType<typeof blockSummaryParts>) => segs.map((s) => s.text).join('')
+
+describe('splitSummary', () => {
+  it('splits identity from detail for every kind', () => {
+    for (const [node, head, tail] of HEAD_TAIL) {
+      const split = splitSummary(blockSummaryParts(node))
+      expect(join(split.head), `${node.kind} head`).toBe(head)
+      expect(join(split.tail), `${node.kind} tail`).toBe(tail)
+    }
+  })
+
+  // THE load-bearing property. The canvas renders head and tail as two separate flex items, so
+  // if the partition ever dropped, duplicated or reordered a segment the card would silently
+  // disagree with `blockSummary` — which feeds the same card's `title`, the drag overlay and the
+  // run log's block names. Run over ALL_KIND_FIXTURES (all 14 kinds) and every PINNED_SUMMARIES
+  // node, so the alternate forms newPaletteNode cannot build are covered too.
+  it('is a partition: [...head, ...tail] is exactly blockSummaryParts', () => {
+    const nodes = [...ALL_KIND_FIXTURES, ...PINNED_SUMMARIES.map(([n]) => n)]
+    for (const node of nodes) {
+      const parts = blockSummaryParts(node)
+      const { head, tail } = splitSummary(parts)
+      expect([...head, ...tail], `${node.kind} partition`).toEqual(parts)
+      expect(join([...head, ...tail]), `${node.kind} join`).toBe(blockSummary(node))
+    }
+  })
+
+  // Non-vacuity for the table above: a head that came back empty would make the identity
+  // wrappable and the 'splits identity from detail' assertions trivially satisfiable by a
+  // function that returned everything as tail.
+  it('gives every kind a non-empty head', () => {
+    for (const node of ALL_KIND_FIXTURES) {
+      const { head } = splitSummary(blockSummaryParts(node))
+      expect(head.length, `${node.kind} head`).toBeGreaterThan(0)
+      expect(join(head).trim(), `${node.kind} head text`).not.toBe('')
+    }
+  })
+
+  it('stays total on input that carries no subject or verb', () => {
+    expect(splitSummary([])).toEqual({ head: [], tail: [] })
+    const detailOnly = [
+      { text: 'a', role: 'detail' as const },
+      { text: 'b', role: 'marker' as const },
+    ]
+    expect(splitSummary(detailOnly)).toEqual({ head: [], tail: detailOnly })
   })
 })
