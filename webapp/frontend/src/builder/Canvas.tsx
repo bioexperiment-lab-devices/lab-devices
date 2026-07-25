@@ -587,7 +587,14 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
       {lane.kind === 'serial' ? (
         <BlockList parentUid={lane.uid} slot="children" items={lane.children} />
       ) : (
-        <BlockView node={lane} />
+        // A legacy bare-block lane has no BlockList and therefore no drop slots, but it must
+        // still present the SAME band as its serial siblings: without this its card sits 12px
+        // above theirs in the same row, and "+ lane" — which has no way to know which kind of
+        // lane it stands beside — sizes itself against a band that is 24px shorter than the one
+        // it was built for (measured: an 18px button, under the 24px hit-area floor).
+        <div className={`flex min-h-0 flex-1 flex-col ${CHIP_GAP}`}>
+          <BlockView node={lane} />
+        </div>
       )}
     </div>
   )

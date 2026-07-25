@@ -28,7 +28,11 @@ function TypeBadge({ name }: { name: string }) {
       title={showUnit ? `${t.base} in ${t.unit}` : t.base}
     >
       {t.base}
-      {showUnit && <span className="text-hint">{`<${t.unit}>`}</span>}
+      {/* `text-caption`, not `text-hint`: a unit annotation carries meaning, and slate-500 on
+          this badge's slate-100 fill measures 4.35:1 — under the AA floor. Found by the probe's
+          R5 once the new fixture gave it a united constant to look at; no capture state had one
+          before, so the rule had been reporting clean on a row that never mounted. */}
+      {showUnit && <span className="text-caption">{`<${t.unit}>`}</span>}
     </span>
   )
 }
