@@ -175,3 +175,24 @@ describe('sectionHeaderClass', () => {
     expect(sectionHeaderClass()).toContain('text-caption')
   })
 })
+
+describe('inline button shrinkable', () => {
+  it('swaps shrink-0 for a shrinkable box instead of emitting both', () => {
+    // A button that sizes to its content cannot be capped by appending a width: the row it sits
+    // in overflows instead. `shrinkable` SELECTS the shrinkable box, so there is only ever one
+    // sizing rule in the output and no cascade fight to lose.
+    const cls = inlineButtonClass({ shrinkable: true })
+    expect(cls).toContain('min-w-0')
+    expect(cls).toContain('max-w-full')
+    expect(cls.split(/\s+/)).not.toContain('shrink-0')
+  })
+
+  it('leaves every other caller unshrinkable', () => {
+    expect(inlineButtonClass().split(/\s+/)).toContain('shrink-0')
+    expect(inlineButtonClass({ subtle: true }).split(/\s+/)).toContain('shrink-0')
+  })
+
+  it('keeps a shrinkable button on the height token', () => {
+    expect(heights(inlineButtonClass({ shrinkable: true }))).toEqual([CONTROL_H])
+  })
+})

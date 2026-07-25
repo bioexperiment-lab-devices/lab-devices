@@ -29,3 +29,25 @@ export const LANE_GUTTER_W = 'w-4'
  * runs into the tinted construct header above it. The bottom inset matches the lane's padding. */
 export const LANE_DIVIDER_TOP_PX = 28
 export const LANE_DIVIDER_INSET = 'mt-7 mb-1'
+
+/** A leaf card's height: the header's one CONTROL_H row inside `py-1`, plus the card's 1px border
+ * top and bottom (measured 34px on the real app). Everything that stands in for a card inside a
+ * lane is at least this tall, so an empty lane beside a one-card lane reads as the same box
+ * rather than as a taller, looser one — the hint used to be 42px against a 34px card. */
+export const CHIP_H_PX = 34
+export const CHIP_MIN_H = 'min-h-8.5'
+
+/** A vertical DropSlot's own box and margins, owned here so the filler that REPLACES the slots
+ * can reproduce them. Before this, BranchLanes carried a hand-copied `my-0.5 h-2` spacer with a
+ * comment telling the next reader to keep it in sync by hand. */
+export const DROP_SLOT_V = 'my-0.5 h-2'
+
+/** The air a vertical DropSlot occupies above and below a card. The empty-list hint IS the
+ * leading slot, so it has no earlier sibling to supply this and must carry it as margin. */
+export const CHIP_GAP_PX = 12
+export const CHIP_GAP = 'my-3'
+
+/** The `LANE N` / `then` / `else` row above a lane's cards — one CONTROL_H, inside the lane's
+ * padding. `ChipBand` (Canvas.tsx) reproduces it invisibly so a control that sits OUTSIDE any
+ * lane still starts where the lanes' cards start. */
+export const LANE_LABEL_H = 'h-6'
