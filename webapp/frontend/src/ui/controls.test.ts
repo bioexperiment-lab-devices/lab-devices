@@ -131,6 +131,18 @@ describe('textarea class', () => {
     expect(textAreaClass({ fillParent: true })).toContain('max-h-full')
     expect(textAreaClass()).not.toContain('max-h-full')
   })
+
+  it('renders block-level so a wrapper cannot outgrow the control', () => {
+    // An inline-block textarea sits on a line box, and in standards mode that line box carries
+    // the wrapper font's strut — ~4px of descender space below the control. The expression
+    // editor's overlay is `absolute inset-0`, so it painted that wrapper and the visible box
+    // stopped matching the box you type in (probe R6, comment #12).
+    expect(textAreaClass().split(/\s+/)).toContain('block')
+    expect(textAreaClass({ mono: true, ghost: true }).split(/\s+/)).toContain('block')
+    // Inputs and selects stay inline-block on purpose: they carry no overlay, and blockifying
+    // them would change every row where one sits inline beside text.
+    expect(controlClass().split(/\s+/)).not.toContain('block')
+  })
 })
 
 describe('badgeClass', () => {
