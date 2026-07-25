@@ -22,8 +22,12 @@ const rules = [...new Set(found.map((v) => v.rule))].sort()
 // walking up to a tinted ancestor) and R5b (the same text over the hatch, reached only by
 // considering background-image colour stops). They fail for different reasons, so one cannot
 // stand in for the other.
+// control-wrapper-gap carries one plant and three traps: the traps (a block textarea, a wrapper
+// that also holds a label, and a flex column stretching a short control) are the whole reason the
+// rule can run against the real app without going permanently red.
 const expectedCounts = {
   'clipped-overflow': 1,
+  'control-wrapper-gap': 1,
   'sibling-height-mismatch': 3,
   'text-contrast': 2,
   'tiny-target': 1,
