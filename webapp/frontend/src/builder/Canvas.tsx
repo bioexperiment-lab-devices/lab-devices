@@ -17,7 +17,13 @@ import { blockDraggableId, type DragPayload } from './dnd'
 import { DropSlot } from './DropSlot'
 import { CHIP_GAP, LANE_DIVIDER_INSET, LANE_LABEL_H, LANE_PAD } from './laneLayout'
 import { assignRoleColors } from './roleColors'
-import { blockSummary, blockSummaryParts, faultMarker } from './summary'
+import {
+  blockSummary,
+  blockSummaryParts,
+  faultMarker,
+  splitSummary,
+  type SummarySegment,
+} from './summary'
 import { newPaletteNode, type BlockNode, type BranchNode, type ParallelNode } from './tree'
 import { controlClass, inlineButtonClass } from '../ui/controls'
 import { IconButton } from '../ui/IconButton'
@@ -87,9 +93,22 @@ export function Canvas() {
           }
           onClick={() => select(null)}
         >
-          {/* w-max lets a wide subtree make the canvas scroll instead of clipping inside a
-              nested box; min-w-full keeps a narrow doc filling the viewport. */}
-          <div className="w-max min-w-full">
+          {/* `w-fit`, NOT `w-max` — the single change that lets a card wrap at all (design
+              2026-07-25-adaptive-canvas-chips §3). `width: max-content` defines "available
+              width" as whatever the content wants, so a flex row never runs out of room and
+              `flex-wrap` can never fire: every card was single-line because it had no choice,
+              and N cards in a parallel's lanes multiplied into N card-widths of canvas.
+
+              `width: fit-content` is min(max-content, max(min-content, available)):
+                • max-content ≤ available — the wrapper takes `min-w-full` and nothing wraps,
+                  exactly as before.
+                • min-content ≤ available < max-content — the wrapper takes the available width,
+                  lanes shrink to it and cards wrap. This regime did not exist before.
+                • available < min-content — the wrapper takes min-content, which is by
+                  construction wide enough for every descendant, so a wide subtree still scrolls
+                  the canvas instead of painting outside its box. That is the property `w-max`
+                  was chosen for, and it survives. */}
+          <div className="w-fit min-w-full">
             <ScopeSwitcher />
             {activeTree.length === 0 && (
               <p
@@ -237,6 +256,26 @@ function useRoleColor(node: BlockNode): string | null {
   return assigned[node.device] ?? null
 }
 
+/** The three weights a summary is read at (design §3.4): who acts, what happens, everything
+ * else. Shared by the card's head and tail spans so the split into two flex items cannot make
+ * the same segment render differently on either side of it. */
+function segmentSpans(segs: SummarySegment[]) {
+  return segs.map((s, i) => (
+    <span
+      key={i}
+      className={
+        s.role === 'subject'
+          ? 'font-medium text-slate-900'
+          : s.role === 'verb'
+            ? 'text-slate-700'
+            : 'text-caption'
+      }
+    >
+      {s.text}
+    </span>
+  ))
+}
+
 function BlockView({ node }: { node: BlockNode }) {
   const select = useDocStore((s) => s.select)
   const selected = useDocStore((s) => s.selectedUid === node.uid)
@@ -251,6 +290,8 @@ function BlockView({ node }: { node: BlockNode }) {
   })
   const isContainer = isFlowKind(node.kind)
   const swatch = useRoleColor(node)
+  // The identity run the card keeps on one line, and the detail run it may reflow below it.
+  const { head, tail } = splitSummary(blockSummaryParts(node))
   return (
     <div
       id={`block-${node.uid}`}
@@ -270,7 +311,11 @@ function BlockView({ node }: { node: BlockNode }) {
         // selection ring is `ring-2` rather than W13's `ring-1` because a canvas of tinted
         // borders makes a 1px ring too easy to lose — the ring, not the border, is now the
         // load-bearing selection cue.
-        'min-w-0 rounded border bg-white text-sm shadow-sm ' +
+        // `relative group/card`: the positioning context for the role rail and the action
+        // overlay below. The group is NAMED — a bare `group-hover:` matches ANY `.group`
+        // ancestor, so an unnamed group here would make a lane's hover light up every card
+        // inside it.
+        'relative group/card min-w-0 rounded border bg-white text-sm shadow-sm ' +
         cardBorderClass({ kind: node.kind, selected }) + ' ' +
         // A group_ref is a leaf that expands to an entire subtree rendered nowhere on
         // screen (design §3.5) — the edge hatch is the one sanctioned cue for that, paired
@@ -280,11 +325,29 @@ function BlockView({ node }: { node: BlockNode }) {
         (isDragging ? 'opacity-40' : '')
       }
     >
+      {/* The device role's colour as a 4px left rail instead of a 10px inline square with a 4px
+          gap beside it — 14px of every card's width back, and a colour column you can scan down
+          a stack rather than a dot you have to find. Deliberately NOT `border-l-4 border-l-…`:
+          `cardBorderClass` SELECTS the card's single border class and replaces it outright on
+          selection, so a border-colour override would be the appended-utility cascade fight
+          CLAUDE.md forbids. An absolutely-positioned child cannot lose that fight.
+          Only `command`/`measure` have a role (useRoleColor), so this never lands on a container,
+          and `group_ref`'s `edge-hatch` left edge can never collide with it — a group_ref has no
+          role. */}
+      {swatch && (
+        <span aria-hidden className={`absolute inset-y-0 left-0 w-1 rounded-l ${swatch}`} />
+      )}
       <div
         {...listeners}
         {...attributes}
         className={
-          'flex min-w-0 cursor-grab items-center gap-1 rounded-t px-2 py-1 ' +
+          // `items-start`, not `items-center`: the row is now allowed to be more than one line
+          // tall, and the chevron/icon/badge must sit against the FIRST line rather than float
+          // in the middle of a three-line block.
+          'flex min-w-0 cursor-grab items-start gap-1 rounded-t py-1 ' +
+          // Left padding SELECTED, never appended: 12px when the rail is there so text clears
+          // it, the usual 8px otherwise.
+          (swatch ? 'pl-3 pr-2 ' : 'px-2 ') +
           headerFillClass(node.kind)
         }
       >
@@ -302,70 +365,106 @@ function BlockView({ node }: { node: BlockNode }) {
             }}
           />
         )}
-        {swatch && (
-          <span
-            aria-hidden
-            className={`h-2.5 w-2.5 shrink-0 rounded-sm ${swatch}`}
-          />
-        )}
-        <KindIcon kind={node.kind} />
-        {/* max-w-80 (20rem): under width:max-content a nowrap truncate span's intrinsic
-            contribution is its full untruncated text (min-w-0 on this row only lets items
-            shrink — it can't cap that contribution), so an explicit max-width is what makes
-            `truncate` actually ellipsize instead of widening every card up the tree to the
-            canvas's single scroller. 20rem covers a `device · verb (k=v, k=v)` summary
-            (routinely 35-50 chars) in full at this text-sm size while still capping a
-            pathologically long device/verb/param-value string. */}
-        <span title={blockSummary(node)} className="max-w-80 truncate">
-          {blockSummaryParts(node).map((s, i) => (
-            <span
-              key={i}
-              className={
-                s.role === 'subject'
-                  ? 'font-medium text-slate-900'
-                  : s.role === 'verb'
-                    ? 'text-slate-700'
-                    : 'text-caption'
-              }
-            >
-              {s.text}
-            </span>
-          ))}
+        {/* h-6 wrappers under `items-start`: a 14px icon and a 16px badge both centre against the
+            text cluster's 24px first line instead of hanging off its top edge. IconButton is
+            already 24px and needs none. */}
+        <span className="flex h-6 shrink-0 items-center">
+          <KindIcon kind={node.kind} />
         </span>
-        {node.label && (
-          // max-w-40 (10rem): the label is a short user-typed nickname rendered at text-xs —
-          // 10rem comfortably fits an ordinary one or two-word label while still capping an
-          // arbitrarily long pasted one, so it can't be the thing that drives canvas width.
-          <span title={node.label} className="max-w-40 truncate text-xs italic text-caption">“{node.label}”</span>
-        )}
-        <span className="ml-auto flex items-center gap-1">
-          {diags.length > 0 && (
+        {diags.length > 0 && (
+          // The badge used to share the right-hand cluster with Duplicate/Delete. That cluster is
+          // now a hover overlay, and an error count that vanishes — or hides behind the overlay —
+          // when you reach for the card is the wrong trade, so it moves in-flow to the leading
+          // cluster. Side effect worth having: error counts line up down the left of a stack.
+          <span className="flex h-6 shrink-0 items-center">
             <span
               title={diags.map((d) => d.message).join('\n')}
               className="rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white"
             >
               {diags.length}
             </span>
+          </span>
+        )}
+        {/* The wrapping text cluster (design §5.2). `py-0.5` centres its 20px first line against
+            the 24px control row beside it, which is what keeps an UNWRAPPED leaf card at exactly
+            CHIP_H_PX (8px py-1 + 24px + 2px border = 34px) and PR #83's chip band intact.
+            `items-center` and never `items-baseline`: an overflow:hidden box's baseline is its
+            bottom margin edge, so `truncate` + baseline alignment misaligns.
+
+            `contain-inline` (index.css) is what makes the whole thing work under a `w-fit`
+            canvas: it stops this cluster's text from voting on the canvas's width, so a card can
+            never widen the tree — only lane and arm floors can. Its width comes from `flex-1`,
+            so it has no need to size itself; its height still tracks the wrapped lines. */}
+        <span
+          title={blockSummary(node)}
+          className="contain-inline flex min-w-0 flex-1 flex-wrap items-center gap-x-1 py-0.5"
+        >
+          {/* `min-w-0` is what lets this ellipsize instead of overflowing; the CLUSTER's
+              `contain-inline` is what stops it widening the canvas. Both are needed and they do
+              different jobs — min-width:0 is a layout-time permission to shrink, not a reduction
+              of the intrinsic contribution (index.css spells out the 3619px-vs-766px measurement
+              that proves it). With containment above, `bioreactor_left_densitometer ·
+              read_optical_density` ellipsizes inside whatever width its lane has and contributes
+              nothing to the tree's width, which is why the old `max-w-80` cap is gone rather than
+              tightened.
+              The `title` is repeated HERE and not merely inherited from the cluster because
+              probe R2 (truncate-without-title) reads `el.title` on the ellipsising element
+              itself, not on an ancestor. */}
+          <span title={blockSummary(node)} className="min-w-0 shrink truncate">
+            {segmentSpans(head)}
+          </span>
+          {/* Rendered only when non-empty: an empty flex item still takes its share of `gap-x-1`,
+              which would put 4px of dead air after the head of every `wash`-style group_ref.
+              `wrap-anywhere` (overflow-wrap: anywhere) is what stops a single unbreakable token —
+              a long expression with no spaces — from setting a large min-content size. Unlike
+              `break-word` it DOES reduce the intrinsic minimum. */}
+          {tail.length > 0 && (
+            <span className="min-w-0 wrap-anywhere">{segmentSpans(tail)}</span>
           )}
-          <IconButton
-            icon={Copy}
-            label="Duplicate"
-            onClick={(e) => {
-              e.stopPropagation()
-              duplicateBlock(node.uid)
-            }}
-          />
-          <IconButton
-            icon={X}
-            label="Delete"
-            destructive
-            onClick={(e) => {
-              e.stopPropagation()
-              removeBlock(node.uid)
-            }}
-          />
+          {node.label && (
+            <span
+              title={node.label}
+              className="min-w-0 shrink truncate text-xs italic text-caption"
+            >
+              “{node.label}”
+            </span>
+          )}
         </span>
       </div>
+      {/* Duplicate/Delete float instead of holding 56px of every card's width open. `right-2
+          top-1` is exactly where they sat in flow (the header's px-2 / py-1), so nothing moves —
+          the space they used to occupy is simply returned to the text.
+          Backing is SELECTED, not appended: headerFillClass returns '' for leaves, which are
+          bg-white, so the overlay covers whatever it sits on.
+          Nothing becomes unreachable: they keep title/aria-label via IconButton, appear on
+          keyboard focus, stay lit on the selected card, and Delete/Backspace on a selection
+          already removes a block (BuilderTab.tsx). */}
+      <span
+        className={
+          'absolute right-2 top-1 items-center gap-1 rounded pl-1 shadow-sm ' +
+          'group-hover/card:flex group-focus-within/card:flex ' +
+          (headerFillClass(node.kind) || 'bg-white') + ' ' +
+          (selected ? 'flex' : 'hidden')
+        }
+      >
+        <IconButton
+          icon={Copy}
+          label="Duplicate"
+          onClick={(e) => {
+            e.stopPropagation()
+            duplicateBlock(node.uid)
+          }}
+        />
+        <IconButton
+          icon={X}
+          label="Delete"
+          destructive
+          onClick={(e) => {
+            e.stopPropagation()
+            removeBlock(node.uid)
+          }}
+        />
+      </span>
       {!collapsed && isContainer && <ContainerBody node={node} />}
       {collapsed && isContainer && (
         <p className="px-2 pb-1 text-xs text-hint">…collapsed…</p>
@@ -519,6 +618,9 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
   })
   const marker = faultMarker(lane).trim()
   const canDelete = lane.kind === 'serial' && lane.children.length === 0
+  // A lane paints no background of its own — it sits on its parallel's interior fill, and the
+  // action overlay below has to reproduce that to cover the header it floats over.
+  const laneFill = interiorFillClass(useContext(DepthContext))
   return (
     <div
       id={`block-${lane.uid}`}
@@ -535,7 +637,9 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
         // `flex flex-col` (#3): the lane must be a column so its BlockList can take the height
         // left over after the label row. Without it the lane stretches to the tallest sibling
         // but its contents do not, and an empty lane's hint has nothing to fill.
-        `flex min-w-48 flex-initial flex-col rounded ${LANE_PAD} ` +
+        // `relative group/lane`: same overlay treatment as a card (see below), and the same
+        // reason for naming the group.
+        `relative group/lane flex min-w-48 flex-initial flex-col rounded ${LANE_PAD} ` +
         (selected ? 'ring-2 ring-blue-400 ' : '') +
         (isDragging ? 'opacity-40' : '')
       }
@@ -543,47 +647,71 @@ function Lane({ lane, index }: { lane: BlockNode; index: number }) {
       <div
         {...listeners}
         {...attributes}
-        className="flex h-6 min-w-0 shrink-0 cursor-grab items-center gap-1 px-1 text-[10px] uppercase text-caption"
+        // `contain-inline` for the same reason as a card's text cluster (index.css): the label
+        // below is nowrap, and without containment its full text would set this lane's
+        // min-content and widen the whole canvas. The row's width comes from the lane's column
+        // stretch, so it has no need to size itself.
+        className="contain-inline flex h-6 min-w-0 shrink-0 cursor-grab items-center gap-1 px-1 text-[10px] uppercase text-caption"
       >
         <span className="shrink-0">lane {index + 1}</span>
+        {diags.length > 0 && (
+          // In flow, and ahead of the label, for the same reason as a card's badge: the
+          // right-hand cluster is now a hover overlay and an error count must not hide under it.
+          <span
+            title={diags.map((d) => d.message).join('\n')}
+            className="shrink-0 rounded-full bg-red-600 px-1.5 text-[10px] font-bold normal-case text-white"
+          >
+            {diags.length}
+          </span>
+        )}
         {lane.label && (
-          // max-w-40 for the same intrinsic-width reason as BlockView's label span: under the
-          // canvas's width:max-content a nowrap span contributes its FULL untruncated width.
-          <span title={lane.label} className="max-w-40 truncate normal-case italic">
+          // `min-w-0` rather than the old `max-w-40`: a flex item with min-width:0 contributes
+          // nothing to its container's min-content, so the label cannot widen the lane at all —
+          // strictly stronger than the cap it replaces, which existed only because the canvas
+          // used to be sized by max-content.
+          <span title={lane.label} className="min-w-0 truncate normal-case italic">
             “{lane.label}”
           </span>
         )}
         {marker && <span className="shrink-0 normal-case">{marker}</span>}
-        <span className="ml-auto flex items-center gap-1">
-          {diags.length > 0 && (
-            <span
-              title={diags.map((d) => d.message).join('\n')}
-              className="rounded-full bg-red-600 px-1.5 text-[10px] font-bold normal-case text-white"
-            >
-              {diags.length}
-            </span>
-          )}
+      </div>
+      {/* The lane's actions float exactly as a card's do. This is not a width fix — a lane header's
+          min-content (~100px) is well under the 192px lane floor — it is a consistency and noise
+          one: a card that hides its actions inside a lane that does not would read as a bug, and
+          three lanes' worth of permanently-lit buttons is real clutter on a dense canvas.
+          `right-1 top-1` matches the header's px-1 and the lane's LANE_PAD. A lane has no
+          background of its own, so the backing is its parallel's interior fill, read from the
+          depth this lane is being rendered at.
+          Hovering a card inside a lane also hovers the lane, so both overlays appear — that is
+          CSS hover propagation and it is the right behaviour: you are in that lane. */}
+      <span
+        className={
+          'absolute right-1 top-1 items-center gap-1 rounded pl-1 ' +
+          'group-hover/lane:flex group-focus-within/lane:flex ' +
+          laneFill + ' ' +
+          (selected ? 'flex' : 'hidden')
+        }
+      >
+        <IconButton
+          icon={Copy}
+          label="Duplicate lane"
+          onClick={(e) => {
+            e.stopPropagation()
+            duplicateBlock(lane.uid)
+          }}
+        />
+        {canDelete && (
           <IconButton
-            icon={Copy}
-            label="Duplicate lane"
+            icon={X}
+            label="Remove lane"
+            destructive
             onClick={(e) => {
               e.stopPropagation()
-              duplicateBlock(lane.uid)
+              removeBlock(lane.uid)
             }}
           />
-          {canDelete && (
-            <IconButton
-              icon={X}
-              label="Remove lane"
-              destructive
-              onClick={(e) => {
-                e.stopPropagation()
-                removeBlock(lane.uid)
-              }}
-            />
-          )}
-        </span>
-      </div>
+        )}
+      </span>
       {lane.kind === 'serial' ? (
         <BlockList parentUid={lane.uid} slot="children" items={lane.children} />
       ) : (

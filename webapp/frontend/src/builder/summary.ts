@@ -120,3 +120,36 @@ export function blockSummary(node: BlockNode): string {
     .map((s) => s.text)
     .join('')
 }
+
+/** The summary split into the run a card must keep on ONE line and the run it may reflow below
+ * (design 2026-07-25-adaptive-canvas-chips §5.1).
+ *
+ * The canvas used to render the whole summary as a single `whitespace-nowrap truncate` span under
+ * a 20rem cap, because the canvas was sized `width: max-content` and a nowrap span contributes its
+ * full untruncated text to that. Now that the canvas is `fit-content`, a squeezed card wraps — and
+ * wrapping needs to know which words may be separated by a line break. `pump1 · dispense` split
+ * across two lines is a card you have to reassemble in your head; `(volume_ml=5)` on its own line
+ * is not.
+ *
+ * The rule: HEAD is every segment up to and including the LAST `subject`/`verb` segment; TAIL is
+ * the rest. `operator_input` is why it is the last and not the first — its segments run
+ * verb('input'), detail(' '), subject('od_min'), detail(' (float)'), and stopping at the first
+ * would let 'input' break away from the name it introduces.
+ *
+ * This PARTITIONS the array; it never rewrites a segment's text. `blockSummary` is the join of
+ * those texts and stays byte-identical, which matters because that same string feeds the card's
+ * `title`, the drag overlay and the run log's block names. `summary.test.ts` pins the partition
+ * as an equality rather than as a comment.
+ *
+ * Total by construction: input carrying no subject or verb segment — unreachable for all 14
+ * kinds, and tested to stay that way — yields an empty head rather than throwing. */
+export function splitSummary(parts: SummarySegment[]): {
+  head: SummarySegment[]
+  tail: SummarySegment[]
+} {
+  let last = -1
+  for (let i = 0; i < parts.length; i += 1) {
+    if (parts[i].role === 'subject' || parts[i].role === 'verb') last = i
+  }
+  return { head: parts.slice(0, last + 1), tail: parts.slice(last + 1) }
+}
