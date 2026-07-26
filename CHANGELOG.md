@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.4](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.5.3...v1.5.4) (2026-07-25)
+
+
+### Bug Fixes
+
+* **studio:** adaptive canvas chips — cards wrap instead of forcing the canvas wide ([#85](https://github.com/bioexperiment-lab-devices/lab-devices/issues/85)) ([7e3fe10](https://github.com/bioexperiment-lab-devices/lab-devices/commit/7e3fe10a11b12cdb3bad2488323a0868afdd79c1))
+
 ## [1.5.3](https://github.com/bioexperiment-lab-devices/lab-devices/compare/v1.5.2...v1.5.3) (2026-07-25)
 
 
